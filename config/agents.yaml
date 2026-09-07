@@ -1,0 +1,76 @@
+# DeskMate external executor catalog.
+#
+# Registry 会读取此文件并注册 executors：
+# - adapter: codex        表示已有 Codex 专用探测适配器
+# - adapter: pending      表示接口已预留，只做命令/环境探测，不执行真实任务
+#
+# 默认只保留用户确认的 6 个执行器；后续需要新增时优先修改此目录，
+# 或使用同目录 config/agents.local.yaml 覆盖/追加，不改前端硬编码。
+version: 1
+default_executor: codex
+executors:
+  - name: codex
+    label: Codex CLI
+    adapter: codex
+    enabled: true
+    commands: ["codex"]
+    protocol: codex-acp
+    capabilities: ["code", "project", "task_execution"]
+    source_url: "https://github.com/openai/codex"
+    tags: ["official", "acp", "cli"]
+    detail: "OpenAI 本地编码 agent，支持 codex CLI 与 codex-acp"
+
+  - name: claude-code
+    label: Claude Code
+    adapter: pending
+    enabled: true
+    commands: ["claude"]
+    protocol: claude-code-acp
+    capabilities: ["code", "project"]
+    source_url: "https://github.com/anthropics/claude-code"
+    tags: ["official", "acp", "cli"]
+    detail: "Anthropic 终端编码 agent，保留 ACP/stdio 接入位"
+
+  - name: qwen-code
+    label: Qwen Code
+    adapter: pending
+    enabled: true
+    commands: ["qwen-code", "qwen"]
+    protocol: null
+    capabilities: ["code", "project"]
+    source_url: "https://github.com/QwenLM/Qwen-Code"
+    tags: ["open-source", "alibaba", "cli"]
+    detail: "阿里 Qwen 官方 CLI coding agent"
+
+  - name: kimi-cli
+    label: Kimi CLI
+    adapter: pending
+    enabled: true
+    commands: ["kimi"]
+    protocol: null
+    capabilities: ["code", "mcp", "acp"]
+    source_url: "https://github.com/MoonshotAI/kimi-cli"
+    tags: ["open-source", "moonshot", "cli"]
+    detail: "Moonshot Kimi 官方 CLI，具备 MCP 与 ACP IDE 集成"
+
+  - name: reasonix
+    label: Reasonix
+    adapter: pending
+    enabled: true
+    commands: ["reasonix"]
+    protocol: acp
+    capabilities: ["code", "project", "long-running"]
+    source_url: "https://github.com/esengine/DeepSeek-Reasonix"
+    tags: ["open-source", "deepseek", "acp", "cli"]
+    detail: "面向长时无人值守运行的 DeepSeek 原生 CLI agent，支持 ACP/多端"
+
+  - name: workbuddy
+    label: WorkBuddy
+    adapter: pending
+    enabled: true
+    commands: ["workbuddy", "wb"]
+    protocol: null
+    capabilities: ["task", "agent"]
+    source_url: null
+    tags: ["custom", "pending"]
+    detail: "用户指定的任务执行器，接口已预留"

@@ -1,0 +1,160 @@
+# ─────────────────────────────────────────────────────────────
+# DeskMate 语音表现校准目录（Voice Tone Calibration Catalog）
+# 版本 0.1 / schema 1 —— 仅供审阅与校准，不是最终语音参数
+# ─────────────────────────────────────────────────────────────
+#
+# 作用范围（重要）：
+#   本目录只解决「情绪 → 语音表现」的确定性映射，供 TTS 合成调用；
+#   不负责「情绪 → 文案用词」，文案层由 persona.reply_style 单独负责。
+#
+# 使用方式：
+#   1) 先按“试听载句”听参数差别，再按“自然句”听整体语气；
+#   2) 每个情绪条目都带 dashscope（现链路）与 volcengine（预留）两列；
+#   3) 所有值是“初始建议”，一律需真实账号试听校准后把状态改为 calibrated。
+#
+# 校准约定：
+#   - 参数为相对默认的偏移（speed/pitch 建议 ±15% 内、volume ±0.2 内）；
+#   - instruction 写成“对真人说话的口吻描述”，避免指令词味；
+#   - 载句固定用同一句，避免“文本差异”干扰听感对比。
+
+version: 0.1
+schema: 1
+status: draft                 # draft | calibrating | calibrated
+default_persona: default
+providers_in_scope:
+  dashscope:
+    status: active            # 现链路已接
+    model: cosyvoice-v2
+    supported_fields: [speed, pitch, volume, instruction]
+    note: "CosyVoice v2 用 instruction 表达风格；实测：预置音色对 instruction 返回引擎 428，仅复刻/克隆音色等受支持路径可用（适配层已自动降级）"
+  volcengine:
+    status: pending_adapter   # 适配器待接入，字段先占位
+    model: 大模型语音合成
+    supported_fields: [speed_ratio, pitch_ratio, volume_ratio, emotion]
+    note: "emotion 为枚举值（示例 happy），取值以官方控制台音色为准；待实测后回填"
+
+# 载句：所有情绪共用同一句，A/B 时只听声音变化
+carrier_sentence: "我把这件事处理好了，你听看看有没有差别的感觉。"
+
+emotions:
+  neutral:
+    label: "平常 · 默认"
+    intent: "日常信息、无特殊情绪时的默认语气"
+    params: { speed: 1.0, pitch: 1.0, volume: 1.0 }
+    dashscope:
+      instruction: null
+      emotion: null
+    volcengine:
+      emotion: null            # 待实测
+    calibration_status: pending
+    test_sentence_zh: "你好呀，我是 DeskMate，今天想让我帮你做点什么呢？"
+    test_sentence_taiwan: "你好呀，我是 DeskMate，今天想让我帮你做点什么吗？"
+
+  happy:
+    label: "开心 · 带笑意"
+    intent: "完成报喜、分享好消息"
+    params: { speed: 1.1, pitch: 1.05, volume: 1.0 }
+    dashscope:
+      instruction: "语气轻快，带着笑意，像在分享一件让人开心的事"
+      emotion: null
+    volcengine:
+      emotion: happy           # 待实测该枚举对该音色是否生效
+    calibration_status: pending
+    test_sentence_zh: "搞定啦！结果已经整理好放到主界面了，你快看看！"
+    test_sentence_taiwan: "搞定啦！结果我已经帮你排好放在主界面了喔，你快看看！"
+
+  playful:
+    label: "俏皮 · 撒娇"
+    intent: "轻松互动、卖萌、插科打诨"
+    params: { speed: 1.12, pitch: 1.1, volume: 1.0 }
+    dashscope:
+      instruction: "语气俏皮一点，带一点撒娇，轻松可爱"
+      emotion: null
+    volcengine:
+      emotion: null
+    calibration_status: pending
+    test_sentence_zh: "诶～这个任务有点意思，交给我你放心啦！"
+    test_sentence_taiwan: "诶～这个任务超有意思的，交给我你放心啦！"
+
+  gentle:
+    label: "温柔 · 耐心"
+    intent: "安慰、讲解、照顾情绪"
+    params: { speed: 1.0, pitch: 1.02, volume: 1.0 }
+    dashscope:
+      instruction: "轻声细语，温柔耐心，像在哄人、安抚对方"
+      emotion: null
+    volcengine:
+      emotion: null
+    calibration_status: pending
+    test_sentence_zh: "别急，我们一步一步来，问题一定能解决的。"
+    test_sentence_taiwan: "别急啦，我们一起慢慢看，问题一定会解决的喔。"
+
+  calm:
+    label: "沉稳 · 专业"
+    intent: "方案汇报、风险说明、冷静处理"
+    params: { speed: 0.95, pitch: 1.0, volume: 1.0 }
+    dashscope:
+      instruction: "语气沉稳专业，条理清晰，不慌不忙"
+      emotion: null
+    volcengine:
+      emotion: null
+    calibration_status: pending
+    test_sentence_zh: "收到，我先梳理一下步骤，有结果会马上告诉你。"
+    test_sentence_taiwan: "收到，我先帮你把步骤顺一遍，有结果马上跟你说。"
+
+  excited:
+    label: "兴奋 · 明快"
+    intent: "重大进展、惊喜播报"
+    params: { speed: 1.15, pitch: 1.08, volume: 1.05 }
+    dashscope:
+      instruction: "兴奋一点，语速稍快，情绪饱满上扬"
+      emotion: null
+    volcengine:
+      emotion: null
+    calibration_status: pending
+    test_sentence_zh: "太好啦！这个方案真的可行，我们做到了！"
+    test_sentence_taiwan: "太棒啦！这个做法真的可以，我们真的做到了耶！"
+
+  sad:
+    label: "低落 · 安慰"
+    intent: "共情安慰、表达遗憾"
+    params: { speed: 0.96, pitch: 0.98, volume: 0.98 }
+    dashscope:
+      instruction: "语气轻柔放低，带着理解与安慰，不要夸张"
+      emotion: null
+    volcengine:
+      emotion: null
+    calibration_status: pending
+    test_sentence_zh: "听起来是有点遗憾，不过没关系，我们再想想办法。"
+    test_sentence_taiwan: "听起来是有那么一点可惜啦，不过没关系，我们再想别的办法。"
+
+  apologetic:
+    label: "歉意 · 诚恳"
+    intent: "犯错、打扰、请求谅解"
+    params: { speed: 0.98, pitch: 1.0, volume: 0.98 }
+    dashscope:
+      instruction: "语气带着歉意，诚恳放软，像在认真道歉"
+      emotion: null
+    volcengine:
+      emotion: null
+    calibration_status: pending
+    test_sentence_zh: "抱歉，这件事是我没处理好，我马上修正。"
+    test_sentence_taiwan: "拍谢啦，这件事是我没弄好，我马上帮你修正。"
+
+  confirming:
+    label: "郑重 · 确认"
+    intent: "高风险操作授权、关键提示（放慢加重）"
+    params: { speed: 0.95, pitch: 1.0, volume: 1.0 }
+    dashscope:
+      instruction: "语气郑重认真，放慢语速，把关键信息说清楚"
+      emotion: null
+    volcengine:
+      emotion: null
+    calibration_status: pending
+    test_sentence_zh: "这个操作会修改你的设置，确认要我继续吗？"
+    test_sentence_taiwan: "这个动作会改到你的设定，你确定要我继续吗？"
+
+# 将来可选扩展（先不实现，等文案层需要时再评审）：
+#  - persona_overrides: 每个 persona 可覆盖任意情绪的 instruction/参数
+#  - scene_phrases: 场景化例句集（对话开场、打断致歉、任务完成等）
+#  - llm_emotion_labels: LLM 输出情绪标签的白名单（与 emotions 主键对齐）

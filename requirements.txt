@@ -1,0 +1,5 @@
+# 早期 PyQt6 原型依赖已迁出（src/ 仅作参考）。
+# AI 服务依赖请使用：
+#   services/ai-service/requirements.txt
+# 初始化环境请运行：
+#   ./scripts/setup.sh

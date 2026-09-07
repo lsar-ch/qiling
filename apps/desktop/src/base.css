@@ -1,0 +1,16 @@
+:root {
+  --bg: #eef0f6;
+  --panel: #ffffff;
+  --text: #1f2333;
+  --muted: #767b90;
+  --brand: #4f6ef7;
+  --ok: #1fa971;
+  --off: #d6483f;
+  --line: #e2e5ef;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--text);
+}

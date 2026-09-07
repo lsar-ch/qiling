@@ -1,0 +1,15 @@
+{
+  "identifier": "default",
+  "description": "DeskMate 启动器默认能力",
+  "windows": [
+    "main",
+    "widget"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-show",
+    "core:window:allow-start-dragging"
+  ]
+}

@@ -1,0 +1,149 @@
+# DeskMate 项目路线图
+
+## 当前定位
+
+DeskMate 当前收敛为：
+
+> 角色化、本地优先、懂项目记忆的 AI 工作伙伴。
+
+产品优先级：
+
+1. 语音和挂件带来的自然交互
+2. 项目记忆带来的持续上下文
+3. 外部 Agent 集成带来的真实工作价值
+4. 授权、状态和结果反馈带来的可控性
+
+不把通用 Computer Use 作为核心竞争方向。
+
+## 当前进度
+
+**Step 1-3、Step 4 语音闭环、Step 4.5 设置与角色配置、Step 5 本地项目记忆、Step 6 任务分流主链路、Step 7 执行器目录与 Codex ACP 真实执行、Step 8 自动化回归与 Codex 真实成功任务均已完成（2026-09-07）；Step 9 V1 视觉与体验打磨进行中，桌面挂件交互层已阶段性完成，最终真机启动/麦克风和 Windows 人工验收放视觉收口后重跑。**
+
+已完成：
+
+- Tauri 桌面运行时、FastAPI 本地服务、React 主界面和 contracts
+- 桌面挂件、状态事件、浏览器主界面
+- 文字对话、SSE 流式回复、会话保存
+- DashScope STT、MiniMax TTS、声音克隆链路
+- 常开 VAD、静默/唤醒词、基础播报停止
+- 回声抑制和长回复摘要自动播报
+- 设置页、角色卡与本地 settings/personas API（Step 4.5）
+- 本地 L1/L2/L3 项目记忆、FTS 检索、记忆页 CRUD、Obsidian 只读三档模式（Step 5）
+- 任务分流四类结果、任务 JSON 持久化、任务 API、聊天自动分流、本地任务台（Step 6）
+- 统一 Agent Adapter/Registry 契约、Codex 探测、基于 `config/agents.yaml` 的执行器目录与配置接口（6 个默认）、Claude Code/WorkBuddy 等非 Codex 预留及执行器状态展示
+- Codex ACP/stdio 真实执行：AgentRun 持久化、任务提交、进度回流、取消/授权、`/api/agent-runs` 与主界面真实运行控件（Step 7 Phase 2）
+- Step 8 发布回归：`/api/health` 能力汇总、LLM/语音/Codex 降级自动化覆盖、前端“执行器不可用”提示、运行时隐私目录忽略；Codex ACP 真实任务已成功验收（真机启动/麦克风/Windows 待人工）
+
+## 近期路线
+
+### Step 4：语音闭环（已完成，2026-09-07）
+
+- 真机验收麦克风 → VAD → STT → LLM → TTS
+- 校准唤醒灵敏度、静音判定和播报打断
+- 完成主声与克隆声的配置验证
+
+### Step 4.5：设置和角色基础配置（已完成，2026-09-07）
+
+- API key 录入入口
+- 角色名称和唤醒词
+- 音色、语速、语气标签
+- 监听、静默和权限配置
+
+### Step 5：最小项目记忆（已完成，2026-09-07）
+
+- 会话和任务事件
+- 项目进度与技术决策
+- Obsidian 只读检索
+- 记忆查看、编辑、删除
+
+记忆从这里提前进入主线，不再作为最后才实现的附加模块。
+
+### Step 6：任务分流（已完成，2026-09-07）
+
+- `answer`
+- `execute_frontend`
+- `delegate_backend`
+- `request_approval`
+
+先实现项目相关的窄场景，不实现通用桌面自动化。
+
+### Step 7：执行器目录与 Codex ACP 真实执行（已完成，2026-09-07）
+
+已完成：
+
+- 通用 Agent Adapter 接口
+- Agent Registry 注册与探测
+- 执行器目录与配置接口：`config/agents.yaml` 默认注册 6 个执行器，配置驱动可扩展
+- Codex 本地探测
+- Claude Code / WorkBuddy 等非 Codex 执行器预留 pending 适配器（真实协议接入前不执行任务）
+- Codex ACP/stdio 真实连接与任务提交、AgentRun 持久化、进度/结果回流与记忆归档
+- `/api/agents` 探测 API、`/api/agent-runs` 运行/取消/授权 API
+- 前端“我的智能体”执行器状态展示与真实运行/取消/批准控件
+
+验收记录：Codex 本机 provider/model 已调整为当前 relay 支持的 `deepseek-v4-flash`，并通过 DeskMate API 完成一次 `read-only` 真实任务（`task_eff6a657ae` / `run_c560a3ca9c`）。其他执行器仍按目录接入对应 adapter。
+
+### Step 8：V1 回归与发布
+
+状态：进行中（2026-09-07），验收范围见 `docs/STEP8-RELEASE-DEGRADATION.md`。
+
+已完成的自动化/工程收尾：
+
+- 健康接口返回 text/voice/memory 与执行器可用性汇总，不暴露密钥
+- LLM 调用失败、语音供应商禁用/异常、Codex 未安装或不可执行均有明确降级与回归测试
+- 前端任务台对不可用执行器显示可见提示，任务仍可保留在本地任务台
+- `.gitignore` 覆盖会话、任务、Agent Run、日志、音频、本地记忆等运行时数据
+
+已完成：
+
+- Codex 真实成功任务：2026-09-07 通过 DeskMate `read-only` ACP 运行完成并返回有效结论
+
+待人工验收：
+
+- macOS 启动器和退出进程回收
+- 麦克风授权、无麦克风/拒绝授权降级
+- Windows 启动与权限回归
+
+### Step 9：V1 视觉与体验打磨
+
+状态：进行中（2026-09-07），范围见 `docs/STEP9-UI-POLISH.md`。
+
+这一步处理“整个页面美化”，但不引入 V2 的重资产表现：
+
+- 浏览器主界面：Home / Chat / Memory / Knowledge Base / My Agents / Settings
+- 桌面挂件与主界面的状态视觉一致性
+- 设计变量、排版、卡片层级、响应式与可读性
+- 角色形象与工作台的配合，不把页面做成营销式落地页
+- 视觉改动后的自动化回归，以及最后把 Step 8 人工验收再做一轮
+
+已完成（桌面挂件交互层）：
+
+- 透明紧凑挂件窗口 `236x258`：无边框、置顶、右下角定位、可拖动
+- 角色舞台入口交互：单击激活、双击打开主界面、`Space` 打开输入条
+- 短回复气泡仅展示当前挂件轮次回复，不在监听/静默态展示旁路回复内容
+- 语音识别无效音频在监听/静默态静默丢弃，不再反复提示失败
+- 激活光圈只在输入态出现，拖动后不残留圆圈；输入条支持 `Esc` / 点击角色 / 失焦收起
+
+待完成：
+
+- 主界面 Home / Chat / Memory / Knowledge Base / My Agents / Settings 六页视觉打磨与响应式验收
+- 角色卡测试阶段继续调整挂件形象、动作、移动与角色级视觉参数
+
+V1 不做 Live2D / 3D 或复杂情绪动画；那些仍在后续方向。
+
+## 后续方向
+
+V1 验证成功后再考虑：
+
+- 浏览器自动化
+- 更强的桌面感知
+- 实时全双工语音
+- 多 Agent 调度
+- 更丰富的角色表现
+- Live2D / 3D
+
+## 暂不做的事
+
+- 不自研通用 Computer Use
+- 不提前建设插件市场
+- 不提前建设云端任务平台
+- 不并行铺开多个外部 Agent
