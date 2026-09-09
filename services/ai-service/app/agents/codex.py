@@ -6,6 +6,7 @@ import asyncio
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,69 @@ from app.agents.base import (
     AgentTaskResult,
 )
 from app.agents.catalog import AgentCatalogEntry
+
+
+_DEFAULT_CODEX_NAME = "codex"
+
+
+def _platform_candidates() -> tuple[Path, ...]:
+    """平台常见安装位置（仅作自动检测兜底，不猜死路径）。"""
+    if sys.platform == "win32":
+        return (
+            Path.home() / ".codex" / "bin" / "codex.exe",
+            Path.home() / ".codex" / "bin" / "codex.cmd",
+        )
+    return (
+        Path("/Applications/Codex.app/Contents/Resources/codex"),
+        Path.home() / ".codex" / "bin" / "codex",
+        Path.home() / ".local" / "bin" / "codex",
+    )
+
+
+def _is_file_binary(path: Path) -> bool:
+    """跨平台可执行文件判断：POSIX 看 X_OK，Windows 以文件存在为准（能否运行交给探测）。"""
+    if not path.is_file():
+        return False
+    if sys.platform == "win32":
+        return True
+    return os.access(path, os.X_OK)
+
+
+def _looks_like_path(value: str) -> bool:
+    if "/" in value:
+        return True
+    if sys.platform == "win32" and "\\" in value:
+        return True
+    return False
+
+
+def resolve_codex_command(configured: str | None) -> str | None:
+    """解析生效的 codex 命令。
+
+    优先级：页面显式配置 > CODEX_PATH 环境注入 > PATH > 平台常见位置。
+    显式注入的值不可用时直接返回 None（不悄悄回退，便于提示用户路径错误）。
+    """
+    configured_value = (configured or "").strip()
+    env_value = (os.environ.get("CODEX_PATH") or "").strip()
+    config_explicit = bool(configured_value and configured_value != _DEFAULT_CODEX_NAME)
+
+    if config_explicit:
+        candidate = configured_value
+        if _looks_like_path(candidate):
+            return str(Path(candidate).expanduser()) if _is_file_binary(Path(candidate).expanduser()) else None
+        return shutil.which(candidate)
+    if env_value:
+        if _looks_like_path(env_value):
+            return str(Path(env_value).expanduser()) if _is_file_binary(Path(env_value).expanduser()) else None
+        return shutil.which(env_value)
+
+    found = shutil.which(_DEFAULT_CODEX_NAME)
+    if found:
+        return found
+    for location in _platform_candidates():
+        if _is_file_binary(location):
+            return str(location)
+    return None
 
 
 class CodexAdapter(AgentAdapter):
@@ -67,16 +131,19 @@ class CodexAdapter(AgentAdapter):
         self._run_errors: dict[str, list[str]] = {}
 
     async def detect(self) -> AgentInfo:
-        codex_found = shutil.which(self._codex_command) is not None
+        resolved = resolve_codex_command(self._codex_command)
         acp_found = shutil.which(self._acp_command) is not None
 
-        if not codex_found:
+        if resolved is None:
             detail = f"{self._codex_command} is not installed / 未检测到 {self._codex_command}。"
+            configured = (self._codex_command or "").strip()
+            if configured and configured != "codex":
+                detail += f" 手动配置路径不可用：{configured}。"
             if acp_found:
                 detail += f" {self._acp_command} exists but requires Codex CLI. / 已检测到 ACP，但依赖 Codex CLI。"
             return self._info("not_installed", False, detail=detail)
 
-        codex_result = await asyncio.to_thread(self._probe, self._codex_command)
+        codex_result = await asyncio.to_thread(self._probe, resolved)
         _found, version, probe_error = codex_result
         if probe_error:
             return self._info(
@@ -91,9 +158,10 @@ class CodexAdapter(AgentAdapter):
                 "pending",
                 False,
                 version=version,
+                command=resolved,
                 protocol=None,
                 detail=(
-                    f"Codex CLI {version or ''} detected; {self._acp_command} not found. "
+                    f"Codex CLI {version or ''} detected at {resolved}; {self._acp_command} not found. "
                     f"真实 ACP 执行需要安装 {self._acp_command}。"
                 ),
             )
@@ -102,10 +170,10 @@ class CodexAdapter(AgentAdapter):
             "ready",
             True,
             version=version,
-            command=self._codex_command,
+            command=resolved,
             protocol="codex-acp",
             detail=(
-                f"Codex CLI {version or ''}; {self._acp_command} detected. "
+                f"Codex CLI {version or ''} at {resolved}; {self._acp_command} detected. "
                 f"/ 已检测到 Codex 与 ACP，可提交真实任务。"
             ),
         )
@@ -141,7 +209,7 @@ class CodexAdapter(AgentAdapter):
         request: AgentTaskRequest,
         on_update,
     ) -> AgentTaskResult:
-        codex_bin = shutil.which(self._codex_command)
+        codex_bin = resolve_codex_command(self._codex_command)
         acp_bin = shutil.which(self._acp_command)
         if not codex_bin or not acp_bin:
             raise AgentExecutionError(

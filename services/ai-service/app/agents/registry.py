@@ -19,6 +19,10 @@ class AgentRegistry:
             raise ValueError("AgentAdapter.name is required")
         self._adapters[adapter.name] = adapter
 
+    def clear(self) -> None:
+        """清空已注册适配器（供目录重载后就地重建，避免旧引用失效）。"""
+        self._adapters.clear()
+
     def get(self, name: str) -> AgentAdapter | None:
         return self._adapters.get(name)
 

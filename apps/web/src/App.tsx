@@ -6,6 +6,7 @@ import {
   addMemoryEntry,
   deleteMemoryEntry,
   fetchAgents,
+  fetchAgentConfig,
   fetchHealth,
   fetchCompiledMemory,
   fetchMemoryDoc,
@@ -30,6 +31,7 @@ import {
   publishEvent,
   saveMemoryDoc,
   updateSettings,
+  updateAgentConfig,
   type AppSettings,
   type MemoryVaultStatus,
   type HealthResponse,
@@ -759,6 +761,11 @@ function MyAgentsPage() {
   const [defaultExecutor, setDefaultExecutor] = useState("");
   const [agentLoading, setAgentLoading] = useState(true);
   const [agentError, setAgentError] = useState("");
+  const [configName, setConfigName] = useState<string | null>(null);
+  const [configCommand, setConfigCommand] = useState("");
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configError, setConfigError] = useState("");
+  const [configNotice, setConfigNotice] = useState("");
 
   const loadAgents = async (): Promise<void> => {
     setAgentLoading(true);
@@ -771,6 +778,48 @@ function MyAgentsPage() {
       setAgentError(e instanceof Error ? `执行器状态获取失败：${e.message}` : "执行器状态获取失败");
     } finally {
       setAgentLoading(false);
+    }
+  };
+
+  const openAgentConfig = async (name: string): Promise<void> => {
+    setConfigName(name);
+    setConfigCommand("");
+    setConfigError("");
+    setConfigNotice("");
+    try {
+      const data = await fetchAgentConfig();
+      const entry = data.items.find((item) => item.name === name);
+      const value = entry?.config?.codex_command;
+      setConfigCommand(typeof value === "string" ? value : "");
+    } catch (e) {
+      setConfigError(e instanceof Error ? e.message : "配置读取失败");
+    }
+  };
+
+  const closeAgentConfig = (): void => {
+    setConfigName(null);
+    setConfigCommand("");
+    setConfigError("");
+    setConfigNotice("");
+  };
+
+  const saveAgentConfig = async (name: string, commandOverride?: string | null): Promise<void> => {
+    const command = commandOverride !== undefined ? commandOverride : configCommand.trim() || null;
+    setConfigSaving(true);
+    setConfigError("");
+    setConfigNotice("");
+    try {
+      const updated = await updateAgentConfig(name, { command });
+      setConfigNotice(command ? "已保存手动路径。" : "已恢复自动检测。");
+      if (updated.integration_status === "not_installed") {
+        setConfigError(command ? `路径已保存，但该路径不可用：${command}` : "自动检测未找到 codex。");
+      }
+      closeAgentConfig();
+      await loadAgents();
+    } catch (e) {
+      setConfigError(e instanceof Error ? e.message : "配置保存失败");
+    } finally {
+      setConfigSaving(false);
     }
   };
 
@@ -987,6 +1036,59 @@ function MyAgentsPage() {
                     <li><span className="text-muted">协议</span> <b>{agent.protocol ?? "—"}</b></li>
                   </ul>
                   {agent.detail && <p className="text-xs text-muted mt-2 leading-relaxed break-anywhere">{agent.detail}</p>}
+                  {agent.name === "codex" && (
+                    configName === agent.name ? (
+                      <div className="mt-2.5 border-t border-line pt-2.5 flex flex-col gap-2 min-w-0">
+                        <div>
+                          <p className="text-[11px] text-muted mb-1">Codex 可执行文件路径</p>
+                          <input
+                            className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                            value={configCommand}
+                            onChange={(e) => setConfigCommand(e.target.value)}
+                            placeholder="留空 = 自动检测（PATH / Codex.app / ~/.codex/bin）"
+                          />
+                          <p className="text-[11px] text-muted mt-1">留空保存即恢复自动检测。</p>
+                        </div>
+                        {configNotice && <p className="text-[11px] text-ok">{configNotice}</p>}
+                        {configError && <p className="text-[11px] text-bad break-anywhere">{configError}</p>}
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="px-2.5 py-1 rounded-md bg-brand text-white text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                            onClick={() => void saveAgentConfig(agent.name)}
+                            disabled={configSaving}
+                          >
+                            {configSaving ? "保存中…" : "保存"}
+                          </button>
+                          <button
+                            className="px-2.5 py-1 rounded-md border border-line text-xs text-ink hover:bg-surface-secondary transition-colors disabled:opacity-50"
+                            onClick={() => void saveAgentConfig(agent.name, null)}
+                            disabled={configSaving}
+                          >
+                            恢复自动
+                          </button>
+                          <button
+                            className="px-2.5 py-1 rounded-md text-xs text-muted hover:text-ink transition-colors disabled:opacity-50"
+                            onClick={closeAgentConfig}
+                            disabled={configSaving}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2.5 border-t border-line pt-2 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-muted font-mono truncate min-w-0">
+                          {agent.command ? `路径 ${agent.command}` : "未检测到可执行文件"}
+                        </span>
+                        <button
+                          className="px-2.5 py-1 rounded-md border border-line text-xs text-ink hover:bg-surface-secondary transition-colors shrink-0"
+                          onClick={() => void openAgentConfig(agent.name)}
+                        >
+                          配置
+                        </button>
+                      </div>
+                    )
+                  )}
                 </div>
               );
             })}

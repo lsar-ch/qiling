@@ -1,4 +1,4 @@
-"""从 AgentCatalog 构建默认 Agent 注册表。"""
+"""从 AgentCatalog 构建/重建 Agent 注册表。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,14 @@ from app.agents.reserved import PendingAgentAdapter
 def build_agent_registry(catalog: AgentCatalog | None = None) -> AgentRegistry:
     catalog = catalog or load_agent_catalog()
     registry = AgentRegistry(default_executor=catalog.default_executor or "codex")
+    rebuild_agent_registry(registry, catalog)
+    return registry
+
+
+def rebuild_agent_registry(registry: AgentRegistry, catalog: AgentCatalog) -> None:
+    """把目录条目就地重建进现有 registry（保留 registry 对象引用）。"""
+    registry.clear()
+    registry.default_executor = catalog.default_executor or "codex"
     for entry in catalog.executors:
         if not entry.enabled:
             continue
@@ -18,4 +26,3 @@ def build_agent_registry(catalog: AgentCatalog | None = None) -> AgentRegistry:
             registry.register(CodexAdapter(catalog_entry=entry))
         else:
             registry.register(PendingAgentAdapter(entry))
-    return registry

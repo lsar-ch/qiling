@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -41,11 +42,88 @@ class AgentCatalog:
     executors: list[AgentCatalogEntry] = field(default_factory=list)
 
 
+def default_catalog_path() -> Path:
+    """默认执行器目录路径（支持 DESKMATE_AGENTS_CONFIG 覆盖）。"""
+    configured_path = os.environ.get("DESKMATE_AGENTS_CONFIG")
+    return Path(configured_path) if configured_path else repo_root() / "config" / "agents.yaml"
+
+
+def local_catalog_path(catalog_path: Path) -> Path:
+    """同一目录下的用户配置覆盖层文件。"""
+    return catalog_path.with_name("agents.local.yaml")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """原子写入文本文件，失败时清理临时文件并上抛。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".agents-", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def update_local_executor_config(
+    catalog_path: Path,
+    name: str,
+    config: dict[str, Any],
+) -> None:
+    """把 name 执行器的 config 键合并写入同目录 agents.local.yaml。
+
+    config 中值为 None 的键会被删除；写入后由调用方重载目录生效。
+    """
+    local_path = local_catalog_path(catalog_path)
+    executors: list[dict[str, Any]] = []
+    if local_path.exists():
+        try:
+            loaded = _read_yaml_file(local_path)
+            raw_executors = loaded.get("executors") if isinstance(loaded, dict) else None
+            if isinstance(raw_executors, list):
+                executors = [entry for entry in raw_executors if isinstance(entry, dict)]
+        except AgentCatalogError:
+            executors = []
+
+    found = False
+    for entry in executors:
+        if entry.get("name") != name:
+            continue
+        found = True
+        merged = dict(entry.get("config") or {})
+        for key, value in config.items():
+            if value is None:
+                merged.pop(key, None)
+            else:
+                merged[key] = value
+        if merged:
+            entry["config"] = merged
+        else:
+            entry.pop("config", None)
+        break
+    if not found:
+        new_config = {key: value for key, value in config.items() if value is not None}
+        entry: dict[str, Any] = {"name": name}
+        if new_config:
+            entry["config"] = new_config
+        executors.append(entry)
+
+    text = (
+        "# DeskMate 用户配置覆盖层：由「我的智能体」页面写入，请勿手改。\n"
+        "# 默认目录见 agents.yaml；覆盖优先级：agents.local.yaml > agents.yaml。\n"
+        + yaml.safe_dump({"version": 1, "executors": executors}, allow_unicode=True, sort_keys=False)
+    )
+    _atomic_write_text(local_path, text)
+
+
 def load_agent_catalog(path: Path | None = None) -> AgentCatalog:
     """加载 AgentCatalog，并按需合并同一目录下的 agents.local.yaml。"""
     if path is None:
-        configured_path = os.environ.get("DESKMATE_AGENTS_CONFIG")
-        path = Path(configured_path) if configured_path else repo_root() / "config" / "agents.yaml"
+        path = default_catalog_path()
 
     catalog_path = path.expanduser().resolve()
     data = _read_yaml_file(catalog_path)
@@ -126,6 +204,10 @@ def _merge_local_executors(
 
         base = merged.get(name)
         merged_raw = {**(base or {}), **raw}
+        base_config = (base or {}).get("config")
+        raw_config = raw.get("config")
+        if isinstance(base_config, dict) and isinstance(raw_config, dict):
+            merged_raw["config"] = {**base_config, **raw_config}
         entry = _entry_from_dict(merged_raw, local_path)
         merged[name] = asdict(entry)
         if name not in order_index:

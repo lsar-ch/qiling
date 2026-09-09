@@ -78,6 +78,49 @@ export async function fetchAgents(): Promise<{ items: AgentInfo[]; default_execu
   return fetchJson<{ items: AgentInfo[]; default_executor: string }>("/api/agents");
 }
 
+export interface AgentConfigEntry {
+  name: string;
+  label: string;
+  adapter: string;
+  enabled: boolean;
+  commands: string[];
+  protocol: string | null;
+  capabilities: string[];
+  source_url: string | null;
+  tags: string[];
+  detail: string;
+  config: Record<string, unknown>;
+}
+
+export async function fetchAgentConfig(): Promise<{
+  default_executor: string;
+  items: AgentConfigEntry[];
+}> {
+  return fetchJson<{ default_executor: string; items: AgentConfigEntry[] }>("/api/agents/config");
+}
+
+export async function updateAgentConfig(
+  name: string,
+  body: { command: string | null },
+): Promise<AgentInfo> {
+  const resp = await fetch(`/api/agents/${encodeURIComponent(name)}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const data = (await resp.json()) as { detail?: unknown };
+      if (typeof data?.detail === "string") detail = data.detail;
+    } catch {
+      // 保留默认错误信息
+    }
+    throw new Error(`「${name}」配置保存失败：${detail}`);
+  }
+  return (await resp.json()) as AgentInfo;
+}
+
 export async function fetchSession(): Promise<SessionResponse> {
   return fetchJson<SessionResponse>("/api/session");
 }
