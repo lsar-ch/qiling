@@ -6,9 +6,18 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 
+from pypinyin import lazy_pinyin
+
 _NOISE_RE = re.compile(r"[\s\W_]+", flags=re.UNICODE)
+_WAKE_PHONETIC_THRESHOLD = 0.75
+
+
+def _phonetic(text: str) -> str:
+    """无调拼音串，用于角色名谐音容错（千问 ≈ 请问/千万）。"""
+    return "".join(lazy_pinyin(text))
 
 
 def normalize(text: str) -> str:
@@ -35,11 +44,28 @@ def match_sleep(text: str, sleep_phrases: list[str]) -> str | None:
 
 def match_wake(text: str, persona_name: str, prefixes: list[str]) -> str | None:
     normalized = normalize(text)
+    name = normalize(persona_name)
     wake_texts = build_wake_texts(persona_name, prefixes)
     # 唤醒词取最长优先，避免「你好千问你好千问」等噪音误判已可容忍
     for candidate in sorted(wake_texts, key=len, reverse=True):
         if candidate in normalized:
             return candidate
+    # 兜底：问候前缀 + 角色名谐音近似（ASR 常把角色名听成近音词）。
+    # 仍要求以唤醒前缀开头、整句与唤醒词长度相当，长句普通对话不受影响。
+    if name:
+        name_py = _phonetic(name)
+        for prefix in sorted(prefixes, key=len, reverse=True):
+            clean_prefix = normalize(prefix)
+            if not clean_prefix or not normalized.startswith(clean_prefix):
+                continue
+            rest = normalized[len(clean_prefix):]
+            if not rest or len(rest) > len(name) + 2:
+                continue
+            if (
+                difflib.SequenceMatcher(None, _phonetic(rest), name_py).ratio()
+                >= _WAKE_PHONETIC_THRESHOLD
+            ):
+                return name
     return None
 
 

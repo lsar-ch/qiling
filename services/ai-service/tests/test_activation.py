@@ -26,6 +26,15 @@ def test_wake_binds_to_custom_persona() -> None:
     assert not match_wake("你好，千问", persona_name="银月", prefixes=["你好"])
 
 
+def test_wake_tolerates_asr_homophone() -> None:
+    # ASR 把「千问」听成近音词：带问候前缀的短句仍视为唤醒
+    assert match_wake("你好，请问", persona_name="千问", prefixes=["你好", "嗨"])
+    assert match_wake("你好千万", persona_name="千问", prefixes=["你好", "嗨"])
+    # 长句普通对话与其它角色名不误醒
+    assert not match_wake("你好，请问今天天气怎么样", persona_name="千问", prefixes=["你好"])
+    assert not match_wake("你好，银月", persona_name="千问", prefixes=["你好"])
+
+
 def test_sleep_phrases() -> None:
     assert match_sleep("先暂时静默一下吧", ["暂时静默", "先别说话"]) is not None
     assert match_sleep("帮我查个天气", ["暂时静默"]) is None
