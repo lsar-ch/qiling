@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from app.memory.service import MemoryService
+from app.memory.service import MemoryService, read_mirror_status
 
 router = APIRouter(prefix="/api/memories", tags=["memory"])
 
@@ -68,6 +68,20 @@ def search(request: Request, q: str = Query(min_length=1, max_length=200), limit
     return {"items": [item.model_dump(mode="json") for item in memory(request).search(q, limit)]}
 
 
+@router.get("/vault/status")
+def vault_status(request: Request) -> dict:
+    settings = request.app.state.settings
+    linked = settings.memory_mode == "obsidian_linked"
+    raw = (settings.obsidian_vault_path or "").strip()
+    if not linked or not raw:
+        return {"available": False, "path": None, "mirror_dir_exists": False, "last_sync": None, "doc_files": 0}
+    root = Path(raw).expanduser()
+    if not root.is_dir():
+        return {"available": False, "path": raw, "mirror_dir_exists": False, "last_sync": None, "doc_files": 0}
+    status = read_mirror_status(root)
+    return {"available": True, "path": raw, **status}
+
+
 @router.get("/sessions")
 def sessions(request: Request) -> dict:
     return {"items": memory(request).list_sessions()}
@@ -116,6 +130,8 @@ def obsidian_search(
     query = q.casefold()
     items = []
     for path in sorted(root.rglob("*.md")):
+        if path.relative_to(root).parts[0] == "DeskMate":
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):

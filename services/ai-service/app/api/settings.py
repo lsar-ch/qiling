@@ -177,6 +177,11 @@ def update_settings(payload: SettingsUpdate, request: Request) -> dict[str, Any]
     request.app.state.speech = build_speech_stack(request.app.state.settings)
     request.app.state.llm_provider = create_provider(request.app.state.settings)
     request.app.state.echo_mode = request.app.state.settings.llm_provider == "echo"
+    vault = Path(request.app.state.settings.obsidian_vault_path).expanduser()
+    if request.app.state.settings.memory_mode == "obsidian_linked" and vault.is_dir():
+        request.app.state.memory.set_vault_mirror(vault)
+    else:
+        request.app.state.memory.set_vault_mirror(None)
     return _public_settings(request)
 
 

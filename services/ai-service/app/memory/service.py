@@ -6,8 +6,10 @@ V1 以文件为真相源：L1 事件写 JSONL，L2/L3/persona 写 Markdown；检
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -30,6 +32,66 @@ L3_SLOTS = ("profile", "preferences", "progress", "recent")
 ENTRY_RE = re.compile(r"^-\s+(?P<text>.*?)\s*<!--(?P<id>m_[A-Za-z0-9_\-]+)-->")
 REF_RE = re.compile(r"\[\^(?P<n>\d+)\]")
 FOOTNOTE_RE = re.compile(r"^\[\^(?P<n>\d+)\]:\s*(?P<ref>.+)$")
+MIRROR_TS_RE = re.compile(r"更新时间[:：]\s*(.+?)\s*$")
+
+MIRROR_ROOT_NAME = "DeskMate"
+MIRROR_DIR_NAME = "记忆"
+MIRROR_ARCHIVE_DIR = "档案"
+MIRROR_SNAPSHOT_DIR = "快照"
+MIRROR_README_FILE = "README.md"
+MIRROR_SNAPSHOT_FILE = "记忆快照.md"
+
+
+def mirror_dir_for(vault_root: Path | None) -> Path | None:
+    """把 vault 根目录映射到 DeskMate 写入镜像目录；根无效时返回 None。"""
+    if vault_root is None:
+        return None
+    root = Path(vault_root).expanduser()
+    if not root.is_dir():
+        return None
+    return root / MIRROR_ROOT_NAME / MIRROR_DIR_NAME
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """原子写入（同目录临时文件 + replace），失败清理临时文件并上抛。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".deskmate-", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text.rstrip() + "\n")
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def read_mirror_status(vault_root: Path | None) -> dict:
+    """读取镜像目录磁盘状态（无副作用、容错）。"""
+    mirror = mirror_dir_for(vault_root)
+    if mirror is None or not mirror.is_dir():
+        return {"mirror_dir_exists": False, "last_sync": None, "doc_files": 0}
+    last_sync = None
+    try:
+        readme = mirror / MIRROR_README_FILE
+        if readme.is_file():
+            text = readme.read_text(encoding="utf-8")
+            match = MIRROR_TS_RE.search(text)
+            if match:
+                last_sync = match.group(1)
+        docs = [
+            p
+            for p in mirror.rglob("*.md")
+            if not (p.parent == mirror and p.name == MIRROR_README_FILE)
+        ]
+        if last_sync is None and docs:
+            newest = max(p.stat().st_mtime for p in docs)
+            last_sync = datetime.fromtimestamp(newest, timezone.utc).isoformat()
+    except OSError:
+        return {"mirror_dir_exists": True, "last_sync": last_sync, "doc_files": 0}
+    return {"mirror_dir_exists": True, "last_sync": last_sync, "doc_files": len(docs)}
 
 
 def _now() -> str:
@@ -61,6 +123,7 @@ class MemoryService:
     def __init__(self, root: Path, *, persona_dir: Path | None = None) -> None:
         self.root = root
         self.persona_dir = persona_dir
+        self._vault_mirror_root: Path | None = None
         self.root.mkdir(parents=True, exist_ok=True)
         for surface in SURFACES:
             (self.root / "trace" / surface).mkdir(parents=True, exist_ok=True)
@@ -104,6 +167,7 @@ class MemoryService:
         tmp.write_text(text.rstrip() + "\n", encoding="utf-8")
         tmp.replace(path)
         self.rebuild_index()
+        self._sync_vault_mirror(only=(layer, key))
 
     def parse_doc(self, layer: str, key: str) -> MemoryDoc:
         raw = self._read_text(layer, key)
@@ -197,6 +261,7 @@ class MemoryService:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(item, ensure_ascii=False) + "\n")
+        self._sync_vault_mirror(rewrite_archives=False)
         return trace_id
 
     def upsert_entry(self, layer: str, key: str, section: str, text: str, refs: list[str]) -> str:
@@ -434,3 +499,87 @@ class MemoryService:
                                 (entry.entry_id, layer, key, section.title, entry.text, json.dumps(entry.refs, ensure_ascii=False)),
                             )
             conn.commit()
+
+    def set_vault_mirror(self, vault_root: Path | None) -> None:
+        """启用/停用 vault 写入镜像；有效目录启用并立即全量同步，任何失败静默降级。"""
+        self._vault_mirror_root = None
+        if vault_root is None:
+            return
+        mirror = mirror_dir_for(vault_root)
+        if mirror is None:
+            return
+        try:
+            mirror.mkdir(parents=True, exist_ok=True)
+            self._vault_mirror_root = mirror
+            self._sync_vault_mirror()
+        except OSError:
+            self._vault_mirror_root = None
+
+    def _sync_vault_mirror(self, *, only: tuple[str, str] | None = None, rewrite_archives: bool = True) -> bool:
+        """把本地记忆增量镜像到 vault。异常静默吞掉，返回是否成功。"""
+        mirror = self._vault_mirror_root
+        if mirror is None:
+            return True
+        try:
+            archive_dir = mirror / MIRROR_ARCHIVE_DIR
+            snapshot_dir = mirror / MIRROR_SNAPSHOT_DIR
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_dir.mkdir(parents=True, exist_ok=True)
+            if rewrite_archives:
+                if only is not None:
+                    layer, key = only
+                    archive_paths = [(archive_dir / f"{self._mirror_filename(layer, key)}.md", self._read_text(layer, key))]
+                else:
+                    archive_paths = [
+                        (archive_dir / f"{self._mirror_filename(layer, key)}.md", self._read_text(layer, key))
+                        for layer, key in self._mirror_docs()
+                    ]
+                for path, text in archive_paths:
+                    _atomic_write(path, text)
+            _atomic_write(snapshot_dir / MIRROR_SNAPSHOT_FILE, self._mirror_snapshot_text())
+            _atomic_write(mirror / MIRROR_README_FILE, self._mirror_readme_text())
+            return True
+        except OSError:
+            return False
+
+    def _mirror_docs(self) -> list[tuple[str, str]]:
+        docs: list[tuple[str, str]] = []
+        for layer, keys in (
+            ("L2", SURFACES),
+            ("L3", L3_SLOTS),
+            ("persona", sorted(p.stem for p in (self.root / "persona").glob("*.md"))),
+        ):
+            docs.extend((layer, key) for key in keys)
+        return docs
+
+    def _mirror_filename(self, layer: str, key: str) -> str:
+        safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", key).strip(" .") or "_"
+        return f"{layer}-{safe}"
+
+    def _mirror_snapshot_text(self) -> str:
+        parts = ["# 记忆快照", "", f"> 生成时间：{_now()}（UTC）", ""]
+        for layer, key in self._mirror_docs():
+            doc = self.parse_doc(layer, key)
+            lines = doc.raw_markdown.splitlines()
+            if lines and lines[0].startswith("# "):
+                lines = lines[1:]
+            parts.append(f"## {doc.title}（{layer} · {key}）")
+            parts.append("")
+            body = "\n".join(lines).strip("\n")
+            if body:
+                parts.append(body)
+            parts.append("")
+        return "\n".join(parts).rstrip() + "\n"
+
+    def _mirror_readme_text(self) -> str:
+        return "\n".join(
+            [
+                "# DeskMate 记忆镜像",
+                "",
+                "本目录由 DeskMate 自动维护：将本地记忆（L2/L3/persona）整理为只读镜像副本。",
+                "请勿手动编辑本目录；本地记忆变化后会自动增量同步，本地删除不会改动此副本。",
+                "",
+                f"更新时间：{_now()}",
+                "",
+            ]
+        )
