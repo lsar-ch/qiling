@@ -1,0 +1,552 @@
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  createPersona,
+  fetchPersonas,
+  fetchSettings,
+  updatePersona,
+  updateSettings,
+  type AppSettings,
+  type PersonaCard,
+} from "./api";
+
+const inputCls =
+  "w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20";
+const cardCls = "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0";
+
+const splitList = (value: string): string[] =>
+  value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean);
+
+function voiceBadgeText(persona: PersonaCard): string {
+  const voice = persona.voice?.voice;
+  if (voice?.trim()) {
+    const parts = voice.split(/[_/]/).filter(Boolean);
+    if (parts.length >= 2) return parts.slice(-2).join("_");
+    return parts[parts.length - 1] ?? voice;
+  }
+  if (persona.voice?.provider) return persona.voice.provider;
+  return "未设置音色";
+}
+
+function PersonaAvatar({ persona, className }: { persona: PersonaCard; className: string }) {
+  if (persona.avatar?.trim()) {
+    return (
+      <img
+        src={persona.avatar}
+        alt={`${persona.name} 头像`}
+        className={`${className} object-cover bg-surface-secondary`}
+      />
+    );
+  }
+  return (
+    <div className={`${className} bg-brand text-white grid place-items-center font-bold shrink-0`}>
+      {(persona.name || "?").slice(0, 1)}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+  type = "text",
+  min,
+  max,
+  step,
+}: {
+  label: string;
+  value: string | number;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  hint?: string;
+  type?: string;
+  min?: number | string;
+  max?: number | string;
+  step?: number | string;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5 text-xs text-muted min-w-0">
+      {label}
+      <input
+        className={inputCls}
+        type={type}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {hint ? <small className="text-[11px] text-muted break-words">{hint}</small> : null}
+    </label>
+  );
+}
+
+function TextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+  rows = 3,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  hint?: string;
+  rows?: number;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5 text-xs text-muted min-w-0">
+      {label}
+      <textarea
+        className={`${inputCls} min-h-[68px] resize-y`}
+        rows={rows}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {hint ? <small className="text-[11px] text-muted break-words">{hint}</small> : null}
+    </label>
+  );
+}
+
+function CardSection({
+  title,
+  badge,
+  children,
+}: {
+  title: string;
+  badge?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={cardCls}>
+      <div className="flex items-center justify-between gap-2.5">
+        <h3 className="text-sm font-semibold text-ink">{title}</h3>
+        {badge ? <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted whitespace-nowrap">{badge}</span> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export default function CharacterPage() {
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [personas, setPersonas] = useState<PersonaCard[]>([]);
+  const [draft, setDraft] = useState<PersonaCard | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = async (): Promise<void> => {
+    setLoading(true);
+    setError("");
+    try {
+      const [nextSettings, nextPersonas] = await Promise.all([fetchSettings(), fetchPersonas()]);
+      setSettings(nextSettings);
+      setPersonas(nextPersonas);
+      setDraft(nextPersonas.find((item) => item.id === nextSettings.active_persona_id) ?? nextPersonas[0] ?? null);
+      setDirty(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "角色卡加载失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // 仅挂载时加载一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const patch = (update: (current: PersonaCard) => PersonaCard): void => {
+    setDraft((current) => (current ? update(current) : current));
+    setDirty(true);
+  };
+
+  const setVoiceField = (
+    key: "voice" | "speed" | "pitch" | "emotion" | "instruction",
+    value: string | number | undefined,
+  ): void => {
+    patch((current) => ({ ...current, voice: { ...current.voice, [key]: value } }));
+  };
+
+  const setActivationField = (key: "persona_name" | "wake_prefixes" | "sleep_phrases", value: string): void => {
+    if (key === "persona_name") {
+      patch((current) => ({ ...current, activation: { ...current.activation, persona_name: value } }));
+      return;
+    }
+    patch((current) => ({ ...current, activation: { ...current.activation, [key]: splitList(value) } }));
+  };
+
+  const voicePayload = (persona: PersonaCard): Record<string, unknown> => ({
+    active_persona_id: persona.id,
+    ...(persona.voice?.speed != null ? { voice_speed: persona.voice.speed } : {}),
+    ...(persona.voice?.pitch != null ? { voice_pitch: persona.voice.pitch } : {}),
+    ...(persona.voice?.emotion ? { voice_emotion: persona.voice.emotion } : {}),
+    ...(persona.voice?.instruction ? { voice_instruction: persona.voice.instruction } : {}),
+  });
+
+  const activate = async (persona: PersonaCard): Promise<void> => {
+    if (dirty && !window.confirm("当前角色有未保存修改，启用其它角色将丢弃编辑，继续吗？")) return;
+    setBusyId(persona.id);
+    setError("");
+    setNotice("");
+    try {
+      const nextSettings = await updateSettings(voicePayload(persona));
+      setSettings(nextSettings);
+      setDraft(persona);
+      setDirty(false);
+      setNotice(`已启用「${persona.name}」：身份与语音配置已生效。`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "启用失败");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const save = async (): Promise<void> => {
+    if (!draft) return;
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await updatePersona(draft);
+      const isActive = saved.id === settings?.active_persona_id;
+      let nextSettings = settings;
+      if (isActive) {
+        nextSettings = await updateSettings(voicePayload(saved));
+      }
+      setSettings(nextSettings);
+      setPersonas((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      setDraft(saved);
+      setDirty(false);
+      setNotice(
+        isActive
+          ? `已保存「${saved.name}」：语音配置已生效。`
+          : `已保存「${saved.name}」。点击左侧卡片「启用」即可切换角色。`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createNewPersona = async (): Promise<void> => {
+    const id = window.prompt("请输入角色卡 ID（只允许英文、数字、_、-）", `persona_${personas.length + 1}`);
+    if (!id) return;
+    const name = window.prompt("请输入角色名称", "新角色");
+    if (!name) return;
+    setError("");
+    setNotice("");
+    try {
+      const created = await createPersona({
+        id,
+        name,
+        kind: "assistant",
+        description: "新的桌面 AI 工作伙伴",
+        personality: ["自然", "亲切"],
+        backstory: "",
+        language: "zh-CN",
+        reply_style: "默认用中文、简洁、适合朗读。",
+        avatar: "",
+        voice: { provider: "minimax", model: "speech-2.8-hd", voice: "Chinese (Mandarin)_Soft_Girl", speed: 1.05, pitch: 1 },
+        activation: { persona_name: name, wake_prefixes: ["你好", "嗨"], sleep_phrases: ["暂时静默", "先别说话", "安静一下"] },
+      });
+      setPersonas((current) => [...current, created]);
+      setDraft(created);
+      setDirty(false);
+      setNotice(`已创建「${created.name}」。完善配置后点击「保存」。`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "角色卡创建失败");
+    }
+  };
+
+  const selectPersona = (persona: PersonaCard): void => {
+    setDraft(persona);
+    setDirty(false);
+  };
+
+  const heading = (
+    <div className="flex flex-col gap-1">
+      <h2 className="text-xl font-bold text-ink">角色卡</h2>
+      <p className="text-sm text-muted">角色与语音绑定：启用一个角色，会整套切换其身份、音色与唤醒配置。</p>
+    </div>
+  );
+
+  const noticeBlock = (
+    <>
+      {notice ? <div className="rounded-lg border border-ok/30 bg-ok-50 px-3 py-2.5 text-xs text-ok break-words">{notice}</div> : null}
+      {error ? <div className="rounded-lg bg-bad-50 text-bad px-3.5 py-2.5 text-sm break-words">{error}</div> : null}
+    </>
+  );
+
+  if (loading) {
+    return (
+      <section className="flex flex-col gap-3.5 min-w-0">
+        {heading}
+        <div className={cardCls}>
+          <p className="text-sm text-muted">角色卡加载中…</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (error && !personas.length) {
+    return (
+      <section className="flex flex-col gap-3.5 min-w-0">
+        {heading}
+        {noticeBlock}
+        <div className={cardCls}>
+          <p className="text-sm text-muted break-words">{error}</p>
+          <button className="rounded-lg px-4 py-2 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors self-start" type="button" onClick={() => void load()}>
+            重试加载
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (!personas.length) {
+    return (
+      <section className="flex flex-col gap-3.5 min-w-0">
+        {heading}
+        {noticeBlock}
+        <div className={`${cardCls} items-center justify-center text-center py-10 gap-3`}>
+          <p className="text-sm text-ink font-medium">还没有角色卡</p>
+          <p className="text-xs text-muted">新建第一个角色卡，为 DeskMate 配置身份、音色与唤醒方式。</p>
+          <button className="rounded-lg px-4 py-2.5 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors" type="button" onClick={() => void createNewPersona()}>
+            新建第一个角色卡
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const activePersonaId = settings?.active_persona_id ?? "";
+
+  return (
+    <section className="flex flex-col gap-3.5 min-w-0">
+      {heading}
+      {noticeBlock}
+      <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-3.5 min-w-0">
+        {/* 左栏：角色库列表 */}
+        <div className="flex flex-col gap-2.5 min-w-0">
+          <div className="flex items-center justify-between gap-2.5 min-w-0">
+            <h3 className="text-sm font-semibold text-ink">角色库</h3>
+            <button className="text-brand text-xs hover:underline whitespace-nowrap" type="button" onClick={() => void createNewPersona()}>
+              新建角色卡
+            </button>
+          </div>
+          <div className="flex flex-col gap-2 min-w-0">
+            {personas.map((persona) => {
+              const isActive = persona.id === activePersonaId;
+              const isSelected = draft?.id === persona.id;
+              const isBusy = busyId === persona.id;
+              return (
+                <div
+                  key={persona.id}
+                  role="button"
+                  tabIndex={0}
+                  className={`rounded-lg border bg-white shadow-card p-3.5 flex flex-col gap-2.5 min-w-0 cursor-pointer transition-colors ${
+                    isSelected ? "border-brand ring-1 ring-brand/20" : "border-line hover:border-brand"
+                  }`}
+                  onClick={() => selectPersona(persona)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      selectPersona(persona);
+                    }
+                  }}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <PersonaAvatar persona={persona} className="w-10 h-10 rounded-full text-lg" />
+                    <div className="flex flex-col gap-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-semibold text-ink truncate">{persona.name || "未命名角色"}</span>
+                        {persona.kind ? <span className="text-[11px] text-muted whitespace-nowrap">· {persona.kind}</span> : null}
+                      </div>
+                      <div className="flex flex-wrap gap-1 min-w-0">
+                        {persona.personality.slice(0, 3).map((tag) => (
+                          <span key={tag} className="rounded-full bg-brand-50 text-brand px-2 py-0.5 text-[11px] break-words max-w-full">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-line-subtle px-2 py-0.5 text-[11px] text-muted min-w-0" title={persona.voice?.voice ?? persona.voice?.provider}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted shrink-0" />
+                      <span className="truncate">{voiceBadgeText(persona)}</span>
+                    </span>
+                    <button
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors shrink-0 ${
+                        isActive ? "bg-line-subtle text-muted cursor-default" : "bg-brand text-white hover:bg-brand-600"
+                      }`}
+                      type="button"
+                      disabled={isActive || isBusy}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!isActive) void activate(persona);
+                      }}
+                    >
+                      {isActive ? "使用中" : isBusy ? "启用中…" : "启用"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 右栏：当前选中角色的编辑器 */}
+        <div className="flex flex-col gap-3.5 min-w-0">
+          {dirty ? (
+            <div className="rounded-lg bg-warn-50 text-warn px-3 py-2.5 text-xs leading-relaxed">有未保存修改：改动仅在本页草稿中，点击下方「保存」才会写入角色卡。</div>
+          ) : null}
+          {draft ? (
+            <>
+              <div className="flex items-start justify-between gap-2.5 min-w-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <PersonaAvatar persona={draft} className="w-11 h-11 rounded-full text-lg" />
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <h3 className="text-base font-semibold text-ink break-words">{draft.name || "未命名角色"}</h3>
+                    {draft.description ? <p className="text-xs text-muted break-words">{draft.description}</p> : null}
+                  </div>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 ${draft.id === activePersonaId ? "bg-ok-50 text-ok" : "bg-line-subtle text-muted"}`}>
+                  {draft.id === activePersonaId ? "使用中" : "未启用"}
+                </span>
+              </div>
+
+              <CardSection title="身份人设" badge="身份">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 min-w-0">
+                  <Field label="角色名称" value={draft.name} onChange={(value) => patch((current) => ({ ...current, name: value }))} hint="唤醒词默认使用这个名称。" />
+                  <Field label="角色类型（kind）" value={draft.kind} onChange={(value) => patch((current) => ({ ...current, kind: value }))} hint="例如 assistant、cat、secretary。" />
+                </div>
+                <Field label="一句话介绍" value={draft.description} onChange={(value) => patch((current) => ({ ...current, description: value }))} hint="用于角色在主界面的简介。" />
+                <Field
+                  label="性格标签"
+                  value={draft.personality.join("、")}
+                  onChange={(value) => patch((current) => ({ ...current, personality: splitList(value) }))}
+                  hint="用顿号分隔，例如：自然、可靠、略带幽默。"
+                />
+                <TextArea label="背景故事" value={draft.backstory} onChange={(value) => patch((current) => ({ ...current, backstory: value }))} hint="作为稳定人设背景，不等同于用户记忆。" />
+                <TextArea label="回复风格" value={draft.reply_style} onChange={(value) => patch((current) => ({ ...current, reply_style: value }))} hint="会影响后续对话提示词和语音表达。" />
+              </CardSection>
+
+              <CardSection title="形象" badge="V2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <PersonaAvatar persona={draft} className="w-16 h-16 rounded-full text-2xl" />
+                  <div className="flex-1 min-w-0">
+                    <Field label="头像 URL" value={draft.avatar} onChange={(value) => patch((current) => ({ ...current, avatar: value }))} placeholder="https://…/avatar.png" />
+                  </div>
+                </div>
+                <div className="rounded-lg bg-line-subtle px-3 py-2.5 text-xs text-muted leading-relaxed break-words">
+                  形象训练开发中：当前为静态形象，CharacterConfig 预留口型/动画扩展（V2）。
+                </div>
+              </CardSection>
+
+              <CardSection title="语音" badge="绑定本角色">
+                <p className="text-xs text-muted leading-relaxed break-words">语音引擎与音色随角色启用生效；语音总开关、激活与默认状态见设置页「语音能力」。</p>
+                {draft.voice?.provider || draft.voice?.model ? (
+                  <p className="text-[11px] text-muted leading-relaxed break-words">
+                    语音引擎：{draft.voice?.provider ? `${draft.voice.provider} · ` : ""}{draft.voice?.model ?? "默认模型"}
+                  </p>
+                ) : null}
+                <Field
+                  label="音色"
+                  value={draft.voice?.voice ?? ""}
+                  onChange={(value) => setVoiceField("voice", value)}
+                  placeholder="MiniMax Soft_Girl 类"
+                  hint="填写供应商音色 ID，例如 Chinese (Mandarin)_Soft_Girl。"
+                />
+                <div className="grid grid-cols-2 gap-2.5 min-w-0">
+                  <Field
+                    label="语速"
+                    type="number"
+                    min="0.5"
+                    max="2"
+                    step="0.05"
+                    value={draft.voice?.speed ?? ""}
+                    onChange={(value) => setVoiceField("speed", value === "" ? undefined : Number(value))}
+                    hint="范围 0.5–2，步进 0.05。"
+                  />
+                  <Field
+                    label="音高"
+                    type="number"
+                    min="0.5"
+                    max="2"
+                    step="0.05"
+                    value={draft.voice?.pitch ?? ""}
+                    onChange={(value) => setVoiceField("pitch", value === "" ? undefined : Number(value))}
+                    hint="范围 0.5–2，步进 0.05。"
+                  />
+                </div>
+                <Field
+                  label="情绪"
+                  value={draft.voice?.emotion ?? ""}
+                  onChange={(value) => setVoiceField("emotion", value)}
+                  placeholder="例如 gentle"
+                  hint="可选；不同供应商支持的情绪标签不同。"
+                />
+                <TextArea
+                  label="风格指令"
+                  value={draft.voice?.instruction ?? ""}
+                  onChange={(value) => setVoiceField("instruction", value)}
+                  placeholder="例如：温柔、自然、语速适中"
+                  hint="用于 TTS 的表现提示，不改变角色身份。"
+                />
+              </CardSection>
+
+              <CardSection title="唤醒与监听" badge="绑定本角色">
+                <Field
+                  label="唤醒词角色名"
+                  value={draft.activation?.persona_name ?? draft.name}
+                  onChange={(value) => setActivationField("persona_name", value)}
+                  hint={`例如"你好，${draft.activation?.persona_name ?? draft.name}"。`}
+                />
+                <Field
+                  label="唤醒前缀"
+                  value={(draft.activation?.wake_prefixes ?? []).join("、")}
+                  onChange={(value) => setActivationField("wake_prefixes", value)}
+                  hint="用顿号分隔多个前缀。"
+                />
+                <Field
+                  label="静默指令"
+                  value={(draft.activation?.sleep_phrases ?? []).join("、")}
+                  onChange={(value) => setActivationField("sleep_phrases", value)}
+                  hint="说出其中任意一句后，普通语音不会触发对话。"
+                />
+                <p className="text-xs text-muted leading-relaxed break-words">默认状态（常开/静默）是全局设置，见设置页「语音能力」。</p>
+              </CardSection>
+
+              <div className="flex items-center justify-between gap-2.5 min-w-0">
+                <p className="text-[11px] text-muted break-words">
+                  {draft.id === activePersonaId ? "当前角色正在使用中：保存后身份与语音配置立即生效。" : "保存仅写入角色卡；启用请点击左侧卡片「启用」。"}
+                </p>
+                <button
+                  className="rounded-lg px-4 py-2.5 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-55 shrink-0"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void save()}
+                >
+                  {saving ? "保存中…" : "保存"}
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -98,6 +98,8 @@ export interface PersonaCard {
     voice?: string;
     speed?: number;
     pitch?: number;
+    emotion?: string;
+    instruction?: string;
   };
   activation: {
     persona_name?: string;
@@ -255,6 +257,17 @@ export async function searchObsidian(query: string): Promise<ObsidianSearchResul
   return fetchJson<ObsidianSearchResult>(`/api/memories/obsidian/search?q=${encodeURIComponent(query)}`);
 }
 
+export interface MemoryVaultStatus {
+  available: boolean;
+  path: string | null;
+  mirror_dir_exists: boolean;
+  last_sync: string | null;
+  doc_files: number;
+}
+
+export async function fetchMemoryVaultStatus(): Promise<MemoryVaultStatus> {
+  return fetchJson<MemoryVaultStatus>("/api/memories/vault/status");
+}
 
 export interface WidgetStatusReport {
   state: string;

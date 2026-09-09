@@ -21,27 +21,27 @@ import {
   decideRun,
   type AgentRun,
   type AgentRunMode,
-  createPersona,
-  fetchPersonas,
   fetchSettings,
   routeTask,
   searchMemories,
   searchObsidian,
+  fetchMemoryVaultStatus,
   fetchWidgetState,
   publishEvent,
   saveMemoryDoc,
-  updatePersona,
   updateSettings,
   type AppSettings,
-  type PersonaCard,
+  type MemoryVaultStatus,
   type HealthResponse,
   type SessionResponse,
   type WidgetStatusReport,
 } from "./api";
 import { DEMO_ACTIONS, STATE_LABEL_ZH } from "./state";
 import ChatPage from "./ChatPage";
+import CharacterPage from "./CharacterPage";
+import AboutPage from "./AboutPage";
 
-type PageKey = "home" | "chat" | "memory" | "kb" | "agents" | "settings";
+type PageKey = "home" | "chat" | "character" | "memory" | "kb" | "agents" | "settings" | "about";
 
 type TaskActionStatus = "running" | "awaiting_approval" | "completed" | "failed";
 
@@ -100,20 +100,15 @@ const AGENT_CARD_CLS: Record<AgentIntegrationStatus, string> = {
   error: "border-bad/40 bg-bad-50/40",
 };
 
-// 记忆三档模式的统一文案（Memory 与 Settings 共用，避免两种说法）。
-const MEMORY_MODE_INFO: Record<string, { label: string; hint: string }> = {
-  standalone: { label: "独立本地", hint: "默认发布模式：记忆写入本机档案，Obsidian 检索关闭。" },
-  obsidian_linked: { label: "Obsidian 连接", hint: "只读检索：记忆本体仍存本地，可在记忆页与知识库搜索 vault。" },
-  export_import: { label: "导入导出", hint: "仅使用本地档案：可导出记忆包，导入向导将在后续版本补充。" },
-};
-
 const NAV: { key: PageKey; label: string }[] = [
   { key: "home", label: "主页" },
   { key: "chat", label: "对话" },
+  { key: "character", label: "角色卡" },
   { key: "memory", label: "记忆" },
   { key: "kb", label: "知识库" },
   { key: "agents", label: "我的智能体" },
   { key: "settings", label: "设置" },
+  { key: "about", label: "关于" },
 ];
 
 function eventToState(eventType: string): string | null {
@@ -170,6 +165,10 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
 
 function KnowledgeBasePage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [draftPath, setDraftPath] = useState("");
+  const [vault, setVault] = useState<MemoryVaultStatus | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ available: boolean; path: string; items: { path: string; title: string; matches: string[] }[] } | null>(null);
   const [searching, setSearching] = useState(false);
@@ -177,8 +176,62 @@ function KnowledgeBasePage() {
   const [searchedQuery, setSearchedQuery] = useState("");
 
   useEffect(() => {
-    void fetchSettings().then(setSettings).catch(() => setError("设置加载失败"));
+    void fetchSettings()
+      .then((s) => {
+        setSettings(s);
+        setDraftPath(s.memory.obsidian_vault_path);
+      })
+      .catch(() => setError("设置加载失败"));
+    void fetchMemoryVaultStatus().then(setVault).catch(() => setVault(null));
   }, []);
+
+  const linked = settings?.memory.mode === "obsidian_linked";
+  const vaultConfigured = Boolean(vault?.available);
+
+  const reloadVaultStatus = async (): Promise<void> => {
+    try {
+      setVault(await fetchMemoryVaultStatus());
+    } catch {
+      setVault(null);
+    }
+  };
+
+  const enableVault = async (): Promise<void> => {
+    const path = draftPath.trim();
+    if (!path) {
+      setError("请先填写库路径（可留空稍后再配，填了即启用检索与自动归档）。");
+      return;
+    }
+    setSaving(true);
+    setNotice("");
+    setError("");
+    try {
+      const next = await updateSettings({ memory_mode: "obsidian_linked", obsidian_vault_path: path });
+      setSettings(next);
+      setNotice("已启用本地仓库：保存后记忆页会把记忆自动归档到库内独立目录。");
+      await reloadVaultStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "启用失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const disableVault = async (): Promise<void> => {
+    setSaving(true);
+    setNotice("");
+    setError("");
+    try {
+      const next = await updateSettings({ memory_mode: "standalone" });
+      setSettings(next);
+      setNotice("已断开本地仓库；记忆继续保存在本机。路径输入已保留，随时可重新启用。");
+      await reloadVaultStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "断开失败");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const runSearch = async () => {
     if (!query.trim()) return;
@@ -196,31 +249,77 @@ function KnowledgeBasePage() {
     }
   };
 
-  const vaultPath = settings?.memory.obsidian_vault_path ?? "";
-  const vaultConfigured = settings?.memory.obsidian_configured ?? false;
-
   return (
     <div className="flex flex-col gap-5">
-      {/* Vault status card */}
+      {/* Vault config card */}
       <div className="rounded-lg border border-line bg-white shadow-card">
         <div className="px-5 py-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-ink">Obsidian 知识库</h3>
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-              vaultConfigured ? "bg-ok-50 text-ok" : "bg-warn-50 text-warn"
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${vaultConfigured ? "bg-ok" : "bg-warn"}`} />
-              {vaultConfigured ? "已配置" : "未配置"}
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${linked ? "bg-ok-50 text-ok" : "bg-warn-50 text-warn"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${linked ? "bg-ok" : "bg-warn"}`} />
+              {linked ? "已启用" : "未启用"}
             </span>
           </div>
-          {vaultPath ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted">库路径</span>
-              <code className="text-xs font-mono text-ink bg-surface-tertiary px-2 py-1 rounded-md truncate max-w-full">{vaultPath}</code>
-            </div>
-          ) : (
-            <p className="text-xs text-muted">
-              请在设置中配置 Obsidian 知识库路径，以启用只读检索功能。
+          <p className="text-xs text-muted leading-relaxed mb-3">
+            库路径可填可不填。启用后，记忆页会把本地记忆自动归档到该库的 <code className="font-mono">DeskMate/记忆</code> 独立目录，不影响库内其它内容；记忆本体仍保存在本机。
+          </p>
+          <label className="flex flex-col gap-1.5 text-xs text-muted mb-3">
+            <span>库路径</span>
+            <input
+              className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+              value={draftPath}
+              onChange={(e) => setDraftPath(e.target.value)}
+              placeholder="/Users/.../knowledge"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {!linked ? (
+              <button
+                className="h-[38px] px-4 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                onClick={() => void enableVault()}
+                disabled={saving}
+              >
+                {saving ? "启用中…" : "保存并启用"}
+              </button>
+            ) : (
+              <>
+                <button
+                  className="h-[38px] px-4 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                  onClick={() => void enableVault()}
+                  disabled={saving}
+                >
+                  {saving ? "保存中…" : "保存路径"}
+                </button>
+                <button
+                  className="h-[38px] px-4 rounded-lg border border-line bg-surface-tertiary text-sm text-ink hover:border-bad hover:text-bad transition-colors disabled:opacity-50"
+                  onClick={() => void disableVault()}
+                  disabled={saving}
+                >
+                  断开
+                </button>
+              </>
+            )}
+          </div>
+          {notice && <p className="text-xs text-ok mt-2.5 leading-relaxed">{notice}</p>}
+          {linked && vault && !vault.available && (
+            <p className="text-xs text-warn mt-2.5 leading-relaxed">当前路径不可访问或未启用：检索暂不可用。记忆仍保存在本机，可保留该路径稍后修正。</p>
+          )}
+          {linked && vault?.available && (
+            <p className="flex items-center gap-1.5 text-[11px] text-muted mt-2.5 leading-relaxed min-w-0">
+              {vault.mirror_dir_exists ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-ok shrink-0" />
+                  <span className="min-w-0">自动归档已就绪：库内 <code className="font-mono">DeskMate/记忆</code> 共 {vault.doc_files} 份文档
+                    {vault.last_sync ? ` · 上次同步 ${new Date(vault.last_sync).toLocaleString("zh-CN", { hour12: false })}` : ""}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-warn shrink-0" />
+                  <span className="min-w-0">仓库可用，归档目录尚未生成；保存后首次记忆变更会创建。</span>
+                </>
+              )}
             </p>
           )}
         </div>
@@ -248,8 +347,8 @@ function KnowledgeBasePage() {
             </button>
           </div>
           {!vaultConfigured ? (
-            <p className="text-xs text-warn mt-2">
-              知识库未配置，搜索暂不可用。请在「设置 → 记忆」中启用 Obsidian 并填写库路径。
+            <p className="text-xs text-warn mt-2 leading-relaxed">
+              尚未连接可用的本地仓库，搜索暂不可用。在上方填写库路径并点「保存并启用」后即可检索。
             </p>
           ) : searching ? (
             <p className="text-xs text-brand mt-2 flex items-center gap-1.5">
@@ -280,7 +379,7 @@ function KnowledgeBasePage() {
               <div className="rounded-lg bg-warn-50 text-warn px-4 py-3.5 text-sm leading-relaxed">
                 Obsidian 检索暂不可用：当前未启用「obsidian_linked」记忆模式，或库路径无效。
                 <code className="mt-1.5 block text-xs font-mono break-anywhere">{results.path || "（路径为空）"}</code>
-                请到「设置 → 记忆」检查记忆模式与库路径后重试。
+                请在上方检查库路径与启用状态后重试。
               </div>
             ) : results.items.length === 0 ? (
               <div className="border border-dashed border-line rounded-lg px-6 py-8 text-center">
@@ -315,7 +414,7 @@ function KnowledgeBasePage() {
       {/* Info section */}
       <div className="rounded-lg border border-line bg-surface-tertiary px-5 py-3.5">
         <p className="text-xs text-muted leading-relaxed">
-          知识库当前仅支持 Obsidian 只读检索。写入、授权和更多知识库功能将在后续版本中接入。记忆页面也包含本地搜索入口。
+          知识库当前仅支持 Obsidian 只读检索与记忆自动归档。写入、授权和更多知识库功能将在后续版本中接入。记忆页面也包含本地搜索入口。
         </p>
       </div>
     </div>
@@ -336,6 +435,7 @@ function MemoryPage() {
   const [obsidianSearched, setObsidianSearched] = useState(false);
   const [status, setStatus] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [vaultStatus, setVaultStatus] = useState<MemoryVaultStatus | null>(null);
 
   const reload = async (): Promise<void> => {
     const [nextSettings, items, compiledDoc] = await Promise.all([
@@ -353,6 +453,12 @@ function MemoryPage() {
 
   useEffect(() => {
     void reload().catch((e) => setStatus(e instanceof Error ? e.message : "记忆加载失败"));
+  }, []);
+
+  useEffect(() => {
+    void fetchMemoryVaultStatus()
+      .then(setVaultStatus)
+      .catch(() => setVaultStatus(null));
   }, []);
 
   useEffect(() => {
@@ -578,7 +684,7 @@ function MemoryPage() {
           </div>
           {memMode === "standalone" && (
             <div className="rounded-lg bg-surface-tertiary text-muted px-3 py-2.5 text-xs leading-relaxed">
-              当前为「独立本地」模式：记忆保存在本机，Obsidian 检索未启用。可到「设置 → 记忆」切换为 Obsidian 连接。
+              当前为「独立本地」模式：记忆保存在本机。可到「知识库」页填写库路径并启用，启用后记忆会自动归档到库内独立目录。
             </div>
           )}
           {memMode === "export_import" && (
@@ -598,6 +704,20 @@ function MemoryPage() {
                 <span className="shrink-0">Vault</span>
                 <code className="font-mono truncate max-w-full break-all" title={settings?.memory.obsidian_vault_path}>{settings?.memory.obsidian_vault_path}</code>
               </p>
+              {vaultStatus && (
+                vaultStatus.mirror_dir_exists ? (
+                  <p className="flex items-start gap-1.5 text-[11px] text-muted mt-1.5 leading-relaxed min-w-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-ok shrink-0 mt-1" />
+                    <span className="min-w-0">已连接本地仓库：记忆自动归档到 <code className="font-mono">DeskMate/记忆</code>（{vaultStatus.doc_files} 份文档
+                      {vaultStatus.last_sync ? ` · 上次同步 ${new Date(vaultStatus.last_sync).toLocaleString("zh-CN", { hour12: false })}` : ""}）。</span>
+                  </p>
+                ) : (
+                  <p className="flex items-start gap-1.5 text-[11px] text-muted mt-1.5 leading-relaxed min-w-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-warn shrink-0 mt-1" />
+                    <span className="min-w-0">仓库已连接，归档目录尚未生成；本地记忆变更后会自动创建。</span>
+                  </p>
+                )
+              )}
               {obsidianSearched && obsidian.items.length === 0 && (
                 <p className="text-xs text-muted mt-2.5">未找到「{obsidianQuery.trim()}」的匹配笔记。</p>
               )}
@@ -614,7 +734,7 @@ function MemoryPage() {
           )}
           {memMode === "obsidian_linked" && !vaultConfigured && (
             <div className="rounded-lg bg-warn-50 text-warn px-3 py-2.5 text-xs leading-relaxed">
-              已选择「Obsidian 连接」但 vault 尚未配置或路径不可访问；请到「设置 → 记忆」填写库路径并保存后重试。
+              已选择「Obsidian 连接」但 vault 尚未配置或路径不可访问；请到「知识库」页检查库路径与启用状态。
             </div>
           )}
           {memMode === null && <p className="text-[11px] text-muted">正在读取记忆模式…</p>}
@@ -1018,61 +1138,35 @@ function MyAgentsPage() {
 
 function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [personas, setPersonas] = useState<PersonaCard[]>([]);
-  const [persona, setPersona] = useState<PersonaCard | null>(null);
   const [apiKeys, setApiKeys] = useState({ llm: "", dashscope: "", minimax: "" });
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void Promise.all([fetchSettings(), fetchPersonas()])
-      .then(([nextSettings, nextPersonas]) => {
-        setSettings(nextSettings);
-        setPersonas(nextPersonas);
-        setPersona(nextPersonas.find((item) => item.id === nextSettings.active_persona_id) ?? nextPersonas[0] ?? null);
-      })
+    void fetchSettings()
+      .then(setSettings)
       .catch((e) => setError(e instanceof Error ? e.message : "设置加载失败"));
   }, []);
 
-  if (!settings || !persona) {
-    return <section className="rounded-lg border border-line bg-white shadow-card p-4"><h2 className="text-xl font-bold text-ink mb-3">设置</h2><p className="text-sm text-muted">{error || "加载中…"}</p></section>;
+  if (!settings) {
+    return (
+      <section className="rounded-lg border border-line bg-white shadow-card p-4">
+        <h2 className="text-xl font-bold text-ink mb-3">设置</h2>
+        <p className="text-sm text-muted">{error || "加载中…"}</p>
+      </section>
+    );
   }
 
-  const save = async (): Promise<void> => {
+  const save = async (body: Record<string, unknown>, label: string): Promise<void> => {
     setSaving(true);
     setNotice("");
     setError("");
     try {
-      const nextPersona = await updatePersona(persona);
-      const body: Record<string, unknown> = {
-        active_persona_id: nextPersona.id,
-        ui_language: settings.ui.language,
-        ui_theme: settings.ui.theme,
-        permission_level: settings.permission_level,
-        performance_mode: settings.performance_mode,
-        memory_mode: settings.memory.mode,
-        obsidian_vault_path: settings.memory.obsidian_vault_path,
-        llm_provider: settings.llm.provider,
-        llm_base_url: settings.llm.base_url,
-        llm_model: settings.llm.model,
-        voice_enabled: settings.voice.enabled,
-        activation_enabled: settings.voice.activation_enabled,
-        activation_default_state: settings.voice.activation_default_state,
-        voice_speed: nextPersona.voice.speed ?? settings.voice.speed,
-        voice_pitch: nextPersona.voice.pitch ?? settings.voice.pitch,
-        voice_volume: settings.voice.volume,
-        voice_emotion: settings.voice.emotion,
-        voice_instruction: settings.voice.instruction,
-      };
-      if (apiKeys.llm) body.llm_api_key = apiKeys.llm;
-      if (apiKeys.dashscope) body.dashscope_api_key = apiKeys.dashscope;
-      if (apiKeys.minimax) body.minimax_api_key = apiKeys.minimax;
       const nextSettings = await updateSettings(body);
       setSettings(nextSettings);
-      setPersonas((current) => current.map((item) => item.id === nextPersona.id ? nextPersona : item));
       setApiKeys({ llm: "", dashscope: "", minimax: "" });
-      setNotice("已保存。新的语音配置已生效。");
+      setNotice(label);
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
     } finally {
@@ -1080,126 +1174,53 @@ function SettingsPage() {
     }
   };
 
-  const switchPersona = (id: string): void => {
-    const next = personas.find((item) => item.id === id);
-    if (!next || !settings) return;
-    setPersona(next);
-    setSettings({ ...settings, active_persona_id: next.id });
-    setNotice(`已切换到「${next.name}」，点击保存后生效`);
-  };
-
-  const newPersona = async (): Promise<void> => {
-    const id = window.prompt("请输入角色卡 ID（只允许英文、数字、_、-）", `persona_${personas.length + 1}`);
-    if (!id) return;
-    const name = window.prompt("请输入角色名称", "新角色");
-    if (!name) return;
-    try {
-      const created = await createPersona({
-        id,
-        name,
-        kind: "assistant",
-        description: "新的桌面 AI 工作伙伴",
-        personality: ["自然", "亲切"],
-        backstory: "",
-        language: "zh-CN",
-        reply_style: "默认用中文、简洁、适合朗读。",
-        avatar: "",
-        voice: { provider: "minimax", model: "speech-2.8-hd", voice: "Chinese (Mandarin)_Soft_Girl", speed: 1.05, pitch: 1 },
-        activation: { persona_name: name, wake_prefixes: ["你好", "嗨"], sleep_phrases: ["暂时静默", "先别说话", "安静一下"] },
-      });
-      setPersonas((current) => [...current, created]);
-      setPersona(created);
-      setSettings({ ...settings, active_persona_id: created.id });
-      setNotice(`已创建「${created.name}」，点击保存后启用`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "角色卡创建失败");
-    }
-  };
-
-  const setVoice = (key: string, value: string): void => {
-    setPersona((current) =>
-      current
-        ? { ...current, voice: { ...current.voice, [key]: key === "speed" || key === "pitch" ? Number(value) : value } }
-        : current,
-    );
-  };
-
-  const voiceCfg = settings.voice.dashscope_configured || settings.voice.minimax_configured;
   const llmDemo = settings.llm.provider === "echo";
   const llmKeyCfg = settings.llm.api_key_configured;
-  const vaultCfg = Boolean(settings.memory.obsidian_configured && settings.memory.obsidian_vault_path.trim());
-  const memInfo = MEMORY_MODE_INFO[settings.memory.mode] ?? { label: settings.memory.mode, hint: "" };
+  const voiceCfg = settings.voice.dashscope_configured || settings.voice.minimax_configured;
+  const liteMode = settings.performance_mode === "lite";
+
+  const saveSystem = (): void => {
+    const body: Record<string, unknown> = {
+      ui_language: settings.ui.language,
+      ui_theme: settings.ui.theme,
+      permission_level: settings.permission_level,
+      performance_mode: settings.performance_mode,
+      llm_provider: settings.llm.provider,
+      llm_base_url: settings.llm.base_url,
+      llm_model: settings.llm.model,
+      voice_enabled: settings.voice.enabled,
+      activation_enabled: settings.voice.activation_enabled,
+      activation_default_state: settings.voice.activation_default_state,
+    };
+    if (apiKeys.llm) body.llm_api_key = apiKeys.llm;
+    if (apiKeys.dashscope) body.dashscope_api_key = apiKeys.dashscope;
+    if (apiKeys.minimax) body.minimax_api_key = apiKeys.minimax;
+    void save(body, "已保存。");
+  };
+
+  const inputCls = "w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20";
+  const cardCls = "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0";
 
   return (
-    <section className="flex flex-col gap-3.5">
-      {/* Intro */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-ink mb-1">设置</h2>
-          <p className="text-sm text-muted">角色卡决定 DeskMate 的身份、声音和交互方式。</p>
+    <div className="flex flex-col gap-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted leading-relaxed">系统级配置集中在此；角色相关的形象、语音与唤醒请在「角色卡」页编辑。</p>
+        <div className="flex items-center gap-3 shrink-0">
+          {notice && <span className="text-sm text-ok">{notice}</span>}
+          {error && <span className="text-sm text-bad">{error}</span>}
+          <button
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white hover:bg-brand-600 transition-colors disabled:opacity-50"
+            onClick={saveSystem}
+            disabled={saving}
+          >
+            {saving ? "保存中…" : "保存"}
+          </button>
         </div>
-        <button className="rounded-lg px-4 py-2.5 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-55 md:w-auto w-full" onClick={() => void save()} disabled={saving}>
-          {saving ? "保存中…" : "保存设置"}
-        </button>
       </div>
-      {notice && <div className="rounded-lg border border-ok/30 bg-ok-50 px-3 py-2.5 text-xs text-ok">{notice}</div>}
-      {error && <div className="rounded-lg bg-bad-50 text-bad px-3.5 py-2.5 text-sm">{error}</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-        {/* Persona card */}
-        <section className="rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0">
-          <div className="flex items-center justify-between gap-2.5">
-            <h3 className="text-sm font-semibold text-ink">角色卡</h3>
-            <button className="text-brand text-xs hover:underline" onClick={() => void newPersona()}>新建角色卡</button>
-          </div>
-          <div className="flex items-end justify-between gap-2.5">
-            <label className="flex flex-col gap-1.5 flex-1 text-xs text-muted">当前角色
-              <select className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.id} onChange={(e) => switchPersona(e.target.value)}>
-                {personas.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}
-              </select>
-            </label>
-            <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">本地 YAML</span>
-          </div>
-          <div className="flex gap-3 items-start">
-            <div className="w-[54px] h-[54px] shrink-0 rounded-full bg-brand text-white grid place-items-center text-xl font-bold">{persona.name.slice(0, 1)}</div>
-            <div className="grid grid-cols-2 gap-2.5 flex-1">
-              <label className="flex flex-col gap-1.5 text-xs text-muted">角色名称<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.name} onChange={(e) => setPersona({ ...persona, name: e.target.value })} /><small className="text-[11px] text-muted">唤醒词默认使用这个名称。</small></label>
-              <label className="flex flex-col gap-1.5 text-xs text-muted">角色类型<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.kind} onChange={(e) => setPersona({ ...persona, kind: e.target.value })} /><small className="text-[11px] text-muted">例如 assistant、cat、secretary。</small></label>
-            </div>
-          </div>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">一句话介绍<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.description} onChange={(e) => setPersona({ ...persona, description: e.target.value })} /><small className="text-[11px] text-muted">用于角色在主界面的简介。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">性格标签<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.personality.join("、")} onChange={(e) => setPersona({ ...persona, personality: e.target.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean) })} /><small className="text-[11px] text-muted">用顿号分隔，例如：自然、可靠、略带幽默。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">背景故事<textarea className="w-full min-h-[68px] resize-y border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.backstory} onChange={(e) => setPersona({ ...persona, backstory: e.target.value })} /><small className="text-[11px] text-muted">作为稳定人设背景，不等同于用户记忆。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">回复风格<textarea className="w-full min-h-[68px] resize-y border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.reply_style} onChange={(e) => setPersona({ ...persona, reply_style: e.target.value })} /><small className="text-[11px] text-muted">会影响后续对话提示词和语音表达。</small></label>
-        </section>
-
-        {/* Voice card */}
-        <section className="rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0">
-          <div className="flex items-center justify-between gap-2.5"><h3 className="text-sm font-semibold text-ink">语音</h3><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${voiceCfg ? "bg-ok-50 text-ok" : "bg-warn-50 text-warn"}`}><span className={`w-1.5 h-1.5 rounded-full ${voiceCfg ? "bg-ok" : "bg-warn"}`} />{voiceCfg ? "已配置" : "未配置"}</span></div>
-          <label className="flex flex-row items-center justify-between"><span className="text-xs text-muted">启用语音</span><input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.enabled} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, enabled: e.target.checked } })} /></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">音色<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.voice.voice ?? settings.voice.tts_voice} onChange={(e) => setVoice("voice", e.target.value)} /><small className="text-[11px] text-muted">填写供应商音色 ID；当前默认使用 MiniMax Soft_Girl。</small></label>
-          <div className="grid grid-cols-2 gap-2.5">
-            <label className="flex flex-col gap-1.5 text-xs text-muted">语速<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" type="number" min="0.5" max="2" step="0.05" value={persona.voice.speed ?? settings.voice.speed} onChange={(e) => setVoice("speed", e.target.value)} /></label>
-            <label className="flex flex-col gap-1.5 text-xs text-muted">音高<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" type="number" min="0.5" max="2" step="0.05" value={persona.voice.pitch ?? settings.voice.pitch} onChange={(e) => setVoice("pitch", e.target.value)} /></label>
-          </div>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">语音情绪<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.voice.emotion} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, emotion: e.target.value } })} placeholder="例如 gentle" /><small className="text-[11px] text-muted">可选；不同供应商支持的情绪标签不同。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">风格指令<textarea className="w-full min-h-[68px] resize-y border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.voice.instruction} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, instruction: e.target.value } })} placeholder="例如：温柔、自然、语速适中" /><small className="text-[11px] text-muted">用于 TTS 的表现提示，不改变角色卡身份。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">MiniMax API key<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" type="password" value={apiKeys.minimax} onChange={(e) => setApiKeys({ ...apiKeys, minimax: e.target.value })} placeholder={settings.voice.minimax_configured ? "已配置，输入新值可覆盖" : "未配置"} /><small className="text-[11px] text-muted">只写入本机 data/settings.local.json，不会显示原值。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">DashScope API key<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" type="password" value={apiKeys.dashscope} onChange={(e) => setApiKeys({ ...apiKeys, dashscope: e.target.value })} placeholder={settings.voice.dashscope_configured ? "已配置，输入新值可覆盖" : "未配置"} /><small className="text-[11px] text-muted">用于 STT；保存后立即刷新服务状态。</small></label>
-        </section>
-
-        {/* Activation card */}
-        <section className="rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0">
-          <div className="flex items-center justify-between gap-2.5"><h3 className="text-sm font-semibold text-ink">唤醒与监听</h3><span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">本地控制</span></div>
-          <label className="flex flex-row items-center justify-between"><span className="text-xs text-muted">启用语音激活</span><input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.activation_enabled} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, activation_enabled: e.target.checked } })} /></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">唤醒词角色名<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={persona.activation.persona_name ?? persona.name} onChange={(e) => setPersona({ ...persona, activation: { ...persona.activation, persona_name: e.target.value } })} /><small className="text-[11px] text-muted">例如"你好，{persona.activation.persona_name ?? persona.name}"。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">唤醒前缀<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={(persona.activation.wake_prefixes ?? ["你好", "嗨"]).join("、")} onChange={(e) => setPersona({ ...persona, activation: { ...persona.activation, wake_prefixes: e.target.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean) } })} /><small className="text-[11px] text-muted">用顿号分隔多个前缀。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">静默指令<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={(persona.activation.sleep_phrases ?? []).join("、")} onChange={(e) => setPersona({ ...persona, activation: { ...persona.activation, sleep_phrases: e.target.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean) } })} /><small className="text-[11px] text-muted">说出其中任意一句后，普通语音不会触发对话。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">默认状态<select className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.voice.activation_default_state} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, activation_default_state: e.target.value } })}><option value="listening">常开监听</option><option value="sleeping">静默等待唤醒</option></select></label>
-        </section>
-
-        {/* Model & permissions card */}
-        <section className="rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
+        {/* 模型与权限 */}
+        <section className={cardCls}>
           <div className="flex items-center justify-between gap-2.5">
             <h3 className="text-sm font-semibold text-ink">模型与权限</h3>
             <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${llmDemo ? "bg-warn-50 text-warn" : llmKeyCfg ? "bg-ok-50 text-ok" : "bg-warn-50 text-warn"}`}>
@@ -1207,30 +1228,76 @@ function SettingsPage() {
               {llmDemo ? "演示模式" : llmKeyCfg ? "API 已配置" : "未配置 API Key"}
             </span>
           </div>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">LLM Provider<select className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.llm.provider} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, provider: e.target.value } })}><option value="auto">自动</option><option value="openai">OpenAI 兼容</option><option value="echo">演示模式</option></select><small className="text-[11px] text-muted">自动模式会根据本地配置选择可用的 Provider。</small></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">API 地址<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.llm.base_url} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, base_url: e.target.value } })} placeholder="https://.../v1" /></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">模型<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.llm.model} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, model: e.target.value } })} /></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">LLM API key<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" type="password" value={apiKeys.llm} onChange={(e) => setApiKeys({ ...apiKeys, llm: e.target.value })} placeholder={settings.llm.api_key_configured ? "已配置，输入新值可覆盖" : "未配置"} /></label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">权限级别<select className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.permission_level} onChange={(e) => setSettings({ ...settings, permission_level: e.target.value })}><option value="confirm_risky">高风险操作确认</option><option value="confirm_all">所有外部操作确认</option><option value="read_only">只读模式</option></select><small className="text-[11px] text-muted">当前只影响配置记录，任务授权流将在后续 Step 接入。</small></label>
-          <div className="flex flex-col gap-1.5 text-xs text-muted">
-            <span className="flex items-center justify-between gap-2">记忆模式<small className="text-[10px] text-muted">{memInfo.label}</small></span>
-            <select className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.memory.mode} onChange={(e) => setSettings({ ...settings, memory: { ...settings.memory, mode: e.target.value } })}><option value="standalone">独立本地</option><option value="obsidian_linked">Obsidian 连接</option><option value="export_import">导入导出</option></select>
-            <small className="text-[11px] text-muted leading-relaxed">{memInfo.hint}</small>
-          </div>
-          {settings.memory.mode === "obsidian_linked" && <label className="flex flex-col gap-1.5 text-xs text-muted">Obsidian vault 路径<input className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.memory.obsidian_vault_path} onChange={(e) => setSettings({ ...settings, memory: { ...settings.memory, obsidian_vault_path: e.target.value } })} placeholder="/Users/.../knowledge" /><small className="text-[11px] text-muted">{vaultCfg ? "路径已配置；保存后即可在记忆页与知识库检索。" : "未配置也可继续使用本地记忆，Obsidian 检索入口不会启用。"}</small></label>}
-          {settings.memory.mode === "obsidian_linked" && !vaultCfg && <div className="rounded-lg bg-warn-50 text-warn px-3 py-2.5 text-xs leading-relaxed">尚未配置可用的 vault 路径，Obsidian 检索将显示「未配置」。</div>}
-          {settings.memory.mode === "export_import" && <div className="rounded-lg bg-warn-50 text-warn px-3 py-2.5 text-xs leading-relaxed">导入导出模式仅使用本地档案；可导出记忆包，导入向导将在后续版本补充。</div>}
-          <label className="flex flex-col gap-1.5 text-xs text-muted">界面主题<select className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.ui.theme} onChange={(e) => setSettings({ ...settings, ui: { ...settings.ui, theme: e.target.value } })}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色（预留）</option></select></label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">LLM Provider
+            <select className={inputCls} value={settings.llm.provider} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, provider: e.target.value } })}>
+              <option value="auto">自动</option>
+              <option value="openai">OpenAI 兼容</option>
+              <option value="echo">演示模式</option>
+            </select>
+            <small className="text-[11px] text-muted">自动模式会根据本地配置选择可用的 Provider。</small>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">API 地址
+            <input className={inputCls} value={settings.llm.base_url} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, base_url: e.target.value } })} placeholder="https://.../v1" />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">模型
+            <input className={inputCls} value={settings.llm.model} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, model: e.target.value } })} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">LLM API key
+            <input className={inputCls} type="password" value={apiKeys.llm} onChange={(e) => setApiKeys({ ...apiKeys, llm: e.target.value })} placeholder={settings.llm.api_key_configured ? "已配置，输入新值可覆盖" : "未配置"} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">DashScope API key（语音识别）
+            <input className={inputCls} type="password" value={apiKeys.dashscope} onChange={(e) => setApiKeys({ ...apiKeys, dashscope: e.target.value })} placeholder={settings.voice.dashscope_configured ? "已配置，输入新值可覆盖" : "未配置"} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">MiniMax API key（语音合成）
+            <input className={inputCls} type="password" value={apiKeys.minimax} onChange={(e) => setApiKeys({ ...apiKeys, minimax: e.target.value })} placeholder={settings.voice.minimax_configured ? "已配置，输入新值可覆盖" : "未配置"} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">权限级别
+            <select className={inputCls} value={settings.permission_level} onChange={(e) => setSettings({ ...settings, permission_level: e.target.value })}>
+              <option value="confirm_risky">高风险操作确认</option>
+              <option value="confirm_all">所有外部操作确认</option>
+              <option value="read_only">只读模式</option>
+            </select>
+            <small className="text-[11px] text-muted">当前只影响配置记录，任务授权流将在后续 Step 接入。</small>
+          </label>
         </section>
 
-        {/* Performance mode card */}
-        <section className="rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0">
+        {/* 语音能力总开关（全局） */}
+        <section className={cardCls}>
+          <div className="flex items-center justify-between gap-2.5">
+            <h3 className="text-sm font-semibold text-ink">语音能力</h3>
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${voiceCfg ? "bg-ok-50 text-ok" : "bg-warn-50 text-warn"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${voiceCfg ? "bg-ok" : "bg-warn"}`} />
+              {voiceCfg ? "语音已配置" : "未配置语音"}
+            </span>
+          </div>
+          <label className="flex flex-row items-center justify-between gap-3">
+            <span className="text-xs text-muted">启用语音（总开关）</span>
+            <input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.enabled} disabled={liteMode} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, enabled: e.target.checked } })} />
+          </label>
+          <label className="flex flex-row items-center justify-between gap-3">
+            <span className="text-xs text-muted">启用语音激活（唤醒与静默）</span>
+            <input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.activation_enabled} disabled={liteMode || !settings.voice.enabled} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, activation_enabled: e.target.checked } })} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">默认状态
+            <select className={inputCls} value={settings.voice.activation_default_state} disabled={liteMode || !settings.voice.enabled || !settings.voice.activation_enabled} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, activation_default_state: e.target.value } })}>
+              <option value="listening">常开监听</option>
+              <option value="sleeping">静默等待唤醒</option>
+            </select>
+            <small className="text-[11px] text-muted">全局默认状态；各角色卡的唤醒词、静默指令与语音特征在「角色卡」页绑定。</small>
+          </label>
+          {liteMode && (
+            <div className="rounded-lg bg-warn-50 text-warn px-3 py-2.5 text-xs leading-relaxed">当前为轻量模式，语音已关闭；切回「均衡/高质量」后可重新开启。</div>
+          )}
+        </section>
+
+        {/* 性能模式 */}
+        <section className={cardCls}>
           <div className="flex items-center justify-between gap-2.5">
             <h3 className="text-sm font-semibold text-ink">性能模式</h3>
             <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">运行策略</span>
           </div>
           <label className="flex flex-col gap-1.5 text-xs text-muted">模式
-            <select className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={settings.performance_mode ?? "balanced"} onChange={(e) => setSettings({ ...settings, performance_mode: e.target.value as AppSettings["performance_mode"] })}>
+            <select className={inputCls} value={settings.performance_mode ?? "balanced"} onChange={(e) => setSettings({ ...settings, performance_mode: e.target.value as AppSettings["performance_mode"] })}>
               <option value="quality">高质量（全功能）</option>
               <option value="balanced">均衡（默认）</option>
               <option value="lite">轻量（仅文字，关闭语音）</option>
@@ -1239,21 +1306,32 @@ function SettingsPage() {
           </label>
         </section>
 
-        {/* Character appearance placeholder card */}
-        <section className="rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0">
+        {/* 外观 */}
+        <section className={cardCls}>
           <div className="flex items-center justify-between gap-2.5">
-            <h3 className="text-sm font-semibold text-ink">角色形象</h3>
-            <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">开发中</span>
+            <h3 className="text-sm font-semibold text-ink">外观</h3>
+            <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">界面</span>
           </div>
-          <div className="text-xs text-muted py-4 text-center leading-relaxed">形象训练功能正在开发中。当前使用静态角色图片，后续将支持自定义形象训练和口型同步。</div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="aspect-square rounded-lg bg-surface-secondary border border-line flex items-center justify-center">
-              <span className="text-xs text-muted">当前形象</span>
-            </div>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">界面主题
+            <select className={inputCls} value={settings.ui.theme} onChange={(e) => setSettings({ ...settings, ui: { ...settings.ui, theme: e.target.value } })}>
+              <option value="system">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色（预留）</option>
+            </select>
+            <small className="text-[11px] text-muted">界面语言跟随系统，后续版本提供独立选项。</small>
+          </label>
+        </section>
+
+        {/* 系统维护 */}
+        <section className={cardCls}>
+          <div className="flex items-center justify-between gap-2.5">
+            <h3 className="text-sm font-semibold text-ink">系统维护</h3>
+            <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">后续填充</span>
           </div>
+          <div className="text-xs text-muted py-3 text-center leading-relaxed">本地数据备份、运行日志清理、更新检查等维护项将在后续版本补充。</div>
         </section>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -1548,13 +1626,17 @@ export default function App() {
                 ? "本地优先的桌面 AI 工作伙伴 —— 挂件即时反馈，主界面承载项目和配置。"
                 : page === "chat"
                 ? "文字与语音对话，长回复自动展开；支持语音播报与打断。"
+                : page === "character"
+                ? "角色卡决定 DeskMate 的身份、声音与唤醒方式；启用一张卡即整套切换生效。"
                 : page === "memory"
-                ? "用户画像、偏好、项目进度与长期事实的分层管理；支持 Obsidian 检索。"
+                ? "用户画像、偏好、项目进度与长期事实的分层管理；配置本地仓库后自动归档。"
                 : page === "kb"
-                ? "Obsidian 知识库只读检索；配置库路径后即可搜索本地笔记。"
+                ? "本地知识库（Obsidian）只读检索与库路径配置；记忆会自动归档到库内独立目录。"
                 : page === "agents"
                 ? "执行器状态、任务队列与运行控制；Codex ACP 真实执行已就绪。"
-                : "模型、语音、角色卡、记忆模式与权限配置。"}
+                : page === "settings"
+                ? "模型与权限、语音能力总开关、性能模式、外观与系统维护。"
+                : "版本信息、更新日志、运行环境与本地优先说明。"}
             </p>
           </div>
           <span className={`inline-flex items-center self-start md:self-auto rounded-full px-3.5 py-1.5 text-xs font-medium ${
@@ -1711,6 +1793,8 @@ export default function App() {
 
         {page === "chat" && <ChatPage />}
 
+        {page === "character" && <CharacterPage />}
+
         {page === "memory" && <MemoryPage />}
 
         {page === "kb" && <KnowledgeBasePage />}
@@ -1720,6 +1804,8 @@ export default function App() {
         {page === "settings" && (
           <SettingsPage />
         )}
+
+        {page === "about" && <AboutPage />}
       </main>
     </div>
   );
