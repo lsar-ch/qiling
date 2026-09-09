@@ -200,8 +200,18 @@ pub fn run() {
             app.manage(ChildState::new());
             // 启动即拉起本地 AI 服务（幂等，健康状态由前端轮询）
             let state = app.state::<ChildState>();
-            if let Ok(mut shared) = state.0.lock() {
-                start_service(&mut shared);
+            let mut launcher_needed = false;
+            {
+                if let Ok(mut shared) = state.0.lock() {
+                    start_service(&mut shared);
+                    // 服务未能自动拉起时，显示启动器供用户查看错误并重试
+                    launcher_needed = shared.spawn_error.is_some();
+                }
+            }
+            if launcher_needed {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                }
             }
             if let Err(err) = move_widget_to_bottom_right(app.handle()) {
                 eprintln!("DeskMate widget positioning failed: {err}");

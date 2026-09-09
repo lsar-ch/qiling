@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   apiVoiceIntent,
@@ -37,6 +38,16 @@ function normText(text: string): string {
   return text.replace(/[\s，。！？、,.!?'"“”]/g, "").toLowerCase();
 }
 
+// 气泡显示时长随文字长度变化：短提示至少约 6s，长文本最多 20s
+const bubbleDuration = (text: string): number => {
+  const len = text.trim().length;
+  return Math.min(20000, Math.max(6000, 3500 + len * 120));
+};
+
+// 挂件窗口基础尺寸（空态、无气泡时与 tauri.conf 中 widget 窗口一致）
+const BASE_WINDOW_W = 236;
+const BASE_WINDOW_H = 258;
+
 export default function Widget() {
   const [state, setState] = useState<WidgetState>("idle");
   const [bubble, setBubble] = useState("");
@@ -53,7 +64,9 @@ export default function Widget() {
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resizeRafRef = useRef<number | null>(null);
   const persistentHintRef = useRef("");
   const conversationIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
@@ -81,12 +94,46 @@ export default function Widget() {
   activeRef.current = active;
   inputOpenRef.current = inputOpen;
 
-  const showBrief = (text: string, ms = 3200): void => {
+  const resizeToBubble = async (): Promise<void> => {
+    const el = bubbleRef.current;
+    if (!el) return;
+    try {
+      const showing = el.getAttribute("data-visible") === "1" && (el.textContent ?? "").trim().length > 0;
+      const rect = el.getBoundingClientRect();
+      // 挂件宽度固定：气泡不超出挂件自身，仅在有气泡时按内容高度向上生长
+      const wantH = showing
+        ? Math.max(BASE_WINDOW_H, Math.ceil(rect.height) + 218)
+        : BASE_WINDOW_H;
+      const win = getCurrentWindow();
+      await win.setSize(new LogicalSize(BASE_WINDOW_W, wantH));
+      await invoke("place_widget_bottom_right");
+    } catch {
+      /* 非 Tauri 环境或窗口调整失败时保持现状 */
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
+    resizeRafRef.current = requestAnimationFrame(() => {
+      void resizeToBubble();
+    });
+    return () => {
+      if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
+    };
+  }, [bubble, inputOpen]);
+
+  const showBrief = (text: string, ms = bubbleDuration(text)): void => {
     if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
     setBubble(text);
-    bubbleTimerRef.current = setTimeout(() => {
+    const clearBubble = (): void => {
+      // 语音播报期间保持文字气泡可见，播完后再停留一小会儿隐藏
+      if (speakingRef.current) {
+        bubbleTimerRef.current = setTimeout(clearBubble, 1200);
+        return;
+      }
       setBubble(persistentHintRef.current || "");
-    }, ms);
+    };
+    bubbleTimerRef.current = setTimeout(clearBubble, ms);
   };
 
   const setPersistentHint = (text: string): void => {
@@ -193,14 +240,14 @@ export default function Widget() {
       if (!done.short) {
         void openMainUi();
       } else {
-        showBrief(done.message || done.speak_text, 3600);
+        showBrief(done.message || done.speak_text);
         if (speakReply && voiceStatusRef.current?.enabled && voiceModeRef.current !== "off") {
           stopSpeaking();
           void speak(done.speak_text || done.message);
         }
       }
     } catch (e) {
-      showBrief(e instanceof Error ? `回复失败：${e.message}` : "回复失败", 3800);
+      showBrief(e instanceof Error ? `回复失败：${e.message}` : "回复失败");
     } finally {
       widgetTurnRef.current = false;
       setBusy(false);
@@ -445,17 +492,22 @@ export default function Widget() {
   useEffect(() => {
     let alive = true;
     const loadVoice = async (): Promise<void> => {
-      try {
-        const voice = await fetchVoiceStatus();
-        if (!alive) return;
-        setVoiceStatus(voice);
-        if (voice.activation?.persona_name) {
-          const name = voice.activation.persona_name;
-          setPersonaName(name);
-          personaNameRef.current = name;
+      // 冷启动时 AI 服务可能尚未就绪：失败后自动重试，避免语音芯片缺失
+      for (let attempt = 0; alive && attempt < 12; attempt += 1) {
+        try {
+          const voice = await fetchVoiceStatus();
+          if (!alive) return;
+          setVoiceStatus(voice);
+          if (voice.activation?.persona_name) {
+            const name = voice.activation.persona_name;
+            setPersonaName(name);
+            personaNameRef.current = name;
+          }
+          return;
+        } catch {
+          if (!alive) return;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
-      } catch {
-        /* 服务未就绪时由连接状态提示 */
       }
     };
     void loadVoice();
@@ -610,6 +662,7 @@ export default function Widget() {
       >
         <div
           className="bubble"
+          ref={bubbleRef}
           data-visible={bubble && !inputOpen ? "1" : "0"}
           aria-live="polite"
         >
