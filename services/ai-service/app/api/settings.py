@@ -10,7 +10,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.config import load_settings
+from app.config import PerformanceMode, load_settings
 from app.llm import create_provider
 from app.speech.factory import build_speech_stack
 
@@ -37,6 +37,7 @@ class SettingsUpdate(BaseModel):
     ui_theme: str | None = None
     permission_level: str | None = None
     memory_mode: str | None = None
+    performance_mode: PerformanceMode | None = None
     obsidian_vault_path: str | None = None
     llm_provider: str | None = None
     llm_base_url: str | None = None
@@ -91,6 +92,7 @@ def _public_settings(request: Request) -> dict[str, Any]:
     settings = request.app.state.settings
     return {
         "active_persona_id": settings.active_persona_id,
+        "performance_mode": settings.performance_mode,
         "ui": {"language": settings.ui_language, "theme": settings.ui_theme},
         "permission_level": settings.permission_level,
         "memory": {
@@ -148,6 +150,7 @@ def update_settings(payload: SettingsUpdate, request: Request) -> dict[str, Any]
             ui[key.removeprefix("ui_")] = data.pop(key)
     for key in (
         "permission_level",
+        "performance_mode",
         "llm_provider",
         "llm_base_url",
         "llm_model",

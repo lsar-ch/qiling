@@ -49,6 +49,7 @@ export default function Widget() {
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("off");
   const [personaName, setPersonaName] = useState("DeskMate");
   const [speaking, setSpeaking] = useState(false);
+  const [alert, setAlert] = useState(false);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
@@ -352,6 +353,48 @@ export default function Widget() {
       const next = eventToState(msg.event_type);
       if (!next) return;
       setState(next);
+
+      // 任务事件气泡播报（Step 9：外部项目借鉴 — 任务状态挂件主动播报）
+      const bubble = msg.payload?.bubble as string | undefined;
+      switch (msg.event_type) {
+        case "task.started":
+          showBrief(bubble || "任务开始执行…", 3000);
+          break;
+        case "task.progress":
+          showBrief(bubble || "执行中…", 2400);
+          break;
+        case "task.approval_required":
+          showBrief(bubble || "需要你确认", 8000);
+          break;
+        case "task.approval_reminder": {
+          const reminderText = bubble || "等待确认已 30 秒，需要你决定";
+          showBrief(reminderText, 8000);
+          setAlert(true);
+          window.setTimeout(() => setAlert(false), 3200);
+          void synthesizeSpeech(reminderText)
+            .then(async (blob) => {
+              const ctx = await ensureAudioContext();
+              if (!ctx || !blob.size) return;
+              const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+              const src = ctx.createBufferSource();
+              src.buffer = buf;
+              src.connect(ctx.destination);
+              src.start();
+            })
+            .catch(() => { /* TTS 不可用时静默，保留视觉提醒 */ });
+          break;
+        }
+        case "task.completed":
+          showBrief(bubble || "✓ 任务完成", 4000);
+          break;
+        case "task.failed":
+          showBrief(bubble || "✗ 任务失败", 4000);
+          break;
+        case "task.cancelled":
+          showBrief(bubble || "已取消", 3000);
+          break;
+      }
+
       if (msg.event_type === "conversation.completed") {
         if (msg.payload?.expand_ui === true && widgetTurnRef.current) {
           void openMainUi();
@@ -514,6 +557,7 @@ export default function Widget() {
     <div
       className="w-root"
       data-state={state}
+        data-alert={alert ? "1" : "0"}
       data-voice={voiceMode}
       data-speaking={speaking ? "1" : "0"}
       data-connected={connected}

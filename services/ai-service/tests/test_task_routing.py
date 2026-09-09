@@ -79,6 +79,17 @@ def test_answer_routes_to_answer(tmp_path: Path, monkeypatch) -> None:
         assert fetched["task_id"] == task_id
 
 
+def test_task_without_run_returns_null_not_404(tmp_path: Path, monkeypatch) -> None:
+    """尚无 Agent Run 的任务返回 200 + run:null，避免前端批量轮询刷 404 噪音。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        resp = client.post("/api/tasks", json={"input": "帮我检查项目结构"})
+        assert resp.status_code == 200
+        task_id = resp.json()["task"]["task_id"]
+        body = client.get(f"/api/tasks/{task_id}/run")
+        assert body.status_code == 200
+        assert body.json() == {"run": None}
+
+
 def test_frontend_action_routes_to_execute_frontend(tmp_path: Path, monkeypatch) -> None:
     with make_client(tmp_path, monkeypatch) as client:
         resp = client.post("/api/tasks", json={"input": "帮我打开浏览器搜索 Python 文档"})

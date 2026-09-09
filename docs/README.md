@@ -17,6 +17,7 @@
 - [双系统测试与 Windows 迁移](./CROSS-PLATFORM-TESTING.md)
 - [竞品与差异](./LANDSCAPE.md)
 - [HanaAgent 调研与路线结论](./HANAAGENT-ANALYSIS.md)
+- [外部项目可借鉴改进建议](./EXTERNAL-INSIGHTS.md)
 - [记忆模块对比留档](./MEMORY-COMPARISON.md)
 - [挂件形象与 2D 资产制作](./WIDGET-ASSET-PLAN.md)
 - [主界面信息架构](./MAIN-INTERFACE.md)

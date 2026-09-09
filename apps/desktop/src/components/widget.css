@@ -188,6 +188,14 @@ html, body, #root {
 @keyframes badgeBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 @keyframes badgePop { 0% { transform: scale(0.2); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes alertPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 180, 60, 0); }
+  50% { box-shadow: 0 0 18px 6px rgba(255, 180, 60, 0.5); }
+}
+.w-root[data-alert="1"] .mascot {
+  animation: alertPulse 1s ease-in-out 3;
+}
+
 
 /* ── 说话波纹 ── */
 .waves {

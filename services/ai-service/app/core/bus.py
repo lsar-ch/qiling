@@ -46,6 +46,10 @@ class EventHub:
         async with self._lock:
             self._subscribers.pop(sub_id, None)
 
+    def recent(self, limit: int = 5) -> list[dict[str, Any]]:
+        """返回最近 limit 条已广播事件（按时间从新到旧），供健康检查展示。"""
+        return list(reversed(self._history[-limit:]))
+
     async def publish(self, envelope: EventEnvelope) -> None:
         """分发给所有订阅者；队列满丢弃最旧；写入历史；触发状态钩子。"""
         data = envelope.to_ws_dict()

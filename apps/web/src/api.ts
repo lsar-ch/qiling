@@ -22,6 +22,23 @@ export interface HealthResponse {
       degraded: { name: string; integration_status: AgentIntegrationStatus }[];
     };
   };
+  performance_mode: "quality" | "balanced" | "lite";
+  voice_pipeline: {
+    stt_ready: boolean;
+    tts_ready: boolean;
+    vad_working: boolean;
+    degradation_reason: string | null;
+  };
+  recent_activity: Array<{
+    event_type: string;
+    timestamp: string;
+    summary: string;
+  }>;
+  memory_stats: {
+    total_entries: number;
+    obsidian_linked: boolean;
+    last_compile: string | null;
+  };
 }
 
 export interface SessionResponse {
@@ -93,6 +110,7 @@ export interface AppSettings {
   active_persona_id: string;
   ui: { language: string; theme: string };
   permission_level: string;
+  performance_mode: "quality" | "balanced" | "lite";
   memory: {
     mode: string;
     budget_chars: number;

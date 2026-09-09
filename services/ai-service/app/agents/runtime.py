@@ -110,6 +110,7 @@ class AgentRunManager:
         self.memory = memory
         self.data_dir = data_dir
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._approval_timers: dict[str, asyncio.Task[None]] = {}  # task_id -> reminder timer
 
     async def execute(
         self,
@@ -226,11 +227,12 @@ class AgentRunManager:
             if task.status != "awaiting_approval":
                 task.status = "running"
                 task = self.task_store.put(task)
+            bubble = (run.progress[:60] + "…") if len(run.progress) > 60 else run.progress
             await self._publish(
                 "task.progress",
                 task,
                 run,
-                payload={"progress": run.progress},
+                payload={"progress": run.progress, "bubble": bubble or "执行中…"},
             )
             return
         if kind == "permission_request":
@@ -250,8 +252,45 @@ class AgentRunManager:
                 "task.approval_required",
                 task,
                 run,
-                payload={"tool_call": payload.get("tool_call"), "options": payload.get("options")},
+                payload={
+                    "tool_call": payload.get("tool_call"),
+                    "options": payload.get("options"),
+                    "bubble": f"需要确认：{run.progress[:40]}",
+                },
             )
+            self._start_approval_timer(run, task)
+
+
+    _APPROVAL_REMINDER_SECONDS = 30
+
+    def _start_approval_timer(self, run: AgentRun, task: Task) -> None:
+        """等待授权超过 N 秒未响应时，广播提醒事件。"""
+        old = self._approval_timers.pop(run.task_id, None)
+        if old is not None and not old.done():
+            old.cancel()
+
+        async def _fire() -> None:
+            try:
+                await asyncio.sleep(self._APPROVAL_REMINDER_SECONDS)
+            except asyncio.CancelledError:
+                return
+            self._approval_timers.pop(run.task_id, None)
+            current_run = self.store.get(run.run_id)
+            if current_run is None or current_run.status != "awaiting_approval":
+                return
+            await self._publish(
+                "task.approval_reminder",
+                task,
+                current_run,
+                payload={"bubble": f"等待确认已 {self._APPROVAL_REMINDER_SECONDS} 秒，需要你决定"},
+            )
+
+        self._approval_timers[run.task_id] = asyncio.create_task(_fire())
+
+    def _cancel_approval_timer(self, task_id: str) -> None:
+        timer = self._approval_timers.pop(task_id, None)
+        if timer is not None and not timer.done():
+            timer.cancel()
 
     async def cancel_run(self, run_id: str) -> AgentRun:
         run = self.store.get(run_id)
@@ -263,6 +302,7 @@ class AgentRunManager:
         adapter = self.registry.get(run.executor)
         if adapter is not None and run.status in ("running", "awaiting_approval"):
             await adapter.cancel(task.task_id, run.session_id)
+        self._cancel_approval_timer(task.task_id)
         background = self._tasks.pop(task.task_id, None)
         if background is not None and not background.done():
             background.cancel()
@@ -287,6 +327,7 @@ class AgentRunManager:
         adapter = self.registry.get(run.executor)
         if adapter is None:
             raise KeyError(run.executor)
+        self._cancel_approval_timer(run.task_id)
         await adapter.approve(run.task_id, decision)
         run.status = "running"
         run.progress = "已" + ("批准" if decision == "approved" else "拒绝") + "当前操作"
@@ -316,16 +357,25 @@ class AgentRunManager:
         self.store.put(run)
         task.status = status
         task = self.task_store.put(task)
+        self._cancel_approval_timer(task.task_id)
         event_type = {
             "completed": "task.completed",
             "failed": "task.failed",
             "cancelled": "task.cancelled",
         }[status]
+        if status == "completed":
+            summary = (message or run.progress or "任务完成")[:60]
+            bubble = f"✓ {summary}"
+        elif status == "failed":
+            summary = (error or "未知错误")[:60]
+            bubble = f"✗ {summary}"
+        else:
+            bubble = "已取消"
         await self._publish(
             event_type,
             task,
             run,
-            payload={"result": message or None, "error": error},
+            payload={"result": message or None, "error": error, "bubble": bubble},
         )
         self._record_memory(event_type, task, run)
 

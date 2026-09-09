@@ -20,3 +20,5 @@ export type {
 } from "./memory";
 export type { ConversationMessage, MessageRole } from "./conversation";
 export type { VoiceProvider, VoiceParams, VoiceSettings } from "./voice";
+export type { CharacterConfig, CharacterStyle } from "./character";
+export type { RecordingFormat, RecordingMode, RecordingSession } from "./recording";

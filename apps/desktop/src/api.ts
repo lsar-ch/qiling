@@ -41,6 +41,8 @@ export function eventToState(eventType: string): WidgetState | null {
     "task.completed": "completed",
     "task.failed": "completed",
     "task.cancelled": "completed",
+    "task.approval_reminder": "awaiting_approval",
+    "task.timed_out": "completed",
   };
   return map[eventType] ?? null;
 }

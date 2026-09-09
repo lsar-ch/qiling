@@ -294,3 +294,18 @@ V1 建议：
 - 先按本地优先完成 V1 主链路
 - 产品内的 Codex 接入仍然属于 V1 必做
 - 云端和多 Agent 编排作为 V1 后的扩展能力
+
+
+### Step 10: Dashboard 信息可视化 + 扩展性预留
+
+> 详见 `docs/STEP10-DASHBOARD-AND-EXTENSIBILITY.md`
+
+**目标：** Home 页加入系统仪表盘；预留 RecordingSession / CharacterConfig 契约；细化 CPU/GPU 降级逻辑。
+
+**执行顺序：**
+1. 降级逻辑细化（`performance_mode` + health 扩展）
+2. 形象训练准备（CharacterConfig 契约 + Settings 占位）
+3. RecordingSession 接口预留（契约 + API stub）
+4. Home Dashboard 信息可视化
+
+**验收：** `./scripts/check.sh` 全部通过；Home 页显示系统状态卡片；Settings 页支持性能模式切换。

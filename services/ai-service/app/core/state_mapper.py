@@ -26,6 +26,8 @@ _EVENT_TO_STATE: dict[str, tuple[WidgetState, str | None]] = {
     "task.completed": ("completed", "任务完成"),
     "task.failed": ("completed", "任务失败"),
     "task.cancelled": ("completed", "任务已取消"),
+    "task.approval_reminder": ("awaiting_approval", "等待确认超时"),
+    "task.timed_out": ("completed", "任务超时"),
 }
 
 

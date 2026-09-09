@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import json
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,14 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8736
 DEFAULT_WEB_DEV_PORT = 5173
 DEFAULT_DESKTOP_DEV_PORT = 1420
+
+
+class PerformanceMode(StrEnum):
+    """性能模式：quality（全功能）/ balanced（均衡默认）/ lite（仅文字）。"""
+
+    QUALITY = "quality"
+    BALANCED = "balanced"
+    LITE = "lite"
 
 
 def repo_root() -> Path:
@@ -82,6 +91,7 @@ class Settings:
     permission_level: str = "confirm_risky"
     memory_budget_chars: int = 4000
     memory_mode: str = "standalone"
+    performance_mode: str = "balanced"    # quality | balanced | lite
     obsidian_vault_path: str = (
         "/Users/lxb/Library/Mobile Documents/iCloud~md~obsidian/Documents/knowledge/knowledge"
     )
@@ -253,6 +263,13 @@ def load_settings() -> Settings:
         ),
         settings.memory_budget_chars,
     )
+    settings.performance_mode = str(
+        os.environ.get(
+            "PERFORMANCE_MODE", overrides.get("performance_mode", settings.performance_mode)
+        )
+    ).strip().lower() or "balanced"
+    if settings.performance_mode not in ("quality", "balanced", "lite"):
+        settings.performance_mode = "balanced"
     settings.obsidian_vault_path = str(
         os.environ.get(
             "OBSIDIAN_VAULT_PATH",
@@ -480,6 +497,13 @@ def resolve_llm_provider(settings: Settings) -> str:
     if settings.llm_base_url or settings.llm_api_key:
         return "openai"
     return "echo"
+
+
+def is_lite_mode(settings: Settings) -> bool:
+    """lite 模式：语音与动画视为禁用，只保留文字链路。"""
+    return settings.performance_mode == "lite"
+
+
 def resolve_stt_provider(settings: Settings) -> tuple[str, str | None]:
     """返回 (实际 STT provider, 不可用原因)；未配置云 key 时降级 disabled。"""
     provider = settings.stt_provider.strip().lower()

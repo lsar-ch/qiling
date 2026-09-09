@@ -80,6 +80,21 @@
 - 立即停播
 - 切回 listening
 
+## 4.9 任务主动播报（Step 9 新增）
+
+任务执行过程中，挂件会主动显示进度气泡和结果摘要：
+
+- `task.started`：显示"任务开始执行…"气泡（3 秒）
+- `task.progress`：显示进度摘要气泡（2.4 秒，≤60 字截断）
+- `task.approval_required`：显示"需要确认：xxx"气泡（8 秒），挂件状态切到 `awaiting_approval`
+- `task.approval_reminder`：等待授权超过 30 秒未响应，显示提醒气泡（6 秒）并触发外发光脉冲动画
+- `task.completed`：显示"✓ 结果摘要"气泡（4 秒）
+- `task.failed`：显示"✗ 错误信息"气泡（4 秒）
+- `task.cancelled`：显示"已取消"气泡（3 秒）
+
+所有气泡内容由后端 `runtime.py` 生成 `bubble` 字段，前端挂件直接展示。
+`task.approval_reminder` 由 30 秒计时器自动触发，授权或取消后计时器自动清除。
+
 ## 5. 设计参考
 
 可参考的模式包括：

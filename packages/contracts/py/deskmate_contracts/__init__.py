@@ -6,6 +6,7 @@ packages/contracts/ts 中的类型是本包的镜像，修改后必须同步并�
 
 from .agent import AgentInfo, AgentIntegrationStatus
 from .approval import ApprovalDecision, ApprovalRequest, ApprovalStatus
+from .character import CharacterConfig, CharacterStyle
 from .conversation import Conversation, ConversationMessage, MessageRole
 from .events import (
     EventEnvelope,
@@ -23,6 +24,7 @@ from .memory import (
     MemorySection,
     SearchHit,
 )
+from .recording import RecordingFormat, RecordingMode, RecordingSession
 from .task import (
     RiskLevel,
     Task,
@@ -39,6 +41,8 @@ __all__ = [
     "ApprovalDecision",
     "ApprovalRequest",
     "ApprovalStatus",
+    "CharacterConfig",
+    "CharacterStyle",
     "Conversation",
     "ConversationMessage",
     "CompiledMemory",
@@ -52,6 +56,9 @@ __all__ = [
     "MemoryEntrySummary",
     "MemorySection",
     "MessageRole",
+    "RecordingFormat",
+    "RecordingMode",
+    "RecordingSession",
     "RiskLevel",
     "SearchHit",
     "Task",

@@ -25,6 +25,8 @@ export type EventType =
   | "task.completed"
   | "task.failed"
   | "task.cancelled"
+  | "task.approval_reminder"
+  | "task.timed_out"
   | "memory.created"
   | "memory.updated"
   | "memory.entry.deleted"

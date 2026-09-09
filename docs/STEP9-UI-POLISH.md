@@ -90,3 +90,18 @@ Still open:
 - Responsive/overflow verification at desktop and 390px mobile viewports.
 - Character-card testing follow-up for widget asset, animation, movement, and character-specific visual tuning.
 - Final Step 8 macOS manual items and Windows regression after visual work settles.
+
+## 2026-09-09 Progress（六页视觉打磨）
+
+Completed (page polish):
+
+- Home / Chat / Memory / Knowledge Base / My Agents / Settings 六页视觉已全部收口：统一状态胶囊语义（ok/bad/warn/muted/品牌色）、卡片圆角与描边配方、空态与未配置提示、命中高亮、长文本 `.break-anywhere` 折行、滚动条 `.scroll-thin` 与焦点描边。
+- 移动端布局修复：外层 `flex` 改 `flex-col md:flex-row`，移动顶栏 `w-full`，`main` 加 `w-full md:flex-1`，消除窄屏把内容挤出的 604px 横向溢出。
+- 响应式验收：390px 与 1440px 两档逐页 DOM 审计，六页 `docScrollW ≤ viewport`、无页面级横向溢出、无越界未裁剪元素；移动端导航为可横向滚动的胶囊条（点选自动滚入视口），属预期设计。
+- 语音噪音修复：`apps/web/src/alwaysListen.ts` 与 `apps/desktop/src/voiceCapture.ts` 增加共享 AudioContext 已关闭守卫，快速进出对话页不再产生 “not useful when context is closed” 告警；常开监听实际启用时仍会保留浏览器原生的 ScriptProcessorNode 弃用提示（待后续 AudioWorklet 化，非本轮范围）。
+- 回归：`./scripts/check.sh` 全绿（78 passed + Web/Desktop typecheck）；逐页截图存档于 `step9-review/`。
+
+Still open (unchanged):
+
+- Character-card testing follow-up for widget asset, animation, movement, and character-specific visual tuning.
+- Step 8 macOS 真机人工项（launcher 拉起、麦克风授权/拒绝降级、Codex 不可用 banner、退出进程回收）与随后的 Windows 回归。清单见 `docs/HANDOVER-2026-09-09.md`。

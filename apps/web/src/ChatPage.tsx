@@ -26,6 +26,16 @@ function normText(text: string): string {
   return text.replace(/[\s，。！？、,.!?'"“”]/g, "").toLowerCase();
 }
 
+function fmtChatTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
 export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
@@ -393,46 +403,62 @@ export default function ChatPage() {
   }, [voiceStatus?.enabled, voiceStatus?.activation?.enabled, voiceStatus?.activation?.default_state]);
 
   return (
-    <section className="chat-panel">
-      <div className="chat-toolbar">
+    <section className="bg-white border border-line rounded-xl flex flex-col h-[calc(100vh-180px)] overflow-hidden shadow-card">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-3 border-b border-line text-xs text-muted">
         <span>对话历史保存在本地（data/conversations）</span>
-        {echoMode && <em className="echo-tag">演示模式：未配置模型 API（echo）</em>}
+        {echoMode && (
+          <span className="text-warn bg-warn-50 px-2.5 py-1 rounded-full font-medium">
+            演示模式：未配置模型 API（echo）
+          </span>
+        )}
         {voiceStatus && !voiceStatus.enabled && (
-          <em className="echo-tag voice-off">语音未配置：设置 DASHSCOPE_API_KEY 后重启</em>
+          <span className="text-warn bg-warn-50 px-2.5 py-1 rounded-full font-medium">
+            语音未配置：设置 DASHSCOPE_API_KEY 后重启
+          </span>
         )}
       </div>
+
+      {/* Voice mode bar */}
       {voiceStatus?.enabled && voiceStatus.activation?.enabled && (
-        <div className="voice-mode-row">
-          <span
-            className={`mode-chip ${
-              voiceMode === "sleeping"
-                ? "mode-sleep"
-                : voiceMode === "listening"
-                  ? "mode-listen"
-                  : ""
-            }`}
-          >
-            {voiceMode === "listening"
-              ? "● 聆听中"
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-line-subtle">
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+            voiceMode === "listening"
+              ? "bg-ok-50 text-ok"
               : voiceMode === "sleeping"
-                ? "💤 静默中"
+                ? "bg-line-subtle text-muted"
+                : "bg-surface-secondary text-muted"
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              voiceMode === "listening"
+                ? "bg-ok animate-breathe"
+                : voiceMode === "sleeping"
+                  ? "bg-muted"
+                  : "bg-line"
+            }`} />
+            {voiceMode === "listening"
+              ? "聆听中"
+              : voiceMode === "sleeping"
+                ? "静默中"
                 : "常开已关闭"}
           </span>
-          <span className="wake-hint">唤醒词：你好，{personaName}</span>
-          <button className="mini-btn" onClick={toggleAlwaysListen}>
+          <span className="text-xs text-muted whitespace-nowrap">唤醒词：你好，{personaName}</span>
+          <button className="border border-line bg-white rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={toggleAlwaysListen}>
             {voiceMode === "off" ? "常开：关" : "常开：开"}
           </button>
-          <button className="mini-btn" onClick={forceSilence}>
+          <button className="border border-line bg-white rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={forceSilence}>
             静默
           </button>
-          <button className="mini-btn" onClick={forceWake}>
+          <button className="border border-line bg-white rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={forceWake}>
             唤醒
           </button>
         </div>
       )}
-      <div className="chat-list">
+
+      {/* Message list */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 scroll-thin">
         {messages.length === 0 && (
-          <div className="chat-empty">
+          <div className="m-auto w-full max-w-md border border-dashed border-line rounded-xl p-6 text-center text-sm text-muted">
             输入任意内容开始对话。
             {echoMode && (
               <>
@@ -443,18 +469,25 @@ export default function ChatPage() {
           </div>
         )}
         {messages.map((m, i) => (
-          <div key={`${m.role}-${i}`} className={`msg ${m.role === "user" ? "msg-user" : "msg-bot"}`}>
-            <div className="msg-name">{m.role === "user" ? "你" : "DeskMate"}</div>
-            <div className="msg-body">
+          <div key={`${m.role}-${i}`} className={`flex flex-col max-w-[78%] min-w-0 ${m.role === "user" ? "self-end items-end" : "self-start"}`}>
+            <span className="text-[11px] text-muted mb-1 select-none" title={m.created_at}>
+              {m.role === "user" ? "你" : "DeskMate"}
+              {m.created_at ? ` · ${fmtChatTime(m.created_at)}` : ""}
+            </span>
+            <div className={`whitespace-pre-wrap break-words break-anywhere min-w-0 px-3.5 py-2.5 text-sm leading-relaxed ${
+              m.role === "user"
+                ? "bg-brand text-white rounded-xl rounded-br-sm"
+                : "bg-surface-chat text-ink rounded-xl rounded-bl-sm"
+            }`}>
               {m.content ? (
                 m.content
               ) : (
-                <span className="typing">思考中…</span>
+                <span className="text-muted animate-typing">思考中…</span>
               )}
             </div>
             {m.role === "assistant" && m.content && voiceStatus?.enabled && (
               <button
-                className="mini-btn msg-speak"
+                className="border border-line bg-white rounded-lg px-2 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors self-start mt-1.5"
                 onClick={() => {
                   stopSpeaking();
                   void speak(m.content.length > 1900 ? `${m.content.slice(0, 1900)}…` : m.content);
@@ -468,10 +501,17 @@ export default function ChatPage() {
         ))}
         <div ref={bottomRef} />
       </div>
-      {notice && <div className="notice-line">{notice}</div>}
-      <div className="chat-input-row">
+
+      {notice && <div className="px-4 py-2 text-xs text-ok bg-ok-50">{notice}</div>}
+
+      {/* Input row */}
+      <div className="flex items-end gap-2.5 p-3 border-t border-line">
         <button
-          className={`mic-btn ${recording ? "recording" : ""}`}
+          className={`h-[46px] min-w-[46px] px-2.5 rounded-xl border text-lg transition-colors ${
+            recording
+              ? "bg-bad text-white border-bad animate-typing"
+              : "bg-white border-line hover:border-brand"
+          } disabled:opacity-50 disabled:cursor-default`}
           onClick={() => void toggleMic()}
           disabled={busy || voiceMode !== "off"}
           title={
@@ -485,11 +525,12 @@ export default function ChatPage() {
           {recording ? "■" : "🎤"}
         </button>
         {speaking && (
-          <button className="stop-btn" onClick={stopSpeaking} title="停止播报（打断）">
+          <button className="h-[46px] px-3.5 rounded-xl border border-bad text-bad text-sm hover:bg-bad-50 transition-colors" onClick={stopSpeaking} title="停止播报（打断）">
             ⏹ 停止
           </button>
         )}
         <textarea
+          className="flex-1 min-w-0 min-h-[52px] max-h-[140px] resize-none rounded-xl border border-line px-3.5 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20 disabled:opacity-60"
           value={input}
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
           onChange={(e) => setInput(e.target.value)}
@@ -501,7 +542,7 @@ export default function ChatPage() {
           }}
           disabled={busy}
         />
-        <button className="send-btn" onClick={send} disabled={busy || !input.trim()}>
+        <button className="h-[46px] px-5 rounded-xl bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-default" onClick={send} disabled={busy || !input.trim()}>
           发送
         </button>
       </div>

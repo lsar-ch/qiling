@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from deskmate_contracts.events import EventEnvelope
 from deskmate_contracts.voice import VoiceParams
 
+from app.config import is_lite_mode
 from app.speech.base import (
     SpeechProviderError,
     SpeechStack,
@@ -60,10 +61,17 @@ async def voice_status(request: Request) -> dict:
     stack = _stack(request)
     settings = request.app.state.settings
     body = stack_status(stack)
+    if is_lite_mode(settings):
+        # lite 模式：语音整体禁用，报告与 health.voice_pipeline 保持一致，
+        # 避免前端继续开麦监听却反复收到 503。
+        body["enabled"] = False
+        body["stt"]["available"] = False
+        body["tts"]["available"] = False
+        body["degradation_reason"] = "轻量模式已禁用语音"
     body["language"] = settings.stt_language
     body["interruption_enabled"] = settings.interruption_enabled
     body["activation"] = {
-        "enabled": settings.activation_enabled,
+        "enabled": False if is_lite_mode(settings) else settings.activation_enabled,
         "default_state": settings.activation_default_state,
         "persona_name": settings.activation_persona_name,
     }
@@ -101,6 +109,9 @@ async def voice_intent(request: Request, body: IntentRequest) -> dict:
 
 @router.post("/recognize")
 async def recognize(request: Request, language: str = "zh") -> dict:
+    settings = request.app.state.settings
+    if is_lite_mode(settings):
+        raise HTTPException(status_code=503, detail="轻量模式已禁用语音识别")
     stack = _stack(request)
     if not stack.recognizer.available:
         raise HTTPException(status_code=503, detail="语音识别未配置：请先配置语音供应商")
@@ -136,6 +147,9 @@ async def recognize(request: Request, language: str = "zh") -> dict:
 
 @router.post("/synthesize")
 async def synthesize(request: Request, body: SynthesizeRequest) -> Response:
+    settings = request.app.state.settings
+    if is_lite_mode(settings):
+        raise HTTPException(status_code=503, detail="轻量模式已禁用语音合成")
     stack = _stack(request)
     if not stack.synthesizer.available:
         raise HTTPException(status_code=503, detail="语音合成未配置：请先配置语音供应商")

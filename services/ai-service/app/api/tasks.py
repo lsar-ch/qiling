@@ -34,9 +34,7 @@ def run_manager(request: Request):
 @router.get("/{task_id}/run")
 def get_task_run(task_id: str, request: Request) -> dict:
     run = run_manager(request).store.latest_for_task(task_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="该任务还没有 Agent Run")
-    return {"run": run.model_dump(mode="json")}
+    return {"run": run.model_dump(mode="json") if run else None}
 
 
 @router.post("/{task_id}/execute")

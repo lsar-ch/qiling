@@ -109,6 +109,12 @@ export async function startAlwaysListener(
 
   const ownsCtx = !sharedCtx;
   const ctx = sharedCtx ?? new AudioContext();
+  if (ctx.state === "closed") {
+    // 共享 ctx 已被页面卸载清理：节点建在已关闭上下文上只会产生告警。
+    stream.getTracks().forEach((track) => track.stop());
+    callbacks.onError?.("音频会话已结束，请重新开启常开监听");
+    return null;
+  }
   const source = ctx.createMediaStreamSource(stream);
   const processor = ctx.createScriptProcessor(4096, 1, 1);
   const silence = ctx.createGain();

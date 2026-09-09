@@ -41,6 +41,8 @@ EventType = Literal[
     "task.completed",
     "task.failed",
     "task.cancelled",
+    "task.approval_reminder",
+    "task.timed_out",
     # 记忆
     "memory.created",
     "memory.updated",
@@ -65,6 +67,8 @@ KNOWN_EVENT_TYPES: tuple[str, ...] = (
     "task.completed",
     "task.failed",
     "task.cancelled",
+    "task.approval_reminder",
+    "task.timed_out",
     "memory.created",
     "memory.updated",
     "memory.entry.deleted",
