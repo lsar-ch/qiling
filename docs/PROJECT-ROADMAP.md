@@ -17,7 +17,7 @@ DeskMate 当前收敛为：
 
 ## 当前进度
 
-**Step 1-3、Step 4 语音闭环、Step 4.5 设置与角色配置、Step 5 本地项目记忆、Step 6 任务分流主链路、Step 7 执行器目录与 Codex ACP 真实执行、Step 8 自动化回归与 Codex 真实成功任务均已完成（2026-09-07）；Step 9 V1 视觉与体验打磨进行中，桌面挂件交互层已阶段性完成，最终真机启动/麦克风和 Windows 人工验收放视觉收口后重跑。**
+**截至 2026-09-11：Step 1-3、Step 4、Step 4.5、Step 5、Step 6、Step 7、Step 8 自动化回归与 Codex 真实任务已完成；Step 9 页面视觉与挂件交互已完成；Step 9.5 表现事件流已完成。项目进入 V1 收口：角色基础形象规范化/挂件接入、macOS 真机人工验收、Windows 回归。**
 
 已完成：
 
@@ -30,7 +30,7 @@ DeskMate 当前收敛为：
 - 设置页、角色卡与本地 settings/personas API（Step 4.5）
 - 本地 L1/L2/L3 项目记忆、FTS 检索、记忆页 CRUD、Obsidian 只读三档模式（Step 5）
 - 任务分流四类结果、任务 JSON 持久化、任务 API、聊天自动分流、本地任务台（Step 6）
-- 统一 Agent Adapter/Registry 契约、Codex 探测、基于 `config/agents.yaml` 的执行器目录与配置接口（6 个默认）、Claude Code/WorkBuddy 等非 Codex 预留及执行器状态展示
+- 统一 Agent Adapter/Registry 契约、基于 `config/agents.yaml` 的执行器目录与配置接口（6 个默认）；Codex 与 WorkBuddy ACP 真实接入，其余执行器保留扩展位
 - Codex ACP/stdio 真实执行：AgentRun 持久化、任务提交、进度回流、取消/授权、`/api/agent-runs` 与主界面真实运行控件（Step 7 Phase 2）
 - Step 8 发布回归：`/api/health` 能力汇总、LLM/语音/Codex 降级自动化覆盖、前端“执行器不可用”提示、运行时隐私目录忽略；Codex ACP 真实任务已成功验收（真机启动/麦克风/Windows 待人工）
 
@@ -75,16 +75,19 @@ DeskMate 当前收敛为：
 - Agent Registry 注册与探测
 - 执行器目录与配置接口：`config/agents.yaml` 默认注册 6 个执行器，配置驱动可扩展
 - Codex 本地探测
-- Claude Code / WorkBuddy 等非 Codex 执行器预留 pending 适配器（真实协议接入前不执行任务）
+- Claude Code / Qwen Code / Kimi CLI / Reasonix 保留 pending 适配器（真实协议接入前不执行任务）
 - Codex ACP/stdio 真实连接与任务提交、AgentRun 持久化、进度/结果回流与记忆归档
+- WorkBuddy ACP/stdio 真实连接、桌面端登录态探测、只读任务提交、取消与子进程回收
 - `/api/agents` 探测 API、`/api/agent-runs` 运行/取消/授权 API
 - 前端“我的智能体”执行器状态展示与真实运行/取消/批准控件
 
-验收记录：Codex 本机 provider/model 已调整为当前 relay 支持的 `deepseek-v4-flash`，并通过 DeskMate API 完成一次 `read-only` 真实任务（`task_eff6a657ae` / `run_c560a3ca9c`）。其他执行器仍按目录接入对应 adapter。
+验收记录：Codex 本机 provider/model 已调整为当前 relay 支持的 `deepseek-v4-flash`，并通过 DeskMate API 完成一次 `read-only` 真实任务（`task_eff6a657ae` / `run_c560a3ca9c`）。WorkBuddy `2.137.1` 于 2026-09-13 完成真实只读任务、取消、错误路径和进程回收复验（`task_b0a1e73e07` / `run_76f49ee353`）。其他执行器仍按目录接入对应 adapter。
 
 ### Step 8：V1 回归与发布
 
-状态：进行中（2026-09-07），验收范围见 `docs/STEP8-RELEASE-DEGRADATION.md`。
+状态：自动化与 Codex 真实任务已完成；macOS/Windows 人工验收待收口。验收范围见 `docs/STEP8-RELEASE-DEGRADATION.md`。
+
+**借鉴 here（2026-09-10）**：打包脚本参考 here 的 `build_bundle.py`——smoke test、按需安装（--with-*）、模型外置、CI 双平台。
 
 已完成的自动化/工程收尾：
 
@@ -105,7 +108,7 @@ DeskMate 当前收敛为：
 
 ### Step 9：V1 视觉与体验打磨
 
-状态：进行中（2026-09-07），范围见 `docs/STEP9-UI-POLISH.md`。
+状态：页面视觉、八页导航、390px/1440px 响应式审计已完成；待随最终角色接入再做一次回归。范围见 `docs/STEP9-UI-POLISH.md`。
 
 这一步处理“整个页面美化”，但不引入 V2 的重资产表现：
 
@@ -117,29 +120,137 @@ DeskMate 当前收敛为：
 
 已完成（桌面挂件交互层）：
 
-- 透明紧凑挂件窗口 `236x258`：无边框、置顶、右下角定位、可拖动
+- 透明紧凑挂件窗口 `280x304`：无边框、置顶、右下角定位、可拖动
 - 角色舞台入口交互：单击激活、双击打开主界面、`Space` 打开输入条
 - 短回复气泡仅展示当前挂件轮次回复，不在监听/静默态展示旁路回复内容
 - 语音识别无效音频在监听/静默态静默丢弃，不再反复提示失败
 - 激活光圈只在输入态出现，拖动后不残留圆圈；输入条支持 `Esc` / 点击角色 / 失焦收起
 
-待完成：
+剩余收口：
 
-- 主界面 Home / Chat / Memory / Knowledge Base / My Agents / Settings 六页视觉打磨与响应式验收
-- 角色卡测试阶段继续调整挂件形象、动作、移动与角色级视觉参数
+- 角色卡测试阶段继续调整挂件真实形象、动作、移动与角色级视觉参数
 
 V1 不做 Live2D / 3D 或复杂情绪动画；那些仍在后续方向。
+
+### Step 9.5：统一表现事件流与角色级表现（已完成，2026-09-11）
+
+状态：表现事件 schema、后端桥接、前端消费和基础情绪动效已完成。角色资产接入单列为 V1 收口工作。范围见 `docs/EXPRESSION-EVENT-SCHEMA.md`。
+
+这一步是连接「后端状态」↔「挂件渲染」的桥梁，以及角色级表现的配置驱动化。
+
+#### 背景
+
+- 已将业务状态、情绪、气泡和主题色纳入统一表现事件链路
+- 已完成角色卡 presentation 配置、后端情绪解析和挂件消费
+- 当前剩余问题是资产来源仍以默认/示范形象为主，尚未完成用户自主导入闭环
+
+#### 排期
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| P0 | `docs/EXPRESSION-EVENT-SCHEMA.md` — 两层载荷 schema（ExpressionEvent + PersonaPresentation）、情绪推导规则、WS 协议扩展 | ✅ 完成 |
+| P1 | 后端 contracts 扩展（widget.py / events.py 新增字段） | ✅ 完成 |
+| P1 | PersonaPayload 六段式 profile（identity/personality/speech/relationship/preferences/boundaries）+ build_system_prompt()（借鉴 here） | ✅ 完成（2026-09-11） |
+| P1 | 后端 state_mapper 增强（emotion_for() + ExpressionEvent 输出） | ✅ 完成 |
+| P1 | 独立 emotion_resolver 模块——情绪名归一化+映射表（借鉴 here） | ✅ 完成（2026-09-11） |
+| P1 | 后端 presentation_bridge（角色切换时广播 PersonaPresentation） | ✅ 完成 |
+| P2 | 前端 WsMessage 扩展 + Widget 消费 emotion/bubble/theme | ✅ 完成 |
+| P2 | widget.css `.emotion-*` 视觉变体（改为立绘级动效：浮动/摇摆/弹跳/抖动；光环已按用户要求移除） | ✅ 完成（2026-09-11） |
+| V1 收口 | 单张基础形象上传/预览，按角色隔离保存到运行时目录 | ✅ 完成（2026-09-11） |
+| V1 收口 | 上传格式/尺寸校验、运行时 `asset-manifest.json`、挂件读取真实角色形象 | ✅ 完成（2026-09-11） |
+| V1 收口 | 去背景/边缘清理/固定画布等图像规范化增强 | ✅ 完成（2026-09-13） |
+| V1 收口 | 人物/动物程序化动作预设、悬停/拖动轻互动与挂件真实角色接入 | ✅ 完成（2026-09-11，待真机验收） |
+| V1.5 | 完整状态帧导入/生成，不拆组件 | 后续 |
+| V2/V3 | 半自动分层、参数化 SVG/Canvas、`layers.json`、骨骼/网格 | 后续备选 |
+| ~~P3~~ | ~~提示词模板定稿（文生图拆层）~~ | 已放弃（用户实测不可用，见方向文档 §2） |
+
+#### 资产管线（用户侧）
+
+采用渐进式方案，完整规划见 `docs/CHARACTER-INTERACTION-ROADMAP.md`：
+
+1. V1：用户只需提供或生成一张高清基础形象
+2. DeskMate 自动去背景、清理边缘、裁切、对齐、缩放
+3. V1 通过完整图和程序化动态表达角色状态
+4. V1.5 才提供可选的完整状态帧生成，不要求用户制作组件
+5. V2 再评估半自动部件识别与分层
+6. V3 再评估骨骼、网格或 Live2D 类渲染
+
+Codex 精灵表只能作为可选导入/导出格式，DeskMate 不依赖 Codex 或 WorkBuddy 才能运行。
 
 ## 后续方向
 
 V1 验证成功后再考虑：
 
-- 浏览器自动化
+- 浏览器窄场景自动化：优先 Browser Use/CDP，先做打开 URL、搜索、读取、提取和翻页
 - 更强的桌面感知
 - 实时全双工语音
 - 多 Agent 调度
 - 更丰富的角色表现
 - Live2D / 3D
+- 多平台消息投递（WeChat/Telegram 等，参考 here 的 MessagingRegistry 架构）
+
+角色资产与互动的完整渐进式边界见 `docs/CHARACTER-INTERACTION-ROADMAP.md`；资产生成路线见 `docs/CHARACTER-ASSET-GENERATION.md`。
+
+## 执行记录（2026-09-13）
+
+1. ✅ 完成只读基线检查。
+2. ✅ 完成 macOS 侧 P0 平台缺口与人工验收；Windows 安装、权限和退出回收仍需真机执行。
+3. ✅ 平台修改均先确认方案后实施。
+4. ✅ 每项修改完成了当前 macOS 环境可执行的验证。
+5. ✅ 合并 WorkBuddy 执行器，并完成 macOS 真实只读任务、取消和错误路径复验。
+6. ⏸ 暂不进入浏览器执行器和通用 CUA 开发。
+7. 后续：WorkBuddy 适配器允许注入 `mcpServers`，并把「日常/工作/项目」映射为 prompt 能力说明。
+8. 后续：先评估 Qwen Code CLI 的 ACP 接入，再决定是否新增 qwen 执行器；不接千问桌面端内部协议。
+
+## N.E.K.O. 对比后的推进计划（2026-09-12）
+
+### P0：完成 V1 收口
+
+- 角色基础形象规范化和挂件真机验收
+- macOS 启动器、麦克风权限、退出回收人工验收
+- Windows 安装/启动/权限回归
+- 保持当前产品边界：角色化、本地优先、项目记忆、可控 Agent 执行
+
+### P1：V1.1 浏览器窄场景执行
+
+目标是先获得稳定的网页工作能力，不直接建设通用 Computer Use。
+
+实施顺序：
+
+1. 在现有 `AgentAdapter` / `AgentRegistry` 上增加浏览器执行器，不在前端增加浏览器特例。
+2. 先实现打开 URL、搜索、读取页面、提取结果、翻页和滚动。
+3. 执行器优先采用页面级 DOM/CDP；可见浏览器作为用户可观察的执行面。
+4. 复用 `AgentRun`、进度事件、取消、授权和结果归档。
+5. 登录、验证码、提交、发送、删除和支付统一暂停并请求用户确认。
+6. 先用一个代表性任务做端到端验收，再决定是否增加表单填写。
+
+验收信号：
+
+- 浏览器会话能创建、复用、失效重建和关闭
+- 每一步都有可展示的进度/失败原因
+- 用户取消后浏览器和任务状态都能正确收口
+- 任务结果可进入 Chat、挂件反馈和项目记忆
+
+### P1：轻量主动性与对话模式
+
+- 闲聊/工作模式按上下文选择记忆加载和响应深度
+- 项目任务长时间等待、失败、完成时主动短播报
+- 记忆更新和项目进度回顾采用低频、可关闭策略
+
+### P2：发布加固
+
+- 一键安装/首次启动检查
+- 服务、模型、语音、执行器能力汇总
+- 失败原因和修复入口
+
+### P3：仅在真实需求出现后评估通用 CUA
+
+只有当浏览器、无障碍接口和系统快捷键无法覆盖真实任务时，才评估截图 + VLM + `pyautogui`。届时必须先单独验证：
+
+- macOS 辅助功能和屏幕录制权限
+- Windows DPI、坐标和多显示器
+- 截图隐私、敏感窗口屏蔽和请求预算
+- 单步执行、取消、超时、失败回退和高风险授权
 
 ## 暂不做的事
 

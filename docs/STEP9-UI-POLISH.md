@@ -78,7 +78,7 @@ Recommended visual direction:
 
 Completed (widget shell):
 
-- Compact transparent Tauri widget: `236x258`, frameless, always-on-top, bottom-right placement, draggable character stage.
+- Compact transparent Tauri widget: `280x304`, frameless, always-on-top, bottom-right placement, draggable character stage.
 - Character-stage entry interactions: click activates, double-click opens main UI, Space opens the mini input bar.
 - Short-reply bubble is driven only by the widget's own text/voice turn; conversation events from other UI sources no longer echo into the widget.
 - Silent/listening mode drops invalid STT audio without visible “语音识别失败” spam.
