@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
@@ -1005,6 +1006,7 @@ export default function Widget() {
       <div
         className="stage"
         data-active={active ? "1" : "0"}
+        style={{ "--mascot-size": `${MASCOT_BASE_SIZE * preferences.scale}px` } as CSSProperties}
         title="点击激活（播报中点击打断）· 双击打开主界面 · 按住拖动 · 右键菜单"
         onPointerDown={startStageDrag}
         onMouseEnter={() => applyEmotion("attentive")}
@@ -1056,10 +1058,6 @@ export default function Widget() {
           src={mascotArt}
           alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
           draggable={false}
-          style={{
-            width: `${MASCOT_BASE_SIZE * preferences.scale}px`,
-            height: `${MASCOT_BASE_SIZE * preferences.scale}px`,
-          }}
         />
 
         <div className="badge">

@@ -64,8 +64,9 @@ html, body, #root {
 /* ── 状态徽标 ── */
 .badge {
   position: absolute;
-  top: 42px;
-  right: 2px;
+  /* 贴着角色形象右上角，随角色尺寸一起缩放 */
+  top: calc(50% - var(--mascot-size, 338px) * 0.58);
+  right: calc(50% - var(--mascot-size, 338px) * 0.2);
   width: 30px;
   height: 30px;
   z-index: 3;
@@ -256,8 +257,9 @@ html, body, #root {
 /* ── 语音/静默小状态点 ── */
 .voice-chip {
   position: absolute;
-  top: 6px;
-  right: -6px;
+  /* 贴着角色形象右上角，随角色尺寸一起缩放 */
+  top: calc(50% - var(--mascot-size, 338px) * 0.46);
+  right: calc(50% - var(--mascot-size, 338px) * 0.25);
   height: 22px;
   min-width: 43px;
   box-sizing: border-box;
@@ -335,13 +337,13 @@ html, body, #root {
 
 /* ── 情绪：thinking（思考中）── 上下浮动（位移明显大于呼吸的缩放）── */
 .w-root[data-emotion="thinking"] .mascot {
-  animation: mascotFloat 1.7s ease-in-out infinite;
+  animation: mascotFloat 2s ease-in-out infinite;
 }
 
 /* ── 情绪：confused（需要确认）── 左右摇摆（持续，等待用户决定）── */
 .w-root[data-emotion="confused"] .mascot {
   transform-origin: 50% 92%;
-  animation: mascotSway 1.1s ease-in-out infinite;
+  animation: mascotSway 1.5s ease-in-out infinite;
 }
 
 /* ── 情绪：success（完成/成功）── 弹跳两下（一次性）── */
