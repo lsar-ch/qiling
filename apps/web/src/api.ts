@@ -312,6 +312,16 @@ export async function updatePersona(persona: PersonaCard): Promise<PersonaCard> 
   return (await resp.json()) as PersonaCard;
 }
 
+export async function uploadPersonaAvatar(personaId: string, file: File): Promise<{ avatar: string }> {
+  const resp = await fetch(`/api/personas/${encodeURIComponent(personaId)}/avatar`, {
+    method: "PUT",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return (await resp.json()) as { avatar: string };
+}
+
 export async function fetchMemoryOverview(): Promise<DocOverview[]> {
   const data = await fetchJson<{ items: DocOverview[] }>("/api/memories/overview");
   return data.items;

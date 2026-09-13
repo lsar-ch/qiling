@@ -1,0 +1,50 @@
+{
+  "persona_id": "default",
+  "version": 1,
+  "stage": {
+    "width": 1024,
+    "height": 1024,
+    "anchor": [
+      684,
+      510
+    ]
+  },
+  "layers": [
+    {
+      "id": "body",
+      "file": "main.png",
+      "z": 0
+    }
+  ],
+  "motions": {
+    "idle": {
+      "css": "anim-breathe"
+    },
+    "listening": {
+      "css": "anim-listen"
+    },
+    "thinking": {
+      "css": "anim-think"
+    },
+    "speaking": {
+      "css": "anim-talk"
+    },
+    "executing": {
+      "css": "anim-run"
+    },
+    "awaiting_approval": {
+      "css": "anim-wait"
+    },
+    "completed": {
+      "css": "anim-done"
+    },
+    "interrupted": {
+      "css": "anim-breathe"
+    }
+  },
+  "theme": {
+    "primary": "#6366F1",
+    "aura": "#818CF8",
+    "accent": "#C4B5FD"
+  }
+}

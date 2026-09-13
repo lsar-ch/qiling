@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "mode": "artwork",
+  "main": "/api/personas/persona_2/avatar",
+  "width": 1024,
+  "height": 1024,
+  "original_width": 2048,
+  "original_height": 2048,
+  "content_width": 642,
+  "content_height": 928,
+  "content_bbox": [
+    191,
+    48,
+    832,
+    975
+  ],
+  "canvas": {
+    "width": 1024,
+    "height": 1024,
+    "safe_margin": 48,
+    "baseline": 976
+  },
+  "content_type": "image/png",
+  "size": 2169348,
+  "output_size": 715346,
+  "background_removed": true,
+  "processing": "background-remove-trim-align-canvas"
+}

@@ -3,18 +3,59 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from PIL import Image
+from PIL import UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 from app.config import PerformanceMode, load_settings
+from app.core.persona_asset import NormalizedAvatar, normalize_avatar_image, png_bytes
 from app.llm import create_provider
+from app.model_profiles import (
+    CATEGORY_LABELS,
+    ModelProfile,
+    default_profile,
+    ensure_initial_profiles,
+    find_model_profile,
+    load_model_profiles,
+    public_model_profile,
+    save_model_profiles,
+    test_model_profile,
+)
 from app.speech.factory import build_speech_stack
 
 router = APIRouter(prefix="/api", tags=["settings"])
+_PERSONA_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
+_AVATAR_TYPES = {
+    "image/png": (".png", "PNG"),
+    "image/jpeg": (".jpg", "JPEG"),
+    "image/webp": (".webp", "WEBP"),
+}
+_MAX_AVATAR_BYTES = 15 * 1024 * 1024
+
+
+class PersonaProfile(BaseModel):
+    """六段式角色档案（借鉴 here：identity/personality/speech/relationship/preferences/boundaries）。
+
+    Step 9.5 P1：MBTI 归入 personality 自由文本，不强制字段。
+    各段均为可选自然语言描述；空段在生成系统提示词时跳过。
+    """
+
+    identity: str = ""        # 身份与世界认知
+    personality: str = ""     # 性格特征（可含 MBTI）
+    speech: str = ""          # 说话风格与措辞习惯
+    relationship: str = ""    # 与用户的关系设定
+    preferences: str = ""     # 喜好与工作偏好
+    boundaries: str = ""      # 边界与禁忌
+
+    model_config = {"extra": "forbid"}
 
 
 class PersonaPayload(BaseModel):
@@ -29,6 +70,8 @@ class PersonaPayload(BaseModel):
     avatar: str = ""
     voice: dict[str, Any] = Field(default_factory=dict)
     activation: dict[str, Any] = Field(default_factory=dict)
+    llm: dict[str, Any] = Field(default_factory=dict)
+    profile: PersonaProfile | None = None  # 六段式档案（Step 9.5 P1；可选，旧角色卡兼容）
 
 
 class SettingsUpdate(BaseModel):
@@ -74,10 +117,56 @@ def _write_overrides(request: Request, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _reload_runtime(request: Request) -> None:
+    request.app.state.settings = load_settings()
+    request.app.state.speech = build_speech_stack(request.app.state.settings)
+    request.app.state.llm_provider = create_provider(request.app.state.settings)
+    request.app.state.echo_mode = request.app.state.settings.llm_provider == "echo"
+    vault = Path(request.app.state.settings.obsidian_vault_path).expanduser()
+    if request.app.state.settings.memory_mode == "obsidian_linked" and vault.is_dir():
+        request.app.state.memory.set_vault_mirror(vault)
+    else:
+        request.app.state.memory.set_vault_mirror(None)
+
+
 def _persona_dir(request: Request) -> Path:
     path = request.app.state.settings.personas_dir
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _persona_asset_dir(request: Request, persona_id: str) -> Path:
+    if not _PERSONA_ID.fullmatch(persona_id):
+        raise HTTPException(status_code=400, detail="角色卡 ID 不合法")
+    path = request.app.state.settings.data_dir / "persona-assets" / persona_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _avatar_path(request: Request, persona_id: str) -> Path | None:
+    directory = _persona_asset_dir(request, persona_id)
+    for suffix in (".png", ".jpg", ".webp"):
+        path = directory / f"avatar{suffix}"
+        if path.is_file():
+            return path
+    return None
+
+
+def _normalize_avatar(body: bytes, expected_format: str) -> NormalizedAvatar:
+    try:
+        from io import BytesIO
+
+        with Image.open(BytesIO(body)) as image:
+            if image.format != expected_format:
+                raise ValueError("图片内容与文件类型不一致")
+            image.load()
+            return normalize_avatar_image(image.copy())
+    except ValueError:
+        raise
+    except UnidentifiedImageError as exc:
+        raise ValueError("无法读取图片") from exc
+    except Exception as exc:
+        raise ValueError("无法处理图片") from exc
 
 
 def _persona_from_file(path: Path) -> dict[str, Any]:
@@ -136,14 +225,16 @@ def get_settings(request: Request) -> dict[str, Any]:
 
 
 @router.put("/settings")
-def update_settings(payload: SettingsUpdate, request: Request) -> dict[str, Any]:
+async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str, Any]:
     current = _read_overrides(request)
     data = payload.model_dump(exclude_unset=True)
+    switched_persona_id: str | None = None
     if "active_persona_id" in data:
         persona_path = _persona_dir(request) / f"{data['active_persona_id']}.yaml"
         if not persona_path.is_file():
             raise HTTPException(status_code=404, detail="角色卡不存在")
-        current["active_persona_id"] = data.pop("active_persona_id")
+        switched_persona_id = data.pop("active_persona_id")
+        current["active_persona_id"] = switched_persona_id
     ui = current.setdefault("ui", {})
     for key in ("ui_language", "ui_theme"):
         if key in data:
@@ -321,6 +412,84 @@ def list_personas(request: Request) -> dict[str, Any]:
     return {"items": items}
 
 
+@router.get("/personas/{persona_id}/avatar")
+def get_persona_avatar(persona_id: str, request: Request) -> Response:
+    path = _avatar_path(request, persona_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="角色形象不存在")
+    return FileResponse(path)
+
+
+@router.put("/personas/{persona_id}/avatar")
+async def upload_persona_avatar(persona_id: str, request: Request) -> dict[str, Any]:
+    persona_path = _persona_dir(request) / f"{persona_id}.yaml"
+    if not persona_path.is_file():
+        raise HTTPException(status_code=404, detail="角色卡不存在")
+
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    metadata = _AVATAR_TYPES.get(content_type)
+    if metadata is None:
+        raise HTTPException(status_code=415, detail="仅支持 PNG、JPG 或 WebP 图片")
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    if len(body) > _MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=413, detail="图片不能超过 15 MB")
+    suffix, expected_format = metadata
+    try:
+        normalized = await run_in_threadpool(_normalize_avatar, body, expected_format)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    directory = _persona_asset_dir(request, persona_id)
+    for old_suffix in (".png", ".jpg", ".webp"):
+        (directory / f"original{old_suffix}").unlink(missing_ok=True)
+    for old_suffix in (".jpg", ".webp"):
+        (directory / f"avatar{old_suffix}").unlink(missing_ok=True)
+    (directory / f"original{suffix}").write_bytes(body)
+    path = directory / "avatar.png"
+    normalized_body = png_bytes(normalized.image)
+    path.write_bytes(normalized_body)
+    output_width, output_height = normalized.image.size
+    manifest = {
+        "version": 2,
+        "mode": "artwork",
+        "main": f"/api/personas/{persona_id}/avatar",
+        "width": output_width,
+        "height": output_height,
+        "original_width": normalized.original_size[0],
+        "original_height": normalized.original_size[1],
+        "content_width": normalized.content_size[0],
+        "content_height": normalized.content_size[1],
+        "content_bbox": list(normalized.content_bbox),
+        "canvas": {
+            "width": output_width,
+            "height": output_height,
+            "safe_margin": 48,
+            "baseline": output_height - 48,
+        },
+        "content_type": content_type,
+        "size": len(body),
+        "output_size": len(normalized_body),
+        "background_removed": normalized.background_removed,
+        "processing": normalized.processing,
+    }
+    (directory / "asset-manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "persona_id": persona_id,
+        "avatar": f"/api/personas/{persona_id}/avatar",
+        "size": len(body),
+        "content_type": content_type,
+        "width": output_width,
+        "height": output_height,
+        "background_removed": normalized.background_removed,
+        "processing": normalized.processing,
+    }
+
+
 @router.post("/personas")
 def create_persona(payload: PersonaPayload, request: Request) -> dict[str, Any]:
     path = _persona_dir(request) / f"{payload.id}.yaml"
@@ -340,8 +509,11 @@ def update_persona(persona_id: str, payload: PersonaPayload, request: Request) -
     path = _persona_dir(request) / f"{persona_id}.yaml"
     if not path.exists():
         raise HTTPException(status_code=404, detail="角色卡不存在")
+    existing = _persona_from_file(path)
+    # 合并而非整体覆盖：保留前端尚未支持的字段（如 profile 六段式档案）
+    merged = {**existing, **payload.model_dump(exclude_unset=True)}
     path.write_text(
-        yaml.safe_dump(payload.model_dump(), allow_unicode=True, sort_keys=False),
+        yaml.safe_dump(merged, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
     return payload.model_dump()

@@ -61,7 +61,24 @@ def test_publish_response_and_ws_replay() -> None:
         with client.websocket_connect("/api/events") as ws:
             hello = ws.receive_json()
             assert hello["event_type"] == "system.health"
-            # 历史回放应包含刚发布的事件
+            # 历史回放应包含刚发布的事件（可能先有 persona.presentation）
             replayed = ws.receive_json()
+            if replayed["event_type"] == "persona.presentation":
+                replayed = ws.receive_json()
             assert replayed["event_type"] == "task.started"
             assert replayed["task_id"] == "task_99"
+
+
+def test_expression_attached_automatically() -> None:
+    """Step 9.5 P1/P2：publish 时 expression 自动附加（情绪由事件类型推导）。"""
+    with make_client() as client:
+        result = _publish(client, "task.completed", task_id="task_42")
+        expr = result["event"].get("expression")
+        assert expr is not None
+        assert expr["state"] == "completed"
+        assert expr["emotion"] == "success"
+        assert expr["task_id"] == "task_42"
+
+        # 不在状态映射表的事件（如 memory.created）不附加 expression
+        result = _publish(client, "memory.created")
+        assert result["event"].get("expression") is None

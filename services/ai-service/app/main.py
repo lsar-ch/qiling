@@ -38,7 +38,8 @@ def create_app(
 ) -> FastAPI:
     settings = settings or load_settings()
     widget_state = WidgetStateRegistry()
-    hub = EventHub(on_publish=make_report_hook(widget_state))
+    hub = EventHub(on_publish=make_composed_hook(widget_state))
+    presentation_bridge = PresentationBridge(settings.personas_dir)
     provider = llm_provider or create_provider(settings)
     speech = speech or build_speech_stack(settings)
 
@@ -46,6 +47,9 @@ def create_app(
     async def lifespan(app: FastAPI):
         settings.memory_dir.mkdir(parents=True, exist_ok=True)
         (settings.data_dir / "run").mkdir(parents=True, exist_ok=True)
+        # 启动时广播当前角色呈现
+        if settings.active_persona_id:
+            await presentation_bridge.broadcast(settings.active_persona_id, hub)
         yield
 
     app = FastAPI(
@@ -58,6 +62,7 @@ def create_app(
     app.state.session_id = f"session_{uuid4().hex[:10]}"
     app.state.event_hub = hub
     app.state.widget_state = widget_state
+    app.state.presentation_bridge = presentation_bridge
     app.state.conversation_store = ConversationStore(settings.data_dir)
     app.state.task_store = TaskStore(settings.data_dir)
     app.state.memory = MemoryService(settings.memory_dir, persona_dir=settings.personas_dir)

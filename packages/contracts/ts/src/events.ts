@@ -1,5 +1,6 @@
-// EventEnvelope v0.1 —— 对应 docs/V1-INTERFACES.md §3。
+// EventEnvelope v0.2 —— 对应 docs/V1-INTERFACES.md §3。
 // 镜像自 packages/contracts/py/deskmate_contracts/events.py。
+// Step 9.5: 新增 expression / presentation 可选字段与 persona.presentation 事件类型。
 
 export type EventSource =
   | "conversation"
@@ -31,7 +32,8 @@ export type EventType =
   | "memory.updated"
   | "memory.entry.deleted"
   | "system.health"
-  | "system.error";
+  | "system.error"
+  | "persona.presentation";
 
 export interface EventEnvelope {
   event_id: string;
@@ -41,4 +43,6 @@ export interface EventEnvelope {
   task_id: string | null;
   source: EventSource;
   payload: Record<string, unknown>;
+  expression?: Record<string, unknown> | null;
+  presentation?: Record<string, unknown> | null;
 }

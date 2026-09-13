@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -50,6 +50,8 @@ EventType = Literal[
     # 系统
     "system.health",
     "system.error",
+    # 角色呈现
+    "persona.presentation",
 ]
 
 KNOWN_EVENT_TYPES: tuple[str, ...] = (
@@ -74,6 +76,7 @@ KNOWN_EVENT_TYPES: tuple[str, ...] = (
     "memory.entry.deleted",
     "system.health",
     "system.error",
+    "persona.presentation",
 )
 
 
@@ -83,7 +86,11 @@ def new_event_id() -> str:
 
 
 class EventEnvelope(BaseModel):
-    """所有模块之间传递事件的统一结构。"""
+    """所有模块之间传递事件的统一结构。
+
+    Step 9.5: expression / presentation 为可选的扩展载荷；
+    老客户端对多余 JSON 字段容错。
+    """
 
     event_id: str = Field(default_factory=new_event_id)
     event_type: EventType
@@ -94,8 +101,11 @@ class EventEnvelope(BaseModel):
     task_id: str | None = None
     source: EventSource
     payload: dict[str, Any] = Field(default_factory=dict)
+    expression: Optional[dict[str, Any]] = None
+    presentation: Optional[dict[str, Any]] = None
 
     model_config = {"extra": "forbid"}
 
     def to_ws_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
+        result = self.model_dump(mode="json", exclude_none=True)
+        return result

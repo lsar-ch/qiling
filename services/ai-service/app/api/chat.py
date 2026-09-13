@@ -35,7 +35,17 @@ def _sse(obj: dict) -> str:
 
 
 def _system_prompt(request: Request) -> str:
-    return request.app.state.settings.system_prompt
+    settings = request.app.state.settings
+    persona = load_persona(settings.personas_dir, settings.active_persona_id)
+    return compose_system_prompt(settings.system_prompt, persona)
+
+
+def _persona_model_profile_id(request: Request) -> str | None:
+    settings = request.app.state.settings
+    persona = load_persona(settings.personas_dir, settings.active_persona_id)
+    llm = persona.get("llm") if isinstance(persona, dict) and isinstance(persona.get("llm"), dict) else {}
+    value = llm.get("profile_id")
+    return str(value).strip() if value else None
 
 
 def build_speak_text(answer: str, max_chars: int) -> str:

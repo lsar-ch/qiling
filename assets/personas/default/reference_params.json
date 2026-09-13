@@ -1,0 +1,21 @@
+{
+  "hair_color": "#1A0D0E",
+  "hair_style": "短发+刘海",
+  "eye_color": "#8B4513",
+  "eye_shape": "杏眼",
+  "skin_tone": "#FFF5EE",
+  "outfit": {
+    "type": "露肩连衣裙",
+    "primary_color": "#000000",
+    "secondary_color": "#8B0000"
+  },
+  "accessories": [
+    "围巾",
+    "发夹"
+  ],
+  "face_shape": "瓜子脸",
+  "vibe": "优雅知性，略带神秘感",
+  "coverage": "full_body",
+  "source": "微信图片_20260910210511_41_36.jpg",
+  "model": "qwen-vl-plus"
+}

@@ -1,13 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   createPersona,
+  fetchModelProfiles,
   fetchPersonas,
   fetchSettings,
   updatePersona,
   updateSettings,
+  uploadPersonaAvatar,
   type AppSettings,
+  type ModelProfile,
   type PersonaCard,
 } from "./api";
+import ModelProfileSelect from "./ModelProfileSelect";
 
 const inputCls =
   "w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20";
@@ -144,14 +148,24 @@ export default function CharacterPage() {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const load = async (): Promise<void> => {
     setLoading(true);
     setError("");
     try {
-      const [nextSettings, nextPersonas] = await Promise.all([fetchSettings(), fetchPersonas()]);
+      const [nextSettings, nextPersonas, nextProfiles] = await Promise.all([
+        fetchSettings(),
+        fetchPersonas(),
+        fetchModelProfiles(),
+      ]);
       setSettings(nextSettings);
       setPersonas(nextPersonas);
+      setModelProfiles(
+        nextProfiles.filter(
+          (profile) => profile.enabled && (profile.category === "text" || profile.category === "multimodal"),
+        ),
+      );
       setDraft(nextPersonas.find((item) => item.id === nextSettings.active_persona_id) ?? nextPersonas[0] ?? null);
       setDirty(false);
     } catch (e) {
@@ -281,6 +295,23 @@ export default function CharacterPage() {
   const selectPersona = (persona: PersonaCard): void => {
     setDraft(persona);
     setDirty(false);
+  };
+
+  const uploadAvatar = async (file: File): Promise<void> => {
+    if (!draft) return;
+    setUploadingAvatar(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await uploadPersonaAvatar(draft.id, file);
+      const avatar = `${result.avatar}?v=${Date.now()}`;
+      patch((current) => ({ ...current, avatar }));
+      setNotice("形象已上传。点击底部「保存」后写入角色卡。");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "形象上传失败");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const heading = (
@@ -452,15 +483,67 @@ export default function CharacterPage() {
                 <TextArea label="回复风格" value={draft.reply_style} onChange={(value) => patch((current) => ({ ...current, reply_style: value }))} hint="会影响后续对话提示词和语音表达。" />
               </CardSection>
 
-              <CardSection title="形象" badge="V2">
-                <div className="flex items-center gap-3 min-w-0">
-                  <PersonaAvatar persona={draft} className="w-16 h-16 rounded-full text-2xl" />
-                  <div className="flex-1 min-w-0">
-                    <Field label="头像 URL" value={draft.avatar} onChange={(value) => patch((current) => ({ ...current, avatar: value }))} placeholder="https://…/avatar.png" />
+              <CardSection title="模型绑定" badge="可跟随全局">
+                <p className="text-xs text-muted leading-relaxed break-words">
+                  只绑定模型档案，不在角色卡中保存 API Key。未指定时使用设置页对应分类的默认模型。
+                </p>
+                <div className="flex flex-col gap-1.5 text-xs text-muted">
+                  通用文字 / 多模态模型
+                  <ModelProfileSelect
+                    value={draft.llm?.profile_id ?? ""}
+                    options={[
+                      { id: "", label: "跟随全局默认" },
+                      ...modelProfiles.map((profile) => ({
+                        id: profile.id,
+                        label: `${profile.name} · ${profile.category === "multimodal" ? "多模态" : "文字"} · ${profile.model || profile.provider}`,
+                      })),
+                    ]}
+                    onChange={setModelProfile}
+                    ariaLabel="选择角色模型"
+                    className="w-full"
+                    buttonClassName="h-9 w-full text-sm"
+                    menuClassName="left-0 w-full"
+                  />
+                </div>
+                {modelProfiles.length === 0 ? (
+                  <p className="rounded-lg bg-warn-50 px-3 py-2.5 text-xs text-warn leading-relaxed">
+                    尚未配置文字或多模态模型，请先到设置页创建模型档案。
+                  </p>
+                ) : null}
+              </CardSection>
+
+              <CardSection title="形象" badge="V1">
+                <div className="flex items-start gap-3 min-w-0">
+                  <PersonaAvatar persona={draft} className="w-20 h-20 rounded-lg text-2xl" />
+                  <div className="flex flex-col gap-2 min-w-0">
+                    <label className="inline-flex items-center justify-center rounded-lg px-3 py-2 bg-brand text-white text-xs font-medium hover:bg-brand-600 transition-colors cursor-pointer w-fit">
+                      {uploadingAvatar ? "上传中…" : "上传本地图片"}
+                      <input
+                        className="sr-only"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        disabled={uploadingAvatar}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.currentTarget.value = "";
+                          if (file) void uploadAvatar(file);
+                        }}
+                      />
+                    </label>
+                    <p className="text-[11px] text-muted leading-relaxed break-words">
+                      支持 PNG、JPG、WebP，短边至少 512px、长边不超过 4096px，最大 15 MB。透明图会直接裁切；普通图需要背景颜色单一，系统会自动去背景并对齐到固定画布。
+                    </p>
                   </div>
                 </div>
+                <Field
+                  label="外部图片地址（可选）"
+                  value={draft.avatar.startsWith("/api/personas/") ? "" : draft.avatar}
+                  onChange={(value) => patch((current) => ({ ...current, avatar: value }))}
+                  placeholder="https://…/avatar.png"
+                  hint="上传本地图片后无需填写；远程图片仍可直接使用。"
+                />
                 <div className="rounded-lg bg-line-subtle px-3 py-2.5 text-xs text-muted leading-relaxed break-words">
-                  形象训练开发中：当前为静态形象，CharacterConfig 预留口型/动画扩展（V2）。
+                  V1 先使用一张完整基础形象，DeskMate 后续负责规范化和程序化动态；不要求你制作组件图或状态图。
                 </div>
               </CardSection>
 

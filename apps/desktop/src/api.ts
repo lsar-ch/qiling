@@ -10,21 +10,90 @@ export interface WidgetStatusReport {
   timestamp: string;
 }
 
+
+// ── Step 9.5: 统一表现事件流 ─────────────────────────────────────────────
+
+export type ExpressionEmotion =
+  | "neutral" | "attentive" | "thinking"
+  | "confused" | "success" | "error";
+
+export interface ExpressionBubble {
+  text: string;
+  duration_ms: number;
+  style: "info" | "success" | "warning" | "error";
+}
+
+export interface ExpressionEvent {
+  state: WidgetState;
+  task_id: string | null;
+  timestamp: string;
+  emotion: ExpressionEmotion;
+  bubble?: ExpressionBubble | null;
+}
+
+export interface PersonaPresentation {
+  persona_id: string;
+  persona_name: string;
+  style: "human" | "animal";
+  theme: {
+    primary: string;
+    aura: string;
+    accent: string;
+  };
+  animations: {
+    breath_rate: number;
+    blink_interval_ms: number;
+    idle_action_interval_ms: number;
+    transition_ms: number;
+  };
+  fx: {
+    thinking_bubble: boolean;
+    music_note: boolean;
+    success_sparkle: boolean;
+  };
+  asset?: {
+    avatar_url?: string;
+    width?: number;
+    height?: number;
+  } | null;
+}
+
 export interface HealthResponse {
   status: string;
   version: string;
 }
 
 export async function pollHealth(url: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1500);
     const resp = await fetch(`${url}api/health`, { signal: controller.signal });
-    clearTimeout(timer);
     return resp.ok;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+export async function fetchActivePersonaAsset(): Promise<{
+  avatar: string;
+  style: "human" | "animal";
+}> {
+  const settingsResp = await fetch(`${SERVICE_BASE}/api/settings`);
+  if (!settingsResp.ok) throw new Error(await readDetail(settingsResp));
+  const settings = await settingsResp.json() as { active_persona_id: string };
+  const personasResp = await fetch(`${SERVICE_BASE}/api/personas`);
+  if (!personasResp.ok) throw new Error(await readDetail(personasResp));
+  const personas = await personasResp.json() as {
+    items: Array<{ id: string; avatar?: string; kind?: string }>;
+  };
+  const persona = personas.items.find((item) => item.id === settings.active_persona_id);
+  const animalKinds = new Set(["cat", "dog", "bird", "rabbit", "animal"]);
+  return {
+    avatar: persona?.avatar ?? "",
+    style: animalKinds.has(persona?.kind?.toLowerCase() ?? "") ? "animal" : "human",
+  };
 }
 
 export function eventToState(eventType: string): WidgetState | null {
@@ -52,6 +121,8 @@ export interface WsMessage {
   task_id?: string | null;
   timestamp?: string;
   payload?: Record<string, unknown>;
+  expression?: ExpressionEvent | null;
+  presentation?: PersonaPresentation | null;
 }
 
 export const SERVICE_BASE = "http://127.0.0.1:8736";
