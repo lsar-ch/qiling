@@ -111,6 +111,13 @@ V1 不追求做完整桌面智能体，而是验证一个明确产品假设：
 - 进入等待授权
 - 未授权前不执行
 
+验收记录（2026-09-13，真实 UI 走一遍）：
+
+- 分流结果 `task_3c56f5dab4`：`category=request_approval`、`risk_level=high`、`status=awaiting_approval`、`required_approval=true`、`preferred_executor=null`。
+- 回复“这类操作需要先确认，我已经挂起等待授权。”，事件流出现 `task.approval_required`。
+- 未授权前没有任何副作用：该任务没有生成任何 agent run（`/api/agent-runs` 查无此任务），执行器未被调用。
+- 「我的智能体」页最近任务卡片显示 `request_approval · high · awaiting_approval`，需要用户显式操作才会继续。
+
 ## 6. V1 完成判断
 
 只有以下链路全部可用，才算 V1 核心验证完成：

@@ -74,6 +74,22 @@ cp .env.example .env
    - 应显示麦克风不可用/拒绝授权；
    - 文字对话仍应正常。
 
+   自动化等价做法（2026-09-13 复验通过）：用 CDP 把该来源的麦克风权限置为 `denied` 再刷新，
+   页面侧拿到与系统摘除权限相同的 `NotAllowedError`：
+
+   ```js
+   const cdp = await page.context().newCDPSession(page);
+   await cdp.send("Browser.setPermission", {
+     permission: { name: "microphone" },
+     setting: "denied",
+     origin: "http://127.0.0.1:8736",
+   });
+   ```
+
+   实测结果：页面正常、常开监听提示「无法访问麦克风（常开监听需要授权）」、
+   按键说话提示「无法访问麦克风，请在浏览器 / 系统设置中授权后重试」、文字对话仍可用；
+   把 setting 改回 `granted` 刷新后回到「聆听中」。
+
 > 如果系统提示“未配置语音供应商”，说明还没有配置 STT/TTS，麦克风测试会停在权限之后。
 
 ## 拷贝到 Windows

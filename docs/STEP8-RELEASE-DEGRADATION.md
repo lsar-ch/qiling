@@ -54,6 +54,19 @@ Run on macOS before marking Step 8 complete:
 
 Detailed macOS/Windows permission and source-copy steps are in `docs/CROSS-PLATFORM-TESTING.md`.
 
+### macOS 人工清单复验记录（2026-09-13）
+
+第 3 项（无麦克风 / 拒绝授权后降级）已复验通过：
+
+- 环境：`./scripts/dev.sh service` + `http://127.0.0.1:8736/`（主界面走浏览器，麦克风权限属于浏览器）。
+- 方法：用 CDP `Browser.setPermission` 把 `microphone` 置为 `denied`，刷新页面；页面侧拿到的是与「系统设置里移除浏览器麦克风权限」相同的 `NotAllowedError`。
+- 结果：
+  - 页面正常渲染，控制台 0 报错；
+  - 常开监听提示「无法访问麦克风（常开监听需要授权）」，按键说话提示「无法访问麦克风，请在浏览器 / 系统设置中授权后重试」；
+  - 文字对话仍可用（真实 LLM 回合正常返回）；
+  - 恢复权限后刷新，常开监听回到「聆听中」。
+- 未覆盖：系统设置层真实摘除权限（TCC）与真人说话转写；这两项需要人工在系统设置里操作并出声。
+
 ## Real Executor Record
 
 - 2026-09-07: Codex provider/model switched from `agnes-2.5-flash` to `deepseek-v4-flash` in `~/.codex/config.toml`.
