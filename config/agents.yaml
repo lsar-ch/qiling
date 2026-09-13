@@ -66,11 +66,11 @@ executors:
 
   - name: workbuddy
     label: WorkBuddy
-    adapter: pending
+    adapter: workbuddy
     enabled: true
     commands: ["workbuddy", "wb"]
-    protocol: null
+    protocol: acp
     capabilities: ["task", "agent"]
     source_url: null
-    tags: ["custom", "pending"]
-    detail: "用户指定的任务执行器，接口已预留"
+    tags: ["custom", "acp"]
+    detail: "WorkBuddy 自带 CLI，通过 ACP/stdio 提交真实任务"

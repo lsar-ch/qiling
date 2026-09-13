@@ -35,6 +35,7 @@ class AgentTaskRequest:
     prompt: str
     cwd: str
     conversation_id: str | None = None
+    session_id: str | None = None  # 续接上一轮的 ACP session
     mode: str = "read-only"
     config: dict[str, Any] = field(default_factory=dict)
 

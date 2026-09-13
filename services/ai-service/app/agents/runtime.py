@@ -112,6 +112,29 @@ class AgentRunManager:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_timers: dict[str, asyncio.Task[None]] = {}  # task_id -> reminder timer
 
+    def _find_previous_session(self, conversation_id: str | None, exclude_task_id: str) -> str | None:
+        """找到同一 conversation 下最近一次已完成的 run 的 session_id。"""
+        if not conversation_id:
+            return None
+        # 找到同一 conversation 的所有 task_id
+        conv_task_ids = {
+            t.task_id for t in self.task_store._items.values()
+            if t.conversation_id == conversation_id and t.task_id != exclude_task_id
+        }
+        if not conv_task_ids:
+            return None
+        # 找到这些 task 的已完成 run
+        hits = [
+            run for run in self.store._items.values()
+            if run.task_id in conv_task_ids
+            and run.status == "completed"
+            and run.session_id
+        ]
+        if not hits:
+            return None
+        latest = max(hits, key=lambda run: run.created_at)
+        return latest.session_id
+
     async def execute(
         self,
         task: Task,
@@ -140,6 +163,9 @@ class AgentRunManager:
         if latest and latest.status in ("running", "awaiting_approval"):
             raise ValueError("任务已有进行中的 run")
 
+        # 查找同一 conversation 下之前的 session_id（用于多轮续接）
+        previous_session_id = self._find_previous_session(task.conversation_id, task.task_id)
+
         run = AgentRun(
             task_id=task.task_id,
             executor=executor_name,
@@ -154,7 +180,7 @@ class AgentRunManager:
             run,
             payload={"executor": executor_name, "mode": run.mode},
         )
-        background = asyncio.create_task(self._run_task(run, task, adapter))
+        background = asyncio.create_task(self._run_task(run, task, adapter, previous_session_id))
         self._tasks[task.task_id] = background
         return run
 
@@ -163,6 +189,7 @@ class AgentRunManager:
         run: AgentRun,
         task: Task,
         adapter: AgentAdapter,
+        previous_session_id: str | None = None,
     ) -> None:
         try:
             result = await adapter.run(
@@ -171,6 +198,7 @@ class AgentRunManager:
                     prompt=task.input,
                     cwd=str(self.data_dir.parent),
                     conversation_id=task.conversation_id,
+                    session_id=previous_session_id,
                     mode=run.mode,
                     config={"logs_dir": str(self.data_dir / "run_logs")},
                 ),

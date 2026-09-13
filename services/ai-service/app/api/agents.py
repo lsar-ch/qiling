@@ -20,9 +20,10 @@ router = APIRouter(prefix="/api/agents", tags=["agents"])
 
 
 class AgentConfigUpdate(BaseModel):
-    """执行器配置更新（最小版：codex 命令/路径覆盖）。"""
+    """执行器配置更新（当前支持 Codex / WorkBuddy 命令或路径覆盖）。"""
 
     command: str | None = None
+    internet_environment: str | None = None  # workbuddy 专用：internal / ioa / selfhosted / null(海外)
 
 
 def _registry(request: Request) -> AgentRegistry:
@@ -51,6 +52,19 @@ async def agent_config(request: Request) -> dict:
     }
 
 
+@router.post("/{name}/refresh")
+async def refresh_agent(name: str, request: Request) -> dict:
+    registry = _registry(request)
+    adapter = registry.get(name)
+    if adapter is None:
+        raise HTTPException(status_code=404, detail="Agent 不存在")
+    invalidate = getattr(adapter, "invalidate_probe", None)
+    if callable(invalidate):
+        invalidate()
+    agent = await registry.detect(name)
+    return agent.model_dump(mode="json")
+
+
 @router.get("/{name}")
 async def get_agent(name: str, request: Request) -> dict:
     registry = _registry(request)
@@ -65,13 +79,23 @@ async def update_agent_config(name: str, payload: AgentConfigUpdate, request: Re
     registry = _registry(request)
     if registry.get(name) is None:
         raise HTTPException(status_code=404, detail="Agent 不存在")
-    if name != "codex":
+    if name not in {"codex", "workbuddy"}:
         raise HTTPException(
             status_code=400,
-            detail="当前仅 codex 支持页面配置；其余执行器将在后续版本开放。",
+            detail="当前仅 codex 与 workbuddy 支持页面配置；其余执行器将在后续版本开放。",
         )
-    command = (payload.command or "").strip() or None
-    update_local_executor_config(default_catalog_path(), name, {"codex_command": command})
+    config_updates: dict = {}
+    if name == "codex":
+        command = (payload.command or "").strip() or None
+        config_updates["codex_command"] = command
+    else:  # workbuddy
+        command = (payload.command or "").strip() or None
+        config_updates["workbuddy_command"] = command
+        # internet_environment: 空字符串视为 null（海外模式）
+        if payload.internet_environment is not None:
+            env_val = payload.internet_environment.strip() or None
+            config_updates["internet_environment"] = env_val
+    update_local_executor_config(default_catalog_path(), name, config_updates)
     catalog = load_agent_catalog()
     rebuild_agent_registry(registry, catalog)
     request.app.state.agent_catalog = catalog

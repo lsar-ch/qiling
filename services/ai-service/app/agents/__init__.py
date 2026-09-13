@@ -14,6 +14,7 @@ from app.agents.factory import build_agent_registry
 from app.agents.registry import AgentRegistry
 from app.agents.reserved import PendingAgentAdapter
 from app.agents.runtime import AgentRun, AgentRunManager, AgentRunStore
+from app.agents.workbuddy import WorkBuddyAdapter
 
 __all__ = [
     "AgentAdapter",
@@ -31,6 +32,7 @@ __all__ = [
     "AgentRegistry",
     "CodexAdapter",
     "PendingAgentAdapter",
+    "WorkBuddyAdapter",
     "build_agent_registry",
     "load_agent_catalog",
 ]

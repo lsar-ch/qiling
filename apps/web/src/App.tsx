@@ -57,6 +57,7 @@ const TASK_ACTIONS: { status: TaskActionStatus; label: string }[] = [
 const AGENT_STATUS_ZH: Record<AgentIntegrationStatus, string> = {
   ready: "可用",
   pending: "预留",
+  auth_required: "需登录",
   not_installed: "未安装",
   error: "异常",
 };
@@ -92,12 +93,14 @@ const RUN_STATUS_DOT: Record<AgentRun["status"], string> = {
 const AGENT_PILL: Record<AgentIntegrationStatus, { pill: string; dot: string; note: string; noteCls: string }> = {
   ready: { pill: "bg-ok-50 text-ok", dot: "bg-ok", note: "已接通真实执行，可直接运行任务。", noteCls: "text-ok" },
   pending: { pill: "bg-warn-50 text-warn", dot: "bg-warn", note: "执行器已预留，完成接入配置后即可用。", noteCls: "text-warn" },
+  auth_required: { pill: "bg-warn-50 text-warn", dot: "bg-warn animate-pulse", note: "已安装但账号未登录或登录已失效，登录后重新检测。", noteCls: "text-warn" },
   not_installed: { pill: "bg-line-subtle text-muted", dot: "bg-muted", note: "尚未安装；按文档安装后刷新即可使用。", noteCls: "text-muted" },
   error: { pill: "bg-bad-50 text-bad", dot: "bg-bad", note: "接入异常，请检查配置后刷新。", noteCls: "text-bad" },
 };
 const AGENT_CARD_CLS: Record<AgentIntegrationStatus, string> = {
   ready: "border-line bg-white",
   pending: "border-warn/40 bg-warn-50/40",
+  auth_required: "border-warn/40 bg-warn-50/40",
   not_installed: "border-line-subtle bg-surface-tertiary",
   error: "border-bad/40 bg-bad-50/40",
 };
@@ -789,7 +792,7 @@ function MyAgentsPage() {
     try {
       const data = await fetchAgentConfig();
       const entry = data.items.find((item) => item.name === name);
-      const value = entry?.config?.codex_command;
+      const value = entry?.config?.[`${name}_command`];
       setConfigCommand(typeof value === "string" ? value : "");
     } catch (e) {
       setConfigError(e instanceof Error ? e.message : "配置读取失败");
@@ -812,7 +815,7 @@ function MyAgentsPage() {
       const updated = await updateAgentConfig(name, { command });
       setConfigNotice(command ? "已保存手动路径。" : "已恢复自动检测。");
       if (updated.integration_status === "not_installed") {
-        setConfigError(command ? `路径已保存，但该路径不可用：${command}` : "自动检测未找到 codex。");
+        setConfigError(command ? `路径已保存，但该路径不可用：${command}` : `自动检测未找到 ${name}。`);
       }
       closeAgentConfig();
       await loadAgents();
@@ -1036,16 +1039,16 @@ function MyAgentsPage() {
                     <li><span className="text-muted">协议</span> <b>{agent.protocol ?? "—"}</b></li>
                   </ul>
                   {agent.detail && <p className="text-xs text-muted mt-2 leading-relaxed break-anywhere">{agent.detail}</p>}
-                  {agent.name === "codex" && (
+                  {(agent.name === "codex" || agent.name === "workbuddy") && (
                     configName === agent.name ? (
                       <div className="mt-2.5 border-t border-line pt-2.5 flex flex-col gap-2 min-w-0">
                         <div>
-                          <p className="text-[11px] text-muted mb-1">Codex 可执行文件路径</p>
+                          <p className="text-[11px] text-muted mb-1">{agent.label} 可执行文件路径</p>
                           <input
                             className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
                             value={configCommand}
                             onChange={(e) => setConfigCommand(e.target.value)}
-                            placeholder="留空 = 自动检测（PATH / Codex.app / ~/.codex/bin）"
+                            placeholder="留空 = 自动检测"
                           />
                           <p className="text-[11px] text-muted mt-1">留空保存即恢复自动检测。</p>
                         </div>
@@ -1572,8 +1575,63 @@ function HomeStatusSection({ health, serviceOk }: { health: HealthResponse | nul
   );
 }
 
+function ExecutorStatusSection({ agents }: { agents: AgentInfo[] }) {
+  if (!agents || agents.length === 0) {
+    return null;
+  }
+
+  const readyCount = agents.filter(a => a.integration_status === 'ready').length;
+  const totalCount = agents.length;
+
+  return (
+    <section className="rounded-lg border border-line bg-white shadow-card overflow-hidden">
+      <div className="px-5 pt-5 pb-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-ink">执行器状态</h3>
+          <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
+            readyCount > 0 ? 'bg-ok-50 text-ok' : 'bg-warn-50 text-warn'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${readyCount > 0 ? 'bg-ok' : 'bg-warn'}`} />
+            {readyCount}/{totalCount} 可用
+          </span>
+        </div>
+        <div className="space-y-2">
+          {agents.map((agent) => {
+            const statusInfo = AGENT_PILL[agent.integration_status];
+            return (
+              <div key={agent.name} className="flex items-center justify-between py-2 border-b border-line-subtle last:border-b-0">
+                <div className="flex items-center gap-2">
+                  <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dot}`} />
+                  <span className="text-sm font-medium text-ink">{agent.label}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs ${statusInfo.noteCls}`}>
+                    {AGENT_STATUS_ZH[agent.integration_status]}
+                  </span>
+                  {agent.version && (
+                    <span className="text-xs text-muted font-mono">v{agent.version}</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {readyCount === 0 && (
+          <div className="mt-3 p-3 rounded-lg bg-warn-50 border border-warn/20">
+            <p className="text-xs text-warn leading-relaxed">
+              没有可用的执行器。请在「我的智能体」页面配置并启用至少一个执行器。
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState<PageKey>("home");
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [wsOpen, setWsOpen] = useState(false);
@@ -1609,6 +1667,68 @@ export default function App() {
       }
     }
   }, []);
+
+  // Fetch agents status
+  useEffect(() => {
+    let alive = true;
+    const loadAgents = async () => {
+      try {
+        const data = await fetchAgents();
+        if (alive) setAgents(data.items);
+      } catch (e) {
+        console.error('Failed to fetch agents:', e);
+      }
+    };
+    void loadAgents();
+    const timer = setInterval(loadAgents, 10000); // Refresh every 10s
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (page !== "chat") {
+      setVoiceLeaseOwned(false);
+      return;
+    }
+
+    let alive = true;
+    let heartbeatTimer: number | undefined;
+    let retryTimer: number | undefined;
+
+    const acquire = async (): Promise<void> => {
+      const acquired = await acquireVoiceLease();
+      if (!alive) return;
+      setVoiceLeaseOwned(acquired);
+      if (!acquired) {
+        retryTimer = window.setTimeout(() => void acquire(), 4000);
+        return;
+      }
+      heartbeatTimer = window.setInterval(async () => {
+        const renewed = await heartbeatVoiceLease();
+        if (!alive || renewed) return;
+        setVoiceLeaseOwned(false);
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = undefined;
+        retryTimer = window.setTimeout(() => void acquire(), 1000);
+      }, 6000);
+    };
+
+    const release = (): void => {
+      void releaseVoiceLease();
+    };
+
+    void acquire();
+    window.addEventListener("pagehide", release);
+    return () => {
+      alive = false;
+      window.clearInterval(heartbeatTimer);
+      window.clearTimeout(retryTimer);
+      window.removeEventListener("pagehide", release);
+      release();
+    };
+  }, [page]);
 
   useEffect(() => {
     let alive = true;
@@ -1840,6 +1960,7 @@ export default function App() {
             </div>
 
             {/* System status dashboard */}
+            <ExecutorStatusSection agents={agents} />
             <HomeStatusSection health={health} serviceOk={serviceOk} />
 
             {/* Demo controls */}

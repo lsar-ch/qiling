@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.agents.base import AgentAdapter
 from app.agents.catalog import AgentCatalogError, load_agent_catalog
 from app.agents.codex import CodexAdapter
+from app.agents import workbuddy as workbuddy_module
 from app.agents.registry import AgentRegistry
 from app.config import load_settings
 from app.main import create_app
@@ -40,6 +41,7 @@ def prepare_home(tmp_path, monkeypatch) -> None:
         PROJECT_ROOT / "config" / "agents.yaml",
         home / "config" / "agents.yaml",
     )
+    monkeypatch.setattr(workbuddy_module, "resolve_workbuddy_runtime", lambda _configured: None)
 
 
 @contextmanager
@@ -74,6 +76,18 @@ class FailingAdapter(FakeAdapter):
 
     async def detect(self) -> AgentInfo:
         raise RuntimeError("probe boom")
+
+
+class RefreshableAdapter(FakeAdapter):
+    name = "refreshable"
+    adapter_id = "refreshable"
+    display_name = "Refreshable Agent"
+
+    def __init__(self) -> None:
+        self.invalidated = False
+
+    def invalidate_probe(self) -> None:
+        self.invalidated = True
 
 
 def _expected_pending_status(commands: list[str]) -> tuple[str, bool]:
@@ -117,9 +131,8 @@ def test_agents_api_lists_all_default_agents(tmp_path, monkeypatch) -> None:
         assert items["claude-code"]["integration_status"] == claude_status
         assert items["claude-code"]["available"] is claude_available
         assert items["claude-code"]["enabled"] is True
-        workbuddy_status, workbuddy_available = _expected_pending_status(["workbuddy", "wb"])
-        assert items["workbuddy"]["integration_status"] == workbuddy_status
-        assert items["workbuddy"]["available"] is workbuddy_available
+        assert items["workbuddy"]["integration_status"] == "not_installed"
+        assert items["workbuddy"]["available"] is False
 
         codex = items["codex"]
         if shutil.which("codex") is not None:
@@ -146,6 +159,24 @@ def test_agents_api_config_returns_catalog(tmp_path, monkeypatch) -> None:
             "workbuddy",
         }
         assert all(item["enabled"] is True for item in body["items"])
+
+
+def test_workbuddy_command_config_is_persisted_and_detected(tmp_path, monkeypatch) -> None:
+    with make_client(tmp_path, monkeypatch) as client:
+        updated = client.put(
+            "/api/agents/workbuddy/config",
+            json={"command": "/tmp/deskmate-workbuddy-test"},
+        )
+        assert updated.status_code == 200
+        body = updated.json()
+        assert body["name"] == "workbuddy"
+        assert body["adapter"] == "workbuddy"
+        assert body["integration_status"] == "not_installed"
+        assert body["available"] is False
+
+        config = client.get("/api/agents/config").json()
+        workbuddy = next(item for item in config["items"] if item["name"] == "workbuddy")
+        assert workbuddy["config"]["workbuddy_command"] == "/tmp/deskmate-workbuddy-test"
 
 
 def test_load_agent_catalog_merges_local_agents(tmp_path) -> None:
@@ -222,6 +253,18 @@ def test_agents_api_unknown_agent_returns_404(tmp_path, monkeypatch) -> None:
         assert resp.status_code == 404
 
 
+def test_agents_api_refresh_invalidates_probe_cache(tmp_path, monkeypatch) -> None:
+    registry = AgentRegistry()
+    adapter = RefreshableAdapter()
+    registry.register(adapter)
+    with make_client(tmp_path, monkeypatch) as client:
+        client.app.state.agent_registry = registry
+        resp = client.post("/api/agents/refreshable/refresh")
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "refreshable"
+        assert adapter.invalidated is True
+
+
 def test_agents_api_returns_fake_adapter_result(tmp_path, monkeypatch) -> None:
     registry = AgentRegistry()
     registry.register(FakeAdapter())
@@ -257,3 +300,58 @@ def test_codex_adapter_detect_matches_local_codex_presence() -> None:
     else:
         assert info.integration_status == "ready"
         assert info.available is True
+
+
+def test_workbuddy_detect_without_runtime_returns_not_installed(monkeypatch) -> None:
+    monkeypatch.setattr(workbuddy_module, "resolve_workbuddy_runtime", lambda _configured: None)
+    info = asyncio.run(workbuddy_module.WorkBuddyAdapter(timeout_s=0.5).detect())
+    assert info.integration_status == "not_installed"
+    assert info.available is False
+
+
+def test_workbuddy_spawn_passes_cli_acp_args(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_spawn(command, *, args=None, cwd, env, on_update=None, on_permission=None, logs_dir=None, stderr_log_name="workbuddy-acp-stderr.log"):
+        captured["command"] = command
+        captured["args"] = args
+        captured["cwd"] = cwd
+        captured["env"] = env
+        captured["stderr_log_name"] = stderr_log_name
+        return None
+
+    monkeypatch.setattr(workbuddy_module.AcpClient, "spawn", fake_spawn)
+    runtime = workbuddy_module.WorkBuddyRuntime(
+        cli=Path("/tmp/deskmate-workbuddy-cli"),
+        runner=Path("/tmp/deskmate-workbuddy-runner"),
+        electron=True,
+    )
+    adapter = workbuddy_module.WorkBuddyAdapter()
+    asyncio.run(adapter._spawn(runtime, logs_dir=None))
+    assert captured["command"] == str(runtime.runner)
+    assert captured["args"] == [str(runtime.cli), "--acp"]
+    assert captured["env"]["ELECTRON_RUN_AS_NODE"] == "1"
+    assert captured["stderr_log_name"] == "workbuddy-acp-stderr.log"
+
+
+def test_workbuddy_configured_command_name_uses_path(monkeypatch) -> None:
+    runtime = workbuddy_module.WorkBuddyRuntime(
+        cli=Path("/fake/bin/cli/codebuddy"),
+        runner=Path("/fake/bin/WorkBuddy"),
+        electron=True,
+    )
+    resolved_paths: list[str] = []
+
+    def fake_runtime_from_path(value: str) -> workbuddy_module.WorkBuddyRuntime | None:
+        if value == "workbuddy":
+            return None
+        if value == "/fake/bin/workbuddy":
+            resolved_paths.append(value)
+            return runtime
+        return None
+
+    monkeypatch.setattr(workbuddy_module, "_runtime_from_path", fake_runtime_from_path)
+    monkeypatch.setattr(workbuddy_module.shutil, "which", lambda _: "/fake/bin/workbuddy")
+    result = workbuddy_module.resolve_workbuddy_runtime("workbuddy")
+    assert result is runtime
+    assert resolved_paths == ["/fake/bin/workbuddy"]

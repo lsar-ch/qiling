@@ -41,7 +41,9 @@ class PendingAgentAdapter(AgentAdapter):
         )
 
     def _first_existing_command(self) -> str | None:
-        for command in self.entry.commands:
+        configured = self.entry.config.get(f"{self.name}_command") or self.entry.config.get("command")
+        commands = [str(configured)] if configured else self.entry.commands
+        for command in commands:
             if shutil.which(command):
                 return command
         return None

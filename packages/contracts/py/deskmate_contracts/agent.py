@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-AgentIntegrationStatus = Literal["ready", "pending", "not_installed", "error"]
+AgentIntegrationStatus = Literal["ready", "pending", "auth_required", "not_installed", "error"]
 
 
 class AgentInfo(BaseModel):

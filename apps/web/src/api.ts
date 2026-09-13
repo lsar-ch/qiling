@@ -101,7 +101,7 @@ export async function fetchAgentConfig(): Promise<{
 
 export async function updateAgentConfig(
   name: string,
-  body: { command: string | null },
+  body: { command: string | null; internet_environment?: string | null },
 ): Promise<AgentInfo> {
   const resp = await fetch(`/api/agents/${encodeURIComponent(name)}/config`, {
     method: "PUT",
@@ -117,6 +117,23 @@ export async function updateAgentConfig(
       // 保留默认错误信息
     }
     throw new Error(`「${name}」配置保存失败：${detail}`);
+  }
+  return (await resp.json()) as AgentInfo;
+}
+
+export async function refreshAgentDetection(name: string): Promise<AgentInfo> {
+  const resp = await fetch(`/api/agents/${encodeURIComponent(name)}/refresh`, {
+    method: "POST",
+  });
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const data = (await resp.json()) as { detail?: unknown };
+      if (typeof data?.detail === "string") detail = data.detail;
+    } catch {
+      // 保留默认错误信息
+    }
+    throw new Error(`「${name}」重新检测失败：${detail}`);
   }
   return (await resp.json()) as AgentInfo;
 }

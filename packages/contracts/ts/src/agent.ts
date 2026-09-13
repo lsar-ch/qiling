@@ -3,6 +3,7 @@
 export type AgentIntegrationStatus =
   | "ready"
   | "pending"
+  | "auth_required"
   | "not_installed"
   | "error";
 

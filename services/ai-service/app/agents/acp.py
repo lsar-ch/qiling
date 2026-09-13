@@ -23,6 +23,14 @@ class AcpError(RuntimeError):
     """ACP protocol/process failure."""
 
 
+class AcpRequestError(AcpError):
+    """ACP request returned a JSON-RPC error, optionally auth-related."""
+
+    def __init__(self, message: str, *, auth_required: bool = False) -> None:
+        super().__init__(message)
+        self.auth_required = auth_required
+
+
 class AcpClient:
     """Keep one reader task and correlate JSON-RPC requests by id."""
 
@@ -46,16 +54,19 @@ class AcpClient:
         cls,
         command: str,
         *,
+        args: list[str] | tuple[str, ...] | None = None,
         cwd: str,
         env: dict[str, str],
         on_update: UpdateHandler | None = None,
         on_permission: PermissionHandler | None = None,
         logs_dir: Path | None = None,
+        stderr_log_name: str = "codex-acp-stderr.log",
     ) -> "AcpClient":
         if logs_dir is not None:
             logs_dir.mkdir(parents=True, exist_ok=True)
         process = await asyncio.create_subprocess_exec(
             command,
+            *(args or ()),
             cwd=cwd,
             env=env,
             stdin=asyncio.subprocess.PIPE,
@@ -64,7 +75,7 @@ class AcpClient:
         )
         client = cls(process, on_update=on_update, on_permission=on_permission)
         client._reader = asyncio.create_task(client._read_loop())
-        log_path = logs_dir / "codex-acp-stderr.log" if logs_dir is not None else None
+        log_path = logs_dir / stderr_log_name if logs_dir is not None else None
         client._stderr_log_task = asyncio.create_task(client._drain_stderr(log_path))
         return client
 
@@ -165,13 +176,21 @@ class AcpClient:
             if future is not None and not future.done():
                 if "error" in message:
                     error = message.get("error") or {}
-                    future.set_exception(
-                        AcpError(
-                            error.get("message", "ACP error")
-                            if isinstance(error, dict)
-                            else str(error)
+                    if isinstance(error, dict):
+                        message_text = str(error.get("message", "ACP error"))
+                        code = error.get("code")
+                        auth_required = (
+                            "authentication required" in message_text.lower()
+                            or code == -32000
                         )
-                    )
+                        future.set_exception(
+                            AcpRequestError(
+                                message_text,
+                                auth_required=auth_required,
+                            )
+                        )
+                    else:
+                        future.set_exception(AcpError(str(error)))
                 else:
                     future.set_result(message.get("result"))
             return
