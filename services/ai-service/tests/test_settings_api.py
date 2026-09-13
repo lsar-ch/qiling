@@ -52,6 +52,11 @@ activation:
         settings = client.get("/api/settings").json()
         assert settings["active_persona_id"] == "default"
         assert settings["voice"]["tts_voice"] == "Chinese (Mandarin)_Soft_Girl"
+        assert settings["voice"]["auto_speak"] is True
+
+        updated = client.put("/api/settings", json={"voice_auto_speak": False}).json()
+        assert updated["voice"]["auto_speak"] is False
+        assert client.get("/api/voice/status").json()["auto_speak"] is False
 
         created = client.post(
             "/api/personas",

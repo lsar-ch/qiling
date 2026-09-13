@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import time
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -25,10 +26,45 @@ from app.routing import TaskStore
 from app.speech.base import SpeechStack
 from app.speech.factory import build_speech_stack
 from app.config import Settings, resolve_llm_provider
-from app.core.state_mapper import WidgetStateRegistry, make_report_hook
+from app.core.state_mapper import WidgetStateRegistry, make_composed_hook
+from app.core.presentation_bridge import PresentationBridge
 from app.llm import LLMProvider, create_provider
 from app.config import Settings, load_settings
 from app.core.bus import EventHub
+
+
+class VoiceLease:
+    def __init__(self, ttl_seconds: float = 12.0) -> None:
+        self.owner: str | None = None
+        self.expires_at = 0.0
+        self.ttl_seconds = ttl_seconds
+        self.lock = asyncio.Lock()
+
+    async def acquire(self, client: str) -> bool:
+        async with self.lock:
+            now = time.monotonic()
+            if self.owner is None or self.expires_at <= now or client == "web":
+                self.owner = client
+                self.expires_at = now + self.ttl_seconds
+                return True
+            return self.owner == client
+
+    async def heartbeat(self, client: str) -> bool:
+        async with self.lock:
+            if self.owner != client or self.expires_at <= time.monotonic():
+                return False
+            self.expires_at = time.monotonic() + self.ttl_seconds
+            return True
+
+    async def release(self, client: str) -> None:
+        async with self.lock:
+            if self.owner == client:
+                self.owner = None
+                self.expires_at = 0.0
+
+    async def is_owner(self, client: str) -> bool:
+        async with self.lock:
+            return self.owner == client and self.expires_at > time.monotonic()
 
 
 def create_app(
@@ -78,6 +114,7 @@ def create_app(
     )
     app.state.llm_provider = provider
     app.state.speech = speech
+    app.state.voice_lease = VoiceLease()
     app.state.echo_mode = resolve_llm_provider(settings) == "echo"
 
     app.add_middleware(

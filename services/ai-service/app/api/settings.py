@@ -87,6 +87,7 @@ class SettingsUpdate(BaseModel):
     llm_model: str | None = None
     llm_api_key: str | None = None
     voice_enabled: bool | None = None
+    voice_auto_speak: bool | None = None
     activation_enabled: bool | None = None
     activation_default_state: str | None = None
     voice_speed: float | None = Field(default=None, ge=0.5, le=2.0)
@@ -199,6 +200,7 @@ def _public_settings(request: Request) -> dict[str, Any]:
         },
         "voice": {
             "enabled": settings.voice_enabled,
+            "auto_speak": settings.voice_auto_speak,
             "stt_provider": settings.stt_provider,
             "stt_model": settings.stt_model,
             "tts_provider": settings.tts_provider,
@@ -247,6 +249,7 @@ async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str
         "llm_model",
         "llm_api_key",
         "voice_enabled",
+        "voice_auto_speak",
         "activation_enabled",
         "activation_default_state",
         "voice_speed",

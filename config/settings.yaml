@@ -22,6 +22,7 @@ ui:
 # ── 语音（Step 4：云 API，详见 docs/VOICE-PROVIDERS.md）─────────
 voice:
   enabled: true
+  auto_speak: true             # 自动播报回复；关闭后仍保留语音输入和手动播报
   stt:
     provider: dashscope        # dashscope | volcengine | disabled（auto=按 key 自动选）
     model: paraformer-realtime-v2

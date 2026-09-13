@@ -8,6 +8,8 @@
   "permissions": [
     "core:default",
     "core:window:allow-hide",
+    "core:window:allow-outer-position",
+    "core:window:allow-current-monitor",
     "core:window:allow-set-size",
     "core:window:allow-set-focus",
     "core:window:allow-show",

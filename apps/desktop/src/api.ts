@@ -145,6 +145,7 @@ export interface VoiceActivationStatus {
 
 export interface VoiceEndpointStatus {
   enabled: boolean;
+  auto_speak: boolean;
   language: string;
   interruption_enabled: boolean;
   activation: VoiceActivationStatus | null;
@@ -180,34 +181,59 @@ export async function fetchVoiceStatus(): Promise<VoiceEndpointStatus> {
   return (await resp.json()) as VoiceEndpointStatus;
 }
 
-export async function apiVoiceIntent(text: string): Promise<VoiceIntentResponse> {
+export async function acquireVoiceLease(): Promise<boolean> {
+  const resp = await fetch(`${SERVICE_BASE}/api/voice/lease`, {
+    method: "POST",
+    headers: { "X-Voice-Client": "widget" },
+  });
+  if (!resp.ok) return false;
+  return ((await resp.json()) as { acquired: boolean }).acquired;
+}
+
+export async function heartbeatVoiceLease(): Promise<boolean> {
+  const resp = await fetch(`${SERVICE_BASE}/api/voice/lease/heartbeat`, {
+    method: "POST",
+    headers: { "X-Voice-Client": "widget" },
+  });
+  return resp.ok;
+}
+
+export async function releaseVoiceLease(): Promise<void> {
+  await fetch(`${SERVICE_BASE}/api/voice/lease`, {
+    method: "DELETE",
+    headers: { "X-Voice-Client": "widget" },
+    keepalive: true,
+  }).catch(() => {});
+}
+
+export async function apiVoiceIntent(text: string, client: "web" | "widget" = "widget"): Promise<VoiceIntentResponse> {
   const resp = await fetch(`${SERVICE_BASE}/api/voice/intent`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Voice-Client": client },
     body: JSON.stringify({ text }),
   });
   if (!resp.ok) throw new Error(await readDetail(resp));
   return (await resp.json()) as VoiceIntentResponse;
 }
 
-export async function recognizeSpeech(audio: Blob): Promise<{
+export async function recognizeSpeech(audio: Blob, client: "web" | "widget" = "widget"): Promise<{
   text: string;
   provider: string;
   available: boolean;
 }> {
   const resp = await fetch(`${SERVICE_BASE}/api/voice/recognize?language=zh`, {
     method: "POST",
-    headers: { "Content-Type": "audio/wav" },
+    headers: { "Content-Type": "audio/wav", "X-Voice-Client": client },
     body: audio,
   });
   if (!resp.ok) throw new Error(await readDetail(resp));
   return (await resp.json()) as { text: string; provider: string; available: boolean };
 }
 
-export async function synthesizeSpeech(text: string): Promise<Blob> {
+export async function synthesizeSpeech(text: string, client: "web" | "widget" = "widget"): Promise<Blob> {
   const resp = await fetch(`${SERVICE_BASE}/api/voice/synthesize`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Voice-Client": client },
     body: JSON.stringify({ text }),
   });
   if (!resp.ok) throw new Error(await readDetail(resp));

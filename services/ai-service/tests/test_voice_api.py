@@ -74,7 +74,9 @@ def _client(recognizer: SpeechRecognizer | None = None, synthesizer: SpeechSynth
         tts_sample_rate=24000,
         params=VoiceParams(),
     )
-    return TestClient(create_app(load_settings(), speech=stack))
+    client = TestClient(create_app(load_settings(), speech=stack))
+    client.post("/api/voice/lease", headers={"X-Voice-Client": "widget"})
+    return client
 
 
 def test_status_reports_providers() -> None:
@@ -91,7 +93,7 @@ def test_recognize_returns_text() -> None:
         resp = client.post(
             "/api/voice/recognize?language=zh",
             content=_wav_bytes(),
-            headers={"Content-Type": "audio/wav"},
+            headers={"Content-Type": "audio/wav", "X-Voice-Client": "widget"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -106,7 +108,7 @@ def test_recognize_rejects_non_wav() -> None:
         resp = client.post(
             "/api/voice/recognize",
             content=b"not-a-riff-file-xxxx",
-            headers={"Content-Type": "audio/wav"},
+            headers={"Content-Type": "audio/wav", "X-Voice-Client": "widget"},
         )
         assert resp.status_code == 422
 
@@ -116,6 +118,7 @@ def test_synthesize_returns_audio_and_drives_widget() -> None:
         resp = client.post(
             "/api/voice/synthesize",
             json={"text": "你好呀，我是 DeskMate", "params": {"voice": "longxiaoxia_v2"}},
+            headers={"X-Voice-Client": "widget"},
         )
         assert resp.status_code == 200
         assert resp.content == ("FAKE-AUDIO:" + "你好呀，我是 DeskMate").encode("utf-8")
@@ -143,17 +146,18 @@ def test_disabled_without_cloud_key() -> None:
     settings.volc_app_id = None
     settings.volc_token = None
     with TestClient(create_app(settings)) as client:
+        client.post("/api/voice/lease", headers={"X-Voice-Client": "widget"})
         status = client.get("/api/voice/status").json()
         assert status["enabled"] is False
 
         resp = client.post(
             "/api/voice/recognize",
             content=_wav_bytes(),
-            headers={"Content-Type": "audio/wav"},
+            headers={"Content-Type": "audio/wav", "X-Voice-Client": "widget"},
         )
         assert resp.status_code == 503
 
-        resp = client.post("/api/voice/synthesize", json={"text": "你好"})
+        resp = client.post("/api/voice/synthesize", json={"text": "你好"}, headers={"X-Voice-Client": "widget"})
         assert resp.status_code == 503
         assert "语音" in resp.json()["detail"]
 
@@ -163,7 +167,18 @@ def test_provider_error_surfaces_cleanly() -> None:
         resp = client.post(
             "/api/voice/recognize",
             content=_wav_bytes(),
-            headers={"Content-Type": "audio/wav"},
+            headers={"Content-Type": "audio/wav", "X-Voice-Client": "widget"},
         )
         assert resp.status_code == 503
         assert "供应商余额不足" in resp.json()["detail"]
+
+
+def test_voice_lease_prefers_web_and_allows_widget_after_release() -> None:
+    with _client() as client:
+        web = {"X-Voice-Client": "web"}
+        widget = {"X-Voice-Client": "widget"}
+        assert client.post("/api/voice/lease", headers=web).json()["acquired"] is True
+        assert client.post("/api/voice/lease", headers=widget).json()["acquired"] is False
+        assert client.post("/api/voice/lease/heartbeat", headers=web).json()["renewed"] is True
+        assert client.delete("/api/voice/lease", headers=web).json()["released"] is True
+        assert client.post("/api/voice/lease", headers=widget).json()["acquired"] is True

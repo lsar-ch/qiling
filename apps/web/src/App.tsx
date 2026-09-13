@@ -8,6 +8,9 @@ import {
   fetchAgents,
   fetchAgentConfig,
   fetchHealth,
+  acquireVoiceLease,
+  heartbeatVoiceLease,
+  releaseVoiceLease,
   fetchCompiledMemory,
   fetchMemoryDoc,
   fetchMemoryOverview,
@@ -1988,7 +1991,9 @@ export default function App() {
           </div>
         )}
 
-        {page === "chat" && <ChatPage />}
+        {page === "chat" && (
+          <ChatPage voiceLeaseOwned={voiceLeaseOwned} onOpenSettings={() => setPage("settings")} />
+        )}
 
         {page === "character" && <CharacterPage />}
 

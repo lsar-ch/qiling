@@ -254,6 +254,7 @@ export interface AppSettings {
   };
   voice: {
     enabled: boolean;
+    auto_speak: boolean;
     stt_provider: string;
     stt_model: string;
     tts_provider: string;
@@ -693,6 +694,7 @@ export interface VoiceActivationStatus {
 
 export interface VoiceEndpointStatus {
   enabled: boolean;
+  auto_speak: boolean;
   language: string;
   interruption_enabled: boolean;
   activation: VoiceActivationStatus;
@@ -712,6 +714,31 @@ export async function fetchVoiceStatus(): Promise<VoiceEndpointStatus> {
   return fetchJson<VoiceEndpointStatus>("/api/voice/status");
 }
 
+export async function acquireVoiceLease(): Promise<boolean> {
+  const resp = await fetch("/api/voice/lease", {
+    method: "POST",
+    headers: { "X-Voice-Client": "web" },
+  });
+  if (!resp.ok) return false;
+  return ((await resp.json()) as { acquired: boolean }).acquired;
+}
+
+export async function heartbeatVoiceLease(): Promise<boolean> {
+  const resp = await fetch("/api/voice/lease/heartbeat", {
+    method: "POST",
+    headers: { "X-Voice-Client": "web" },
+  });
+  return resp.ok;
+}
+
+export async function releaseVoiceLease(): Promise<void> {
+  await fetch("/api/voice/lease", {
+    method: "DELETE",
+    headers: { "X-Voice-Client": "web" },
+    keepalive: true,
+  }).catch(() => {});
+}
+
 export interface VoiceIntentResponse {
   intent: "chat" | "wake" | "sleep";
   persona_name: string;
@@ -719,10 +746,10 @@ export interface VoiceIntentResponse {
   wake_texts: string[];
 }
 
-export async function apiVoiceIntent(text: string): Promise<VoiceIntentResponse> {
+export async function apiVoiceIntent(text: string, client: "web" | "widget" = "web"): Promise<VoiceIntentResponse> {
   const resp = await fetch("/api/voice/intent", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Voice-Client": client },
     body: JSON.stringify({ text }),
   });
   if (!resp.ok) {
@@ -741,14 +768,14 @@ async function readDetail(resp: Response): Promise<string> {
   return `HTTP ${resp.status}`;
 }
 
-export async function recognizeSpeech(audio: Blob): Promise<{
+export async function recognizeSpeech(audio: Blob, client: "web" | "widget" = "web"): Promise<{
   text: string;
   provider: string;
   available: boolean;
 }> {
   const resp = await fetch("/api/voice/recognize?language=zh", {
     method: "POST",
-    headers: { "Content-Type": "audio/wav" },
+    headers: { "Content-Type": "audio/wav", "X-Voice-Client": client },
     body: audio,
   });
   if (!resp.ok) {
@@ -757,10 +784,10 @@ export async function recognizeSpeech(audio: Blob): Promise<{
   return (await resp.json()) as { text: string; provider: string; available: boolean };
 }
 
-export async function synthesizeSpeech(text: string): Promise<Blob> {
+export async function synthesizeSpeech(text: string, client: "web" | "widget" = "web"): Promise<Blob> {
   const resp = await fetch("/api/voice/synthesize", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Voice-Client": client },
     body: JSON.stringify({ text }),
   });
   if (!resp.ok) {

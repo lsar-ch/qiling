@@ -55,15 +55,17 @@ def _client():
 
 def test_intent_api_wake_and_sleep() -> None:
     with _client() as client:
-        wake = client.post("/api/voice/intent", json={"text": "你好，千问"}).json()
+        headers = {"X-Voice-Client": "web"}
+        assert client.post("/api/voice/lease", headers=headers).json()["acquired"] is True
+        wake = client.post("/api/voice/intent", json={"text": "你好，千问"}, headers=headers).json()
         assert wake["intent"] == "wake"
         assert "千问" in wake["reply"]
 
-        sleep = client.post("/api/voice/intent", json={"text": "暂时静默"}).json()
+        sleep = client.post("/api/voice/intent", json={"text": "暂时静默"}, headers=headers).json()
         assert sleep["intent"] == "sleep"
         assert "安静" in sleep["reply"]
 
-        chat = client.post("/api/voice/intent", json={"text": "帮我看看天气"}).json()
+        chat = client.post("/api/voice/intent", json={"text": "帮我看看天气"}, headers=headers).json()
         assert chat["intent"] == "chat"
 
 

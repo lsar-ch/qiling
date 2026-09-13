@@ -41,13 +41,21 @@ function fmtChatTime(iso: string): string {
   }
 }
 
-export default function ChatPage() {
+export default function ChatPage({
+  voiceLeaseOwned,
+  onOpenSettings,
+}: {
+  voiceLeaseOwned: boolean;
+  onOpenSettings?: () => void;
+}) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [echoMode, setEchoMode] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceEndpointStatus | null>(null);
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState("");
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("off");
   const [personaName, setPersonaName] = useState("千问");
   const [recording, setRecording] = useState(false);
@@ -180,7 +188,7 @@ export default function ChatPage() {
   };
 
   const speak = async (text: string): Promise<void> => {
-    if (!voiceStatus?.enabled || speakingRef.current) return;
+    if (!voiceLeaseOwned || !voiceStatus?.enabled || speakingRef.current) return;
     const ctx = await ensureAudioContext();
     if (!ctx) {
       setNotice("语音播放不可用：浏览器不支持音频");
@@ -309,6 +317,10 @@ export default function ChatPage() {
 
   async function enableAlwaysListen(): Promise<void> {
     if (alwaysRef.current) return;
+    if (!voiceLeaseOwned) {
+      setNotice("当前语音由挂件占用");
+      return;
+    }
     if (!voiceStatus?.enabled) {
       setNotice("语音未配置，无法开启常开监听");
       return;
@@ -431,7 +443,7 @@ export default function ChatPage() {
   segmentHandlerRef.current = (segment) => void handleVoiceSegment(segment);
 
   useEffect(() => {
-    if (!voiceStatus?.enabled || !voiceStatus.activation?.enabled) return;
+    if (!voiceLeaseOwned || !voiceStatus?.enabled || !voiceStatus.activation?.enabled) return;
     setVoiceMode((prev) => (prev === "off" ? voiceStatus.activation.default_state : prev));
     void enableAlwaysListen();
     const resumeOnce = (): void => {
@@ -442,13 +454,35 @@ export default function ChatPage() {
     window.addEventListener("pointerdown", resumeOnce);
     return () => window.removeEventListener("pointerdown", resumeOnce);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceStatus?.enabled, voiceStatus?.activation?.enabled, voiceStatus?.activation?.default_state]);
+  }, [voiceLeaseOwned, voiceStatus?.enabled, voiceStatus?.activation?.enabled, voiceStatus?.activation?.default_state]);
 
   return (
     <section className="bg-white border border-line rounded-xl flex flex-col h-[calc(100vh-180px)] overflow-hidden shadow-card">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-3 border-b border-line text-xs text-muted">
+      <div className="relative z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-3 border-b border-line text-xs text-muted">
         <span>对话历史保存在本地（data/conversations）</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="shrink-0">当前模型</span>
+          {modelProfiles.length > 0 ? (
+            <ModelProfileSelect
+              value={selectedProfileId}
+              options={modelOptions}
+              onChange={setSelectedProfileId}
+              ariaLabel="选择当前模型"
+              buttonClassName="h-8 max-w-[240px] text-xs"
+              menuClassName="left-0 w-72 max-w-[calc(100vw-2rem)] sm:left-auto sm:right-0"
+            />
+          ) : (
+            <button className="rounded-lg border border-warn/40 bg-warn-50 px-2.5 py-1 text-xs text-warn" onClick={onOpenSettings}>
+              未配置模型，去设置
+            </button>
+          )}
+          {modelProfiles.length > 0 && onOpenSettings ? (
+            <button className="text-brand hover:underline whitespace-nowrap" onClick={onOpenSettings}>
+              管理模型
+            </button>
+          ) : null}
+        </div>
         {echoMode && (
           <span className="text-warn bg-warn-50 px-2.5 py-1 rounded-full font-medium">
             演示模式：未配置模型 API（echo）

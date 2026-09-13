@@ -62,6 +62,7 @@ class Settings:
     short_reply_chars: int = 120        # 超过则展开主界面
     # ── 语音（Step 4，云 API，见 docs/VOICE-PROVIDERS.md）────────
     voice_enabled: bool = True
+    voice_auto_speak: bool = True
     stt_provider: str = "auto"          # auto | dashscope | volcengine | disabled
     stt_model: str = "paraformer-realtime-v2"
     stt_sample_rate: int = 16000
@@ -340,6 +341,13 @@ def load_settings() -> Settings:
         ),
         True,
     )
+    settings.voice_auto_speak = _as_bool(
+        os.environ.get(
+            "VOICE_AUTO_SPEAK",
+            overrides.get("voice_auto_speak", _nested(voice_cfg, ("auto_speak",), True)),
+        ),
+        True,
+    )
     settings.stt_provider = os.environ.get(
         "VOICE_STT_PROVIDER", str(_nested(voice_cfg, ("stt", "provider"), "auto"))
     ).strip().lower()
@@ -405,11 +413,15 @@ def load_settings() -> Settings:
     )
     dashscope_cfg = _nested(voice_cfg, ("dashscope",), {}) or {}
     settings.dashscope_api_key = _nonempty(
-        os.environ.get("DASHSCOPE_API_KEY", overrides.get("dashscope_api_key", dashscope_cfg.get("api_key")))
+        overrides.get("dashscope_api_key")
+        or os.environ.get("DASHSCOPE_API_KEY")
+        or dashscope_cfg.get("api_key")
     )
     minimax_cfg = _nested(voice_cfg, ("minimax",), {}) or {}
     settings.minimax_api_key = _nonempty(
-        os.environ.get("MINIMAX_API_KEY", overrides.get("minimax_api_key", minimax_cfg.get("api_key")))
+        overrides.get("minimax_api_key")
+        or os.environ.get("MINIMAX_API_KEY")
+        or minimax_cfg.get("api_key")
     )
     act_cfg = _nested(voice_cfg, ("activation",), {}) or {}
     settings.activation_enabled = _as_bool(

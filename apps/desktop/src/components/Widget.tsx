@@ -1,15 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { LogicalSize } from "@tauri-apps/api/dpi";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import {
   apiVoiceIntent,
   connectEvents,
   eventToState,
+  fetchActivePersonaAsset,
   fetchVoiceStatus,
+  acquireVoiceLease,
+  heartbeatVoiceLease,
+  releaseVoiceLease,
   recognizeSpeech,
+  SERVICE_BASE,
   streamChat,
   synthesizeSpeech,
+  type ExpressionEmotion,
+  type ExpressionEvent,
+  type PersonaPresentation,
   type VoiceEndpointStatus,
   type WsMessage,
   type WidgetState,
@@ -19,6 +27,7 @@ import {
   type AlwaysListener,
   type AlwaysListenSegment,
 } from "../voiceCapture";
+import defaultMascotArt from "../assets/personas/default/main.png";
 import "./widget.css";
 
 const STATE_LABEL: Record<string, string> = {
@@ -34,6 +43,20 @@ const STATE_LABEL: Record<string, string> = {
 
 type VoiceMode = "off" | "starting" | "listening" | "sleeping";
 
+type WidgetPreferences = {
+  x: number | null;
+  y: number | null;
+  monitor: string | null;
+  autoHide: boolean;
+  scale: number;
+};
+
+type DragStart = {
+  pointerId: number;
+  x: number;
+  y: number;
+};
+
 function normText(text: string): string {
   return text.replace(/[\s，。！？、,.!?'"“”]/g, "").toLowerCase();
 }
@@ -45,11 +68,36 @@ const bubbleDuration = (text: string): number => {
 };
 
 // 挂件窗口基础尺寸（空态、无气泡时与 tauri.conf 中 widget 窗口一致）
-const BASE_WINDOW_W = 236;
-const BASE_WINDOW_H = 258;
+const BASE_WINDOW_H = 480;
+const MASCOT_BASE_SIZE = 338;
+const WIDGET_DRAG_THRESHOLD_PX = 7;
+const WIDGET_CLICK_SUPPRESS_MS = 120;
+const WIDGET_SCALE_MIN = 0.75;
+const WIDGET_SCALE_MAX = 1.15;
+const CONTEXT_MENU_WIDTH = 188;
+const CONTEXT_MENU_HEIGHT = 170;
+
+function applyPresentation(pres: PersonaPresentation): void {
+  const root = document.querySelector<HTMLDivElement>(".w-root");
+  if (!root) return;
+  root.style.setProperty("--dm-primary", pres.theme.primary);
+  root.style.setProperty("--dm-accent", pres.theme.accent);
+  root.style.setProperty("--dm-breath-rate", String(pres.animations.breath_rate));
+  root.style.setProperty("--dm-blink-ms", `${pres.animations.blink_interval_ms}ms`);
+  root.style.setProperty("--dm-transition-ms", `${pres.animations.transition_ms}ms`);
+}
+
+function resolveMascotUrl(url: string | undefined): string {
+  if (!url) return defaultMascotArt;
+  if (url.startsWith("/")) return `${SERVICE_BASE}${url}`;
+  return url;
+}
 
 export default function Widget() {
   const [state, setState] = useState<WidgetState>("idle");
+  const [emotion, setEmotion] = useState<ExpressionEmotion>("neutral");
+  const [presentation, setPresentation] = useState<PersonaPresentation | null>(null);
+  const [mascotArt, setMascotArt] = useState(defaultMascotArt);
   const [bubble, setBubble] = useState("");
   const [connected, setConnected] = useState(false);
   const [active, setActive] = useState(false);
@@ -60,7 +108,16 @@ export default function Widget() {
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("off");
   const [personaName, setPersonaName] = useState("DeskMate");
   const [speaking, setSpeaking] = useState(false);
+  const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   const [alert, setAlert] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [preferences, setPreferences] = useState<WidgetPreferences>({
+    x: null,
+    y: null,
+    monitor: null,
+    autoHide: true,
+    scale: 1,
+  });
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
@@ -86,6 +143,10 @@ export default function Widget() {
   const inputOpenRef = useRef(false);
   const autoVoiceRef = useRef(false);
   const widgetTurnRef = useRef(false);
+  const dragStartRef = useRef<DragStart | null>(null);
+  const draggingRef = useRef(false);
+  const suppressClickUntilRef = useRef(0);
+  const dragFallbackTimerRef = useRef<number | null>(null);
 
   busyRef.current = busy;
   voiceModeRef.current = voiceMode;
@@ -102,11 +163,9 @@ export default function Widget() {
       const rect = el.getBoundingClientRect();
       // 挂件宽度固定：气泡不超出挂件自身，仅在有气泡时按内容高度向上生长
       const wantH = showing
-        ? Math.max(BASE_WINDOW_H, Math.ceil(rect.height) + 218)
+        ? Math.max(BASE_WINDOW_H, Math.ceil(rect.height) + BASE_WINDOW_H - 48)
         : BASE_WINDOW_H;
-      const win = getCurrentWindow();
-      await win.setSize(new LogicalSize(BASE_WINDOW_W, wantH));
-      await invoke("place_widget_bottom_right");
+      await invoke("resize_widget_height", { height: wantH });
     } catch {
       /* 非 Tauri 环境或窗口调整失败时保持现状 */
     }
@@ -188,7 +247,7 @@ export default function Widget() {
 
   const speak = async (text: string): Promise<void> => {
     const voice = voiceStatusRef.current;
-    if (!voice?.enabled || !voice.tts.available || speakingRef.current) return;
+    if (!voiceLeaseOwned || !voice?.enabled || !voice.tts.available || speakingRef.current) return;
     const ctx = await ensureAudioContext();
     if (!ctx) return;
 
@@ -201,7 +260,7 @@ export default function Widget() {
 
     let source: AudioBufferSourceNode | null = null;
     try {
-      const blob = await synthesizeSpeech(text.length > 1900 ? `${text.slice(0, 1900)}…` : text);
+      const blob = await synthesizeSpeech(text.length > 1900 ? `${text.slice(0, 1900)}…` : text, "widget");
       const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
       source = ctx.createBufferSource();
       source.buffer = buffer;
@@ -241,7 +300,7 @@ export default function Widget() {
         void openMainUi();
       } else {
         showBrief(done.message || done.speak_text);
-        if (speakReply && voiceStatusRef.current?.enabled && voiceModeRef.current !== "off") {
+        if (speakReply && voiceStatusRef.current?.enabled && voiceStatusRef.current.auto_speak && voiceModeRef.current !== "off") {
           stopSpeaking();
           void speak(done.speak_text || done.message);
         }
@@ -277,6 +336,7 @@ export default function Widget() {
 
   const enableAlwaysListen = async (mode: VoiceMode): Promise<void> => {
     if (alwaysRef.current) return;
+    if (!voiceLeaseOwned) return;
     const voice = voiceStatusRef.current;
     if (!voice?.enabled) {
       setVoiceMode("off");
@@ -335,7 +395,7 @@ export default function Widget() {
 
     let text = "";
     try {
-      const r = await recognizeSpeech(segment.wav);
+      const r = await recognizeSpeech(segment.wav, "widget");
       text = (r.text || "").trim();
     } catch {
       // 监听/静默态由状态动画提示即可；背景噪音产生的无效音频不弹气泡。
@@ -381,6 +441,15 @@ export default function Widget() {
 
   useEffect(() => {
     let alive = true;
+    void fetchActivePersonaAsset()
+      .then((asset) => {
+        if (!alive) return;
+        setMascotArt(resolveMascotUrl(asset.avatar));
+        setPresentation((current) => current ? { ...current, style: asset.style } : current);
+      })
+      .catch(() => {
+        /* WebSocket 的 persona.presentation 仍会提供角色资产 */
+      });
     const wsUrl = "ws://127.0.0.1:8736/api/events";
 
     const onMsg = (msg: WsMessage) => {
@@ -398,8 +467,25 @@ export default function Widget() {
       }
 
       const next = eventToState(msg.event_type);
-      if (!next) return;
+      if (!next) {
+        // persona.presentation 事件：更新角色呈现
+        if (msg.event_type === "persona.presentation" && msg.presentation) {
+          setPresentation(msg.presentation);
+          applyPresentation(msg.presentation);
+          setMascotArt(resolveMascotUrl(msg.presentation.asset?.avatar_url));
+        }
+        return;
+      }
       setState(next);
+
+      // Step 9.5: 从 expression 载荷提取情绪和气泡
+      const expr = msg.expression as ExpressionEvent | undefined;
+      if (expr) {
+        setEmotion(expr.emotion);
+        if (expr.bubble) {
+          showBrief(expr.bubble.text, expr.bubble.duration_ms);
+        }
+      }
 
       // 任务事件气泡播报（Step 9：外部项目借鉴 — 任务状态挂件主动播报）
       const bubble = msg.payload?.bubble as string | undefined;
@@ -418,6 +504,7 @@ export default function Widget() {
           showBrief(reminderText, 8000);
           setAlert(true);
           window.setTimeout(() => setAlert(false), 3200);
+          if (!voiceStatusRef.current?.auto_speak) break;
           void synthesizeSpeech(reminderText)
             .then(async (blob) => {
               const ctx = await ensureAudioContext();
@@ -517,6 +604,44 @@ export default function Widget() {
   }, []);
 
   useEffect(() => {
+    const image = new Image();
+    image.src = mascotArt;
+  }, [mascotArt]);
+
+  useEffect(() => {
+    let alive = true;
+    const refreshLease = async (): Promise<void> => {
+      const [owned, voice] = await Promise.all([
+        acquireVoiceLease(),
+        fetchVoiceStatus().catch(() => null),
+      ]);
+      if (!alive) return;
+      if (voice && voice.auto_speak !== voiceStatusRef.current?.auto_speak) {
+        setVoiceStatus(voice);
+      }
+      setVoiceLeaseOwned(owned);
+      if (!owned) {
+        stopVoiceResources();
+        setVoiceMode("off");
+      }
+    };
+    void refreshLease();
+    const timer = setInterval(() => void refreshLease(), 4000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      stopVoiceResources();
+      void releaseVoiceLease();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!voiceLeaseOwned) {
+      autoVoiceRef.current = false;
+      stopVoiceResources();
+      setVoiceMode("off");
+      return;
+    }
     if (!voiceStatus?.enabled || voiceStatus.activation?.enabled === false) return;
     if (autoVoiceRef.current) return;
     autoVoiceRef.current = true;
@@ -530,13 +655,134 @@ export default function Widget() {
     window.addEventListener("pointerdown", resumeOnce);
     return () => window.removeEventListener("pointerdown", resumeOnce);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceStatus]);
+  }, [voiceLeaseOwned, voiceStatus]);
 
   useEffect(() => {
-    void invoke("place_widget_bottom_right").catch(() => {
-      /* Rust 已处理 */
-    });
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+    void invoke<WidgetPreferences>("get_widget_preferences")
+      .then((next) => {
+        if (!disposed) setPreferences(next);
+      })
+      .catch(() => {
+        /* 非 Tauri 环境或配置不可用时使用默认值 */
+      });
+    void listen<WidgetPreferences>("widget-drag-settled", (event) => {
+      if (dragFallbackTimerRef.current !== null) {
+        window.clearTimeout(dragFallbackTimerRef.current);
+        dragFallbackTimerRef.current = null;
+      }
+      draggingRef.current = false;
+      dragStartRef.current = null;
+      suppressClickUntilRef.current = Date.now() + WIDGET_CLICK_SUPPRESS_MS;
+      setPreferences(event.payload);
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch(() => {
+        /* 非 Tauri 环境没有事件通道 */
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent): void => {
+      const start = dragStartRef.current;
+      if (!start || draggingRef.current || event.pointerId !== start.pointerId) return;
+      if ((event.buttons & 1) !== 1) {
+        dragStartRef.current = null;
+        return;
+      }
+      const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+      if (distance < WIDGET_DRAG_THRESHOLD_PX) return;
+
+      draggingRef.current = true;
+      dragStartRef.current = null;
+      setCtxMenu(null);
+      void invoke("start_widget_drag")
+        .then(() => {
+          dragFallbackTimerRef.current = window.setTimeout(() => {
+            if (!draggingRef.current) return;
+            suppressClickUntilRef.current = Date.now() + WIDGET_CLICK_SUPPRESS_MS;
+            void invoke("finish_widget_drag").catch(() => {
+              draggingRef.current = false;
+              void invoke("cancel_widget_drag").catch(() => {
+                /* 非 Tauri 环境忽略 */
+              });
+            });
+          }, 2000);
+        })
+        .catch(() => {
+          draggingRef.current = false;
+          void invoke("cancel_widget_drag").catch(() => {
+            /* 非 Tauri 环境忽略 */
+          });
+        });
+    };
+    const onPointerUp = (event: PointerEvent): void => {
+      if (draggingRef.current) {
+        suppressClickUntilRef.current = Date.now() + WIDGET_CLICK_SUPPRESS_MS;
+        void invoke("finish_widget_drag").catch(() => {
+          draggingRef.current = false;
+        });
+        return;
+      }
+      if (dragStartRef.current?.pointerId === event.pointerId) dragStartRef.current = null;
+    };
+    const onWindowBlur = (): void => {
+      if (!draggingRef.current) dragStartRef.current = null;
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      if (dragFallbackTimerRef.current !== null) {
+        window.clearTimeout(dragFallbackTimerRef.current);
+        dragFallbackTimerRef.current = null;
+      }
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    const suppressNativeContextMenu = (event: MouseEvent): void => {
+      if (event.target instanceof Element && event.target.closest(".composer")) return;
+      event.preventDefault();
+    };
+    window.addEventListener("contextmenu", suppressNativeContextMenu, true);
+    return () =>
+      window.removeEventListener("contextmenu", suppressNativeContextMenu, true);
+  }, []);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        (target.closest(".ctx-menu") || target.closest(".stage"))
+      ) {
+        return;
+      }
+      setCtxMenu(null);
+    };
+    const onBlur = (): void => setCtxMenu(null);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [ctxMenu]);
 
   useEffect(() => {
     if (!active) return;
@@ -578,12 +824,72 @@ export default function Widget() {
     });
   };
 
-  const startStageDrag = (event: React.MouseEvent): void => {
+  const startStageDrag = (event: React.PointerEvent): void => {
     if (event.button !== 0) return;
     if (event.target instanceof Element && event.target.closest("[data-no-drag]")) return;
-    void getCurrentWindow().startDragging().catch(() => {
-      /* 忽略非 Tauri 环境 */
-    });
+    dragStartRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+  };
+
+  const clickSuppressed = (): boolean => Date.now() < suppressClickUntilRef.current;
+
+  const toggleAutoHide = (): void => {
+    const previous = preferences;
+    const autoHide = !preferences.autoHide;
+    setPreferences((current) => ({ ...current, autoHide }));
+    void invoke<WidgetPreferences>("set_widget_auto_hide", { autoHide })
+      .then(setPreferences)
+      .catch(() => setPreferences(previous));
+  };
+
+  const changeScale = (scale: number): void => {
+    setPreferences((current) => ({ ...current, scale }));
+    void invoke<WidgetPreferences>("set_widget_scale", { scale })
+      .then(setPreferences)
+      .catch(() => {
+        /* 保存失败时保留当前会话的预览值 */
+      });
+  };
+
+  const openContextMenu = (event: React.MouseEvent): void => {
+    event.preventDefault();
+    const fallback = {
+      x: Math.max(4, Math.min(event.clientX, window.innerWidth - CONTEXT_MENU_WIDTH)),
+      y: Math.max(4, Math.min(event.clientY, window.innerHeight - CONTEXT_MENU_HEIGHT)),
+    };
+    setCtxMenu(fallback);
+
+    const desktopWindow = getCurrentWindow();
+    void Promise.all([
+      desktopWindow.outerPosition(),
+      currentMonitor(),
+    ])
+      .then(([position, monitor]) => {
+        if (!monitor) return;
+        const scale = monitor.scaleFactor;
+        const minX = monitor.workArea.position.x + 4 * scale;
+        const maxX =
+          monitor.workArea.position.x +
+          monitor.workArea.size.width -
+          (CONTEXT_MENU_WIDTH + 4) * scale;
+        const minY = monitor.workArea.position.y + 4 * scale;
+        const maxY =
+          monitor.workArea.position.y +
+          monitor.workArea.size.height -
+          (CONTEXT_MENU_HEIGHT + 4) * scale;
+        const desiredX = position.x + event.clientX * scale;
+        const desiredY = position.y + event.clientY * scale;
+        setCtxMenu({
+          x: (Math.max(minX, Math.min(desiredX, maxX)) - position.x) / scale,
+          y: (Math.max(minY, Math.min(desiredY, maxY)) - position.y) / scale,
+        });
+      })
+      .catch(() => {
+        /* 非 Tauri 环境保留窗口内回退位置 */
+      });
   };
 
   const voiceEnabled = voiceStatus?.enabled === true;
@@ -609,6 +915,8 @@ export default function Widget() {
     <div
       className="w-root"
       data-state={state}
+      data-emotion={emotion}
+      data-persona-style={presentation?.style ?? "human"}
         data-alert={alert ? "1" : "0"}
       data-voice={voiceMode}
       data-speaking={speaking ? "1" : "0"}
@@ -655,10 +963,35 @@ export default function Widget() {
       <div
         className="stage"
         data-active={active ? "1" : "0"}
-        title="点击激活 · 双击打开主界面 · 按住拖动"
-        onMouseDown={startStageDrag}
-        onClick={activateStage}
-        onDoubleClick={() => void openMainUi()}
+        title="点击激活 · 双击打开主界面 · 按住拖动 · 右键菜单"
+        onPointerDown={startStageDrag}
+        onMouseEnter={() => setEmotion("attentive")}
+        onMouseLeave={() => {
+          if (state === "idle") setEmotion("neutral");
+        }}
+        onMouseUp={() => {
+          if (state === "idle") setEmotion("neutral");
+        }}
+        onClick={(event) => {
+          if (clickSuppressed()) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          activateStage();
+          setCtxMenu(null);
+        }}
+        onDoubleClick={(event) => {
+          if (clickSuppressed()) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          void openMainUi();
+        }}
+        onContextMenu={(e) => {
+          openContextMenu(e);
+        }}
       >
         <div
           className="bubble"
@@ -668,69 +1001,16 @@ export default function Widget() {
         >
           {bubble}
         </div>
-        <div className="aura" />
-        <svg
+        <img
           className="mascot"
-          viewBox="0 0 200 200"
-          aria-label={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
-        >
-          <defs>
-            <radialGradient id="bodyGrad" cx="50%" cy="38%" r="75%">
-              <stop offset="0%" stopColor="#ffe6bd" />
-              <stop offset="100%" stopColor="#ffca85" />
-            </radialGradient>
-            <linearGradient id="bellyGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#fff6e6" />
-              <stop offset="100%" stopColor="#ffe7c2" />
-            </linearGradient>
-          </defs>
-
-          <g className="ears">
-            <path
-              d="M58 66 Q44 22 30 34 Q26 58 46 84 Z"
-              fill="url(#bodyGrad)"
-              stroke="#ecb877"
-              strokeWidth="3"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M142 66 Q156 22 170 34 Q174 58 154 84 Z"
-              fill="url(#bodyGrad)"
-              stroke="#ecb877"
-              strokeWidth="3"
-              strokeLinejoin="round"
-            />
-            <path className="inner-ear" d="M52 60 Q44 34 36 40 Q35 56 50 76 Z" fill="#ffb0a1" />
-            <path className="inner-ear" d="M148 60 Q156 34 164 40 Q165 56 150 76 Z" fill="#ffb0a1" />
-          </g>
-
-          <ellipse className="body" cx="100" cy="122" rx="70" ry="64" fill="url(#bodyGrad)" stroke="#ecb877" strokeWidth="3.5" />
-          <ellipse className="belly" cx="100" cy="140" rx="42" ry="36" fill="url(#bellyGrad)" />
-
-          <ellipse className="cheek" cx="62" cy="106" rx="10" ry="6.5" fill="#ffad9e" opacity="0.6" />
-          <ellipse className="cheek" cx="138" cy="106" rx="10" ry="6.5" fill="#ffad9e" opacity="0.6" />
-
-          <g className="eyes">
-            <ellipse className="eye" cx="78" cy="96" rx="7.5" ry="9" fill="#3a2c22" />
-            <ellipse className="eye" cx="122" cy="96" rx="7.5" ry="9" fill="#3a2c22" />
-            <circle className="eye-glint" cx="81" cy="92.5" r="2.4" fill="#fff" />
-            <circle className="eye-glint" cx="125" cy="92.5" r="2.4" fill="#fff" />
-          </g>
-
-          <g className="mouth-smile">
-            <path d="M90 120 Q100 129 110 120" fill="none" stroke="#7a4a3a" strokeWidth="3.4" strokeLinecap="round" />
-          </g>
-          <g className="mouth-ah">
-            <path d="M90 118 Q100 134 110 118 Z" fill="#8c4f3d" />
-            <path d="M93 122 Q100 129 107 122 Z" fill="#ff9d8c" />
-          </g>
-          <g className="mouth-o">
-            <ellipse cx="100" cy="122" rx="6.5" ry="9" fill="#8c4f3d" />
-          </g>
-
-          <ellipse className="foot" cx="78" cy="182" rx="12" ry="6" fill="#ecb877" opacity="0.9" />
-          <ellipse className="foot" cx="122" cy="182" rx="12" ry="6" fill="#ecb877" opacity="0.9" />
-        </svg>
+          src={mascotArt}
+          alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+          draggable={false}
+          style={{
+            width: `${MASCOT_BASE_SIZE * preferences.scale}px`,
+            height: `${MASCOT_BASE_SIZE * preferences.scale}px`,
+          }}
+        />
 
         <div className="badge">
           <span className="badge-thinking">···</span>
@@ -765,6 +1045,53 @@ export default function Widget() {
           </button>
         )}
       </div>
+      {/* 右键菜单 */}
+      {ctxMenu && (
+        <div
+          className="ctx-menu"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          data-no-drag
+        >
+          <button
+            onClick={() => {
+              setCtxMenu(null);
+              void openMainUi();
+            }}
+          >
+            打开主界面
+          </button>
+          <button
+            className="ctx-toggle"
+            onClick={toggleAutoHide}
+          >
+            {preferences.autoHide ? "✓ 靠近边缘自动隐藏" : "靠近边缘自动隐藏"}
+          </button>
+          <div className="ctx-range">
+            <label htmlFor="widget-scale">
+              <span>角色大小</span>
+              <span>{Math.round(preferences.scale * 100)}%</span>
+            </label>
+            <input
+              id="widget-scale"
+              type="range"
+              min={WIDGET_SCALE_MIN}
+              max={WIDGET_SCALE_MAX}
+              step="0.05"
+              value={preferences.scale}
+              onChange={(event) => changeScale(Number(event.target.value))}
+            />
+          </div>
+          <button
+            className="ctx-danger"
+            onClick={() => {
+              setCtxMenu(null);
+              void invoke("quit_app");
+            }}
+          >
+            退出 DeskMate
+          </button>
+        </div>
+      )}
     </div>
   );
 }

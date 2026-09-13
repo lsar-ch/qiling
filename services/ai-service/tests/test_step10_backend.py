@@ -51,7 +51,9 @@ def _make_client(tmp_path: Path, monkeypatch) -> TestClient:
         _PERSONA_YAML.strip(),
         encoding="utf-8",
     )
-    return TestClient(create_app(load_settings()))
+    client = TestClient(create_app(load_settings()))
+    client.post("/api/voice/lease", headers={"X-Voice-Client": "widget"})
+    return client
 
 
 def test_health_returns_dashboard_fields(tmp_path: Path, monkeypatch) -> None:
@@ -105,12 +107,13 @@ def test_lite_mode_disables_voice_and_persists(tmp_path: Path, monkeypatch) -> N
         assert status["tts"]["available"] is False
         assert status["activation"]["enabled"] is False
 
-        recognize = client.post("/api/voice/recognize", content=b"not-wav")
+        recognize = client.post("/api/voice/recognize", content=b"not-wav", headers={"X-Voice-Client": "widget"})
         assert recognize.status_code == 503
         assert "轻量模式" in recognize.json()["detail"]
         synth = client.post(
             "/api/voice/synthesize",
             json={"text": "你好"},
+            headers={"X-Voice-Client": "widget"},
         )
         assert synth.status_code == 503
         assert "轻量模式" in synth.json()["detail"]

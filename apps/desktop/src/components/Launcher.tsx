@@ -9,6 +9,7 @@ interface ServiceStatus {
   url: string;
   repo_ok: boolean;
   spawn_error: string | null;
+  log_path: string | null;
 }
 
 export default function Launcher() {
@@ -37,13 +38,23 @@ export default function Launcher() {
       const s = await invoke<ServiceStatus>("ensure_service");
       setStatus(s);
       setMsg(s.spawn_error ?? (s.running ? "已启动，等待健康检查" : "未运行"));
-      for (let i = 0; i < 10; i++) {
+      let ready = false;
+      for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 500));
         if (await pollHealth(s.url)) {
           setHealthy(true);
           setMsg("本地服务运行正常");
+          ready = true;
           break;
         }
+      }
+      if (!ready) {
+        const current = await invoke<ServiceStatus>("service_status");
+        setStatus(current);
+        setMsg(
+          current.spawn_error ??
+            `服务启动超时。请查看日志：${current.log_path ?? "data/run/ai-service.log"}`,
+        );
       }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -100,6 +111,9 @@ export default function Launcher() {
           <b className="muted">{widgetHidden ? "已隐藏" : "显示中"}</b>
         </div>
         {status?.spawn_error && <p className="err">{status.spawn_error}</p>}
+        {!healthy && status?.log_path && !status.spawn_error && (
+          <p className="msg">启动日志：{status.log_path}</p>
+        )}
         {msg && <p className="msg">{msg}</p>}
       </section>
 
