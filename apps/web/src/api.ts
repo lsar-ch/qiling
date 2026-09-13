@@ -714,6 +714,29 @@ export async function fetchVoiceStatus(): Promise<VoiceEndpointStatus> {
   return fetchJson<VoiceEndpointStatus>("/api/voice/status");
 }
 
+export interface VoiceOption {
+  id: string;
+  name: string;
+  kind: "system" | "cloned" | "preset";
+}
+
+export interface VoiceOptionList {
+  provider: string;
+  model: string;
+  current: string;
+  available: boolean;
+  voices: VoiceOption[];
+  reason: string | null;
+}
+
+/** 拉取语音合成供应商的可用音色，供设置页与角色卡绑定。
+
+    传 profileId 时按该模型档案取（设置页编辑态）；不传按当前生效配置取（角色卡）。 */
+export async function fetchVoiceOptions(profileId?: string): Promise<VoiceOptionList> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : "";
+  return fetchJson<VoiceOptionList>(`/api/voice/voices${query}`);
+}
+
 export async function acquireVoiceLease(): Promise<boolean> {
   const resp = await fetch("/api/voice/lease", {
     method: "POST",

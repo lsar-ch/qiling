@@ -68,6 +68,8 @@ class Settings:
     stt_sample_rate: int = 16000
     stt_language: str = "zh"
     tts_provider: str = "auto"
+    tts_base_url: str = ""       # OpenAI 兼容语音合成的服务地址
+    tts_api_key: str = ""        # OpenAI 兼容语音合成的密钥
     tts_model: str = "speech-2.8-hd"          # MiniMax 主声模型
     tts_voice: str = "Chinese (Mandarin)_Soft_Girl"  # 2026-09-04 用户拍板
     tts_format: str = "mp3"
@@ -79,6 +81,7 @@ class Settings:
     voice_instruction: str | None = None
     # ── 角色卡与界面设置 ─────────────────────
     active_persona_id: str = "default"
+    persona_voice: str = ""      # 角色卡显式绑定的音色；非空时优先于语音合成模型档案
     persona_name: str = "千问"
     persona_kind: str = "assistant"
     persona_description: str = ""
@@ -203,6 +206,7 @@ def _apply_persona(settings: Settings, persona: dict[str, Any]) -> None:
     settings.tts_provider = str(voice.get("provider") or settings.tts_provider).lower()
     settings.tts_model = str(voice.get("model") or settings.tts_model)
     settings.tts_voice = str(voice.get("voice") or settings.tts_voice)
+    settings.persona_voice = str(voice.get("voice") or "")
     settings.voice_speed = _as_float(voice.get("speed", settings.voice_speed), settings.voice_speed)
     settings.voice_pitch = _as_float(voice.get("pitch", settings.voice_pitch), settings.voice_pitch)
     activation = persona.get("activation") if isinstance(persona.get("activation"), dict) else {}
@@ -557,8 +561,12 @@ def resolve_tts_provider(settings: Settings) -> tuple[str, str | None]:
     requested = settings.tts_provider.strip().lower()
     if not settings.voice_enabled or requested == "disabled":
         return "disabled", "语音已关闭或未启用"
-    if requested not in ("auto", "dashscope", "minimax", "volcengine"):
+    if requested not in ("auto", "dashscope", "minimax", "volcengine", "openai_compatible"):
         return "disabled", f"未知 TTS 供应商：{requested}"
+    if requested == "openai_compatible":
+        if settings.tts_base_url:
+            return "openai_compatible", None
+        return "disabled", "未配置语音合成服务地址（Base URL），语音合成不可用"
     if requested == "volcengine":
         return "disabled", "火山豆包语音适配器待接入（Step 8），请用 minimax 或 dashscope"
     if requested == "dashscope":
@@ -569,9 +577,11 @@ def resolve_tts_provider(settings: Settings) -> tuple[str, str | None]:
         if settings.minimax_api_key:
             return "minimax", None
         return "disabled", "未配置 MINIMAX_API_KEY，语音合成不可用"
-    # auto：优先 MiniMax 主声，其次 DashScope
+    # auto：优先 MiniMax 主声，其次 DashScope，最后 OpenAI 兼容自建服务
     if settings.minimax_api_key:
         return "minimax", None
     if settings.dashscope_api_key:
         return "dashscope", None
+    if settings.tts_base_url:
+        return "openai_compatible", None
     return "disabled", "未配置任何 TTS 云供应商（MINIMAX_API_KEY / DASHSCOPE_API_KEY）"

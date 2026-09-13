@@ -23,7 +23,8 @@ from app.speech.base import (
     SpeechUnavailable,
 )
 from app.speech.activation import build_wake_texts, classify_intent
-from app.speech.factory import stack_status
+from app.speech.factory import build_tts_synthesizer, stack_status
+from app.model_profiles import find_model_profile, load_model_profiles
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 _VOICE_CLIENTS = {"web", "widget"}
@@ -113,6 +114,73 @@ async def voice_status(request: Request) -> dict:
         "persona_name": settings.activation_persona_name,
     }
     return body
+
+
+@router.get("/voices")
+async def list_tts_voices(request: Request, profile_id: str | None = None) -> dict:
+    """列出语音合成供应商的可用音色，供设置页与角色卡绑定选择。
+
+    - 不传 `profile_id`：按当前生效的语音合成配置取列表。
+    - 传 `profile_id`：按该「模型档案」取列表，便于设置页保存后立即试听选音色。
+
+    只读查询，不占用语音租约；供应商不支持自动获取时返回空列表 + reason，
+    由前端回退为手填音色 ID。
+    """
+    settings = request.app.state.settings
+    stack = _stack(request)
+    provider = stack.synthesizer.name
+    model = stack.tts_model
+    current = stack.tts_voice
+    synthesizer = stack.synthesizer
+
+    if profile_id:
+        profile = find_model_profile(load_model_profiles(settings.repo_root), profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="模型档案不存在")
+        if profile.category != "tts":
+            raise HTTPException(status_code=400, detail="该模型档案不是语音合成模型")
+        provider = profile.provider
+        model = profile.model
+        current = profile.voice
+        synthesizer = build_tts_synthesizer(
+            profile.provider,
+            api_key=profile.api_key or "",
+            base_url=profile.base_url,
+            model=profile.model,
+            voice=profile.voice,
+            fmt=settings.tts_format,
+            sample_rate=settings.tts_sample_rate,
+            reason=f"{profile.provider} 语音合成未配置",
+        )
+
+    payload: dict = {
+        "provider": provider,
+        "model": model,
+        "current": current,
+        "available": synthesizer.available,
+        "voices": [],
+        "reason": None,
+    }
+    if is_lite_mode(settings):
+        payload["available"] = False
+        payload["reason"] = "轻量模式已禁用语音合成"
+        return payload
+    if not synthesizer.available:
+        payload["reason"] = "语音合成未配置：请先在设置页配置语音合成模型"
+        return payload
+    try:
+        voices = await synthesizer.list_voices()
+    except SpeechUnavailable as exc:
+        payload["reason"] = str(exc)
+        return payload
+    except SpeechProviderError as exc:
+        payload["reason"] = str(exc)
+        return payload
+
+    payload["voices"] = [voice.as_dict() for voice in voices]
+    if not voices:
+        payload["reason"] = "该供应商未提供音色列表接口，请手动填写音色 ID"
+    return payload
 
 
 @router.post("/intent")

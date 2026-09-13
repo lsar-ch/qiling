@@ -156,9 +156,36 @@
 | `GET /api/voice/status` | 供应商/模型/默认音色/参数/是否可用 |
 | `POST /api/voice/recognize` | 上传 WAV（16k 单声道）→ 返回转写文本 |
 | `POST /api/voice/synthesize` | 文本 + 可选表现参数 → 返回音频字节 |
+| `GET /api/voice/voices` | 供应商可用音色列表（`?profile_id=` 按指定模型档案取），只读不占语音租约 |
 
 ## 7. 升级路径（全双工）
 
 火山「端到端实时语音大模型-全双工版本」与阿里实时语音大模型都提供一条 WebSocket 全双工通道（输入输出同流）。
 V1 采用“整句录音 → HTTP → 播报可打断”是为了先稳定闭环；
 Step 8+ 再做流式升级时，接口层只换适配器，前端与契约基本不动。
+
+## 8. 音色列表自动获取与角色绑定（2026-09-13）
+
+音色不写死在配置里：用户配好语音合成模型后，系统自动向供应商拉取音色列表，设置页与角色卡都用下拉选择。
+
+**统一入口**：`GET /api/voice/voices`（`profile_id` 可选）。返回 `{provider, model, current, available, voices[], reason}`；
+`voices[]` 元素为 `{id, name, kind}`，`kind` 取 `system | cloned | preset`。
+
+**各供应商的取法**：
+
+| 供应商 | 音色来源 | 说明 |
+|---|---|---|
+| MiniMax | `POST /v1/get_voice`（`voice_type=all`） | 返回系统音色 + 账号克隆音色（`cloned`） |
+| DashScope CosyVoice | 官方预置清单（按 model 分组）+ `VoiceEnrollmentService.list_voices` | 预置音色无列表接口，只能内置清单；克隆音色走接口 |
+| OpenAI 兼容 / 自建 | `GET {base}/audio/voices`，失败退 `GET {base}/models` | 非官方规范，Kokoro-FastAPI / openedai-speech / LocalAI 等事实约定 |
+
+**取不到怎么办**：返回空列表 + `reason`，前端回退为手填音色 ID，并说明原因，不阻塞保存。
+
+**角色绑定优先级**：角色卡里显式选了音色（`persona_voice` 非空）时，语音合成模型档案不再覆盖它；
+未选（「跟随全局默认」）时用默认 TTS 档案的音色。因此不同角色可以绑定不同音色。
+
+**已知边界**：
+
+- DashScope 预置音色清单是官方文档里的常用子集（非全量），且每个 model 只支持自己那组音色，不能跨 model 混用。
+- 新增 openai_compatible 供应商只要求填 Base URL；未填时语音合成降级为 `disabled` 并给出原因。
+- 设置页里未保存的新档案会先按「当前生效配置」取列表，保存后回来再按该档案取。

@@ -47,7 +47,7 @@ class ModelProfile(BaseModel):
             "text": {"openai_compatible", "echo"},
             "multimodal": {"openai_compatible"},
             "stt": {"dashscope"},
-            "tts": {"minimax", "dashscope"},
+            "tts": {"minimax", "dashscope", "openai_compatible"},
         }
         if self.provider not in allowed[self.category]:
             raise ValueError(f"{CATEGORY_LABELS[self.category]}不支持供应商 {self.provider}")
@@ -157,11 +157,16 @@ def apply_default_profiles(settings: Any, overrides: dict[str, Any]) -> None:
     if tts is not None:
         settings.tts_provider = tts.provider
         settings.tts_model = tts.model or settings.tts_model
-        settings.tts_voice = tts.voice or settings.tts_voice
+        # 角色卡显式绑定的音色优先：模型档案只提供引擎与默认音色。
+        settings.tts_base_url = tts.base_url or settings.tts_base_url
+        if not getattr(settings, "persona_voice", ""):
+            settings.tts_voice = tts.voice or settings.tts_voice
         if tts.provider == "minimax" and tts.api_key:
             settings.minimax_api_key = tts.api_key
         if tts.provider == "dashscope" and tts.api_key:
             settings.dashscope_api_key = tts.api_key
+        if tts.provider == "openai_compatible":
+            settings.tts_api_key = tts.api_key or settings.tts_api_key
 
 
 def ensure_initial_profiles(root: Path, settings: Any) -> list[ModelProfile]:

@@ -27,6 +27,18 @@ class AudioResult:
     sample_rate: int = 24000
 
 
+@dataclass
+class VoiceOption:
+    """供应商音色条目，供设置页/角色卡选择绑定。"""
+
+    id: str
+    name: str = ""
+    kind: str = "system"         # system | cloned
+
+    def as_dict(self) -> dict[str, str]:
+        return {"id": self.id, "name": self.name or self.id, "kind": self.kind}
+
+
 class SpeechRecognizer(ABC):
     name = "unavailable"
 
@@ -49,6 +61,10 @@ class SpeechSynthesizer(ABC):
     @abstractmethod
     async def synthesize(self, text: str, params: VoiceParams | None = None) -> AudioResult:
         """合成文本，返回音频字节。params 为空时使用供应商默认参数。"""
+
+    async def list_voices(self) -> list[VoiceOption]:
+        """列出供应商可用音色。默认表示「不支持自动获取」，由前端回退到手填。"""
+        return []
 
 
 class DisabledRecognizer(SpeechRecognizer):

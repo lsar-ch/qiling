@@ -21,6 +21,7 @@ from app.speech.base import (
     AudioResult,
     SpeechProviderError,
     SpeechSynthesizer,
+    VoiceOption,
 )
 
 API_BASE = "https://api.minimaxi.com/v1"
@@ -80,6 +81,49 @@ class MiniMaxSynthesizer(SpeechSynthesizer):
     @property
     def available(self) -> bool:
         return bool(self._api_key)
+
+    async def list_voices(self) -> list[VoiceOption]:
+        """拉取账号可用音色：系统预置 + 已注册克隆音。"""
+        if not self._api_key:
+            raise SpeechProviderError("未配置 MINIMAX_API_KEY")
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{API_BASE}/get_voice",
+                    json={"voice_type": "all"},
+                    headers=headers,
+                )
+            data = resp.json()
+        except httpx.HTTPError as exc:
+            raise SpeechProviderError(f"获取 MiniMax 音色列表网络错误：{exc}") from exc
+        except ValueError as exc:
+            raise SpeechProviderError(f"获取 MiniMax 音色列表响应异常：{exc}") from exc
+
+        base = data.get("base_resp", {}) or {}
+        if base.get("status_code") not in (0, None):
+            raise SpeechProviderError(
+                f"获取 MiniMax 音色列表失败：{base.get('status_code')} {base.get('status_msg')}"
+            )
+        voices: list[VoiceOption] = []
+        for kind, key in (("system", "system_voice"), ("cloned", "voice_cloning")):
+            for item in data.get(key) or []:
+                if not isinstance(item, dict):
+                    continue
+                voice_id = str(item.get("voice_id") or "").strip()
+                if not voice_id:
+                    continue
+                voices.append(
+                    VoiceOption(
+                        id=voice_id,
+                        name=str(item.get("voice_name") or "").strip() or voice_id,
+                        kind=kind,
+                    )
+                )
+        return voices
 
     async def synthesize(self, text: str, params: VoiceParams | None = None) -> AudioResult:
         if not self._api_key:

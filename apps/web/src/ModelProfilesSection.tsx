@@ -3,11 +3,13 @@ import {
   createModelProfile,
   deleteModelProfile,
   fetchModelProfiles,
+  fetchVoiceOptions,
   testModelProfile,
   updateModelProfile,
   type ModelProfile,
   type ModelProfileCategory,
   type ModelProfilePayload,
+  type VoiceOption,
 } from "./api";
 
 const CATEGORY_META: Record<
@@ -34,10 +36,11 @@ const CATEGORY_META: Record<
   },
   tts: {
     title: "语音合成模型",
-    hint: "用于把助手回复转换成语音。当前支持 MiniMax 与 DashScope CosyVoice。",
+    hint: "用于把助手回复转换成语音。支持 MiniMax、DashScope CosyVoice，以及任何 OpenAI 兼容 / 自建的语音服务。配置保存后即可拉取该供应商的音色列表。",
     providers: [
       { value: "minimax", label: "MiniMax" },
       { value: "dashscope", label: "阿里云百炼 DashScope" },
+      { value: "openai_compatible", label: "OpenAI 兼容 / 自建服务" },
     ],
   },
 };
@@ -113,6 +116,10 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
   const [error, setError] = useState("");
   const [testResult, setTestResult] = useState<Record<string, string>>({});
   const [editorRequest, setEditorRequest] = useState(0);
+  const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
+  const [voiceProvider, setVoiceProvider] = useState("");
+  const [voiceReason, setVoiceReason] = useState<string | null>(null);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
 
   const load = async (): Promise<void> => {
@@ -133,9 +140,29 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
     requestAnimationFrame(() => editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, [editorRequest]);
 
+  const savedProfileIds = new Set(profiles.map((profile) => profile.id));
+
+  const loadVoiceOptions = async (profileId?: string): Promise<void> => {
+    setVoiceBusy(true);
+    try {
+      const list = await fetchVoiceOptions(profileId);
+      setVoiceOptions(list.voices);
+      setVoiceProvider(list.provider);
+      setVoiceReason(list.reason);
+    } catch {
+      setVoiceOptions([]);
+      setVoiceReason("音色列表获取失败，可直接填写音色 ID");
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
   const openEditor = (nextDraft: Draft): void => {
     setDraft(nextDraft);
     setEditorRequest((current) => current + 1);
+    if (nextDraft.category === "tts") {
+      void loadVoiceOptions(savedProfileIds.has(nextDraft.id) ? nextDraft.id : undefined);
+    }
   };
 
   const save = async (): Promise<void> => {
@@ -230,7 +257,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
                 ))}
               </select>
             </label>
-            {draft.category === "text" || draft.category === "multimodal" ? (
+            {draft.category === "text" || draft.category === "multimodal" || draft.provider === "openai_compatible" ? (
               <label className="flex flex-col gap-1.5 text-xs text-muted sm:col-span-2">
                 API 地址
                 <input className={inputCls} value={draft.baseUrl} onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} placeholder="https://.../v1" />
@@ -251,10 +278,47 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
               />
             </label>
             {draft.category === "tts" ? (
-              <label className="flex flex-col gap-1.5 text-xs text-muted sm:col-span-2">
-                音色 ID
-                <input className={inputCls} value={draft.voice} onChange={(event) => setDraft({ ...draft, voice: event.target.value })} placeholder="Chinese (Mandarin)_Soft_Girl" />
-              </label>
+              <div className="flex flex-col gap-1.5 text-xs text-muted sm:col-span-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span>音色</span>
+                  <button
+                    type="button"
+                    className="text-[11px] text-brand hover:underline disabled:opacity-50"
+                    onClick={() => void loadVoiceOptions(draft && savedProfileIds.has(draft.id) ? draft.id : undefined)}
+                    disabled={voiceBusy}
+                  >
+                    {voiceBusy ? "获取中…" : "重新获取音色列表"}
+                  </button>
+                </div>
+                {voiceOptions.length > 0 ? (
+                  <>
+                    <select className={inputCls} value={draft.voice} onChange={(event) => setDraft({ ...draft, voice: event.target.value })}>
+                      <option value="">未指定（使用供应商默认音色）</option>
+                      {draft.voice && !voiceOptions.some((item) => item.id === draft.voice) ? (
+                        <option value={draft.voice}>{draft.voice}（当前值，不在列表）</option>
+                      ) : null}
+                      {voiceOptions.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                          {item.kind === "cloned" ? "（克隆）" : item.kind === "preset" ? "（预置）" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="text-[11px] text-muted break-words">
+                      共 {voiceOptions.length} 个音色，来自 {voiceProvider}
+                      {draft && savedProfileIds.has(draft.id) ? " 该档案" : " 当前生效配置"}。
+                      新档案请先保存，再回来拉取该供应商的音色列表。
+                    </small>
+                  </>
+                ) : (
+                  <>
+                    <input className={inputCls} value={draft.voice} onChange={(event) => setDraft({ ...draft, voice: event.target.value })} placeholder="Chinese (Mandarin)_Soft_Girl" />
+                    <small className="text-[11px] text-muted break-words">
+                      {voiceReason ?? "音色列表来自当前生效的语音合成配置；也可直接填写音色 ID。"}
+                    </small>
+                  </>
+                )}
+              </div>
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs text-muted">

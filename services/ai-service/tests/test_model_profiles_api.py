@@ -219,3 +219,52 @@ def test_chat_uses_persona_model_binding(tmp_path: Path, monkeypatch) -> None:
         assert response.status_code == 200
         assert captured_models[-1] == "qwen-max"
         assert '"model_profile_id": "text_persona"' in response.text
+
+
+def test_persona_voice_wins_over_default_tts_profile() -> None:
+    """角色卡显式绑定音色后，语音合成模型档案不再覆盖它。"""
+    from app.config import Settings
+    from app.model_profiles import apply_default_profiles
+
+    overrides = {
+        "model_profiles": [
+            {
+                "id": "tts_default",
+                "name": "speech-2.8-hd",
+                "category": "tts",
+                "provider": "minimax",
+                "model": "speech-2.8-hd",
+                "voice": "male-qn-qingse",
+                "enabled": True,
+                "is_default": True,
+            }
+        ]
+    }
+    settings = Settings(repo_root=PROJECT_ROOT)
+    settings.persona_voice = "Chinese (Mandarin)_Soft_Girl"
+    settings.tts_voice = "Chinese (Mandarin)_Soft_Girl"
+    apply_default_profiles(settings, overrides)
+    assert settings.tts_voice == "Chinese (Mandarin)_Soft_Girl"
+
+
+def test_default_tts_profile_voice_applies_without_persona_binding() -> None:
+    from app.config import Settings
+    from app.model_profiles import apply_default_profiles
+
+    overrides = {
+        "model_profiles": [
+            {
+                "id": "tts_default",
+                "name": "speech-2.8-hd",
+                "category": "tts",
+                "provider": "minimax",
+                "model": "speech-2.8-hd",
+                "voice": "male-qn-qingse",
+                "enabled": True,
+                "is_default": True,
+            }
+        ]
+    }
+    settings = Settings(repo_root=PROJECT_ROOT)
+    apply_default_profiles(settings, overrides)
+    assert settings.tts_voice == "male-qn-qingse"

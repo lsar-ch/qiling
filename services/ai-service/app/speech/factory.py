@@ -8,9 +8,59 @@ from app.speech.base import (
     DisabledSynthesizer,
     SpeechStack,
 )
+from app.speech.base import SpeechSynthesizer
 from app.speech.dashscope import DashScopeRecognizer, DashScopeSynthesizer
 from app.speech.minimax import MiniMaxSynthesizer
+from app.speech.openai_tts import OpenAICompatibleSynthesizer
 from deskmate_contracts.voice import VoiceParams
+
+
+def build_tts_synthesizer(
+    provider: str,
+    *,
+    api_key: str = "",
+    base_url: str = "",
+    model: str = "",
+    voice: str = "",
+    fmt: str = "wav",
+    sample_rate: int = 24000,
+    defaults: VoiceParams | None = None,
+    reason: str | None = None,
+) -> SpeechSynthesizer:
+    """按供应商构造合成器；未知/未配置时返回 disabled。
+
+    设置页按「模型档案」试听音色、运行时按生效配置合成，都走这一个入口，
+    避免两处各自判断供应商。
+    """
+    if provider == "dashscope":
+        return DashScopeSynthesizer(
+            api_key=api_key,
+            model=model or "cosyvoice-v2",
+            voice=voice,
+            fmt=fmt,
+            sample_rate=sample_rate,
+            defaults=defaults,
+        )
+    if provider == "minimax":
+        return MiniMaxSynthesizer(
+            api_key=api_key,
+            model=model or "speech-2.8-hd",
+            voice=voice,
+            fmt=fmt,
+            sample_rate=sample_rate,
+            defaults=defaults,
+        )
+    if provider == "openai_compatible":
+        return OpenAICompatibleSynthesizer(
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            voice=voice,
+            fmt=fmt,
+            sample_rate=sample_rate,
+            defaults=defaults,
+        )
+    return DisabledSynthesizer(reason or "语音合成不可用")
 
 
 def build_speech_stack(settings: Settings) -> SpeechStack:
@@ -35,25 +85,26 @@ def build_speech_stack(settings: Settings) -> SpeechStack:
         language=settings.stt_language,
     )
     if tts_provider == "dashscope":
-        synthesizer = DashScopeSynthesizer(
-            api_key=settings.dashscope_api_key or "",
-            model=settings.tts_model,
-            voice=settings.tts_voice,
-            fmt=settings.tts_format,
-            sample_rate=settings.tts_sample_rate,
-            defaults=params,
-        )
+        api_key, base_url = settings.dashscope_api_key or "", ""
     elif tts_provider == "minimax":
-        synthesizer = MiniMaxSynthesizer(
-            api_key=settings.minimax_api_key or "",
-            model=settings.tts_model,
-            voice=settings.tts_voice,
-            fmt=settings.tts_format,
-            sample_rate=settings.tts_sample_rate,
-            defaults=params,
-        )
+        api_key, base_url = settings.minimax_api_key or "", ""
+    elif tts_provider == "openai_compatible":
+        api_key, base_url = settings.tts_api_key, settings.tts_base_url
     else:
-        synthesizer = DisabledSynthesizer(tts_reason or "语音合成不可用")
+        api_key, base_url = "", ""
+
+    synthesizer = build_tts_synthesizer(
+        tts_provider,
+        api_key=api_key,
+        base_url=base_url,
+        model=settings.tts_model,
+        voice=settings.tts_voice,
+        fmt=settings.tts_format,
+        sample_rate=settings.tts_sample_rate,
+        defaults=params,
+        reason=tts_reason,
+    )
+    if not synthesizer.available:
         params = None
 
     return SpeechStack(

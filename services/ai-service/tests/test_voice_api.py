@@ -13,10 +13,12 @@ from app.config import load_settings
 from app.main import create_app
 from app.speech.base import (
     AudioResult,
+    DisabledSynthesizer,
     SpeechRecognizer,
     SpeechStack,
     SpeechSynthesizer,
     SpeechUnavailable,
+    VoiceOption,
 )
 from deskmate_contracts.voice import VoiceParams
 
@@ -38,6 +40,16 @@ class FakeSynthesizer(SpeechSynthesizer):
 
     async def synthesize(self, text: str, params: VoiceParams | None = None) -> AudioResult:
         return AudioResult(data=f"FAKE-AUDIO:{text}".encode(), format="wav", sample_rate=24000)
+
+
+class ListedSynthesizer(FakeSynthesizer):
+    name = "listed-tts"
+
+    async def list_voices(self) -> list[VoiceOption]:
+        return [
+            VoiceOption(id="Chinese (Mandarin)_Soft_Girl", name="温柔女声", kind="system"),
+            VoiceOption(id="deskmate_voice_01", name="我的克隆音", kind="cloned"),
+        ]
 
 
 class BrokenRecognizer(SpeechRecognizer):
@@ -182,3 +194,109 @@ def test_voice_lease_prefers_web_and_allows_widget_after_release() -> None:
         assert client.post("/api/voice/lease/heartbeat", headers=web).json()["renewed"] is True
         assert client.delete("/api/voice/lease", headers=web).json()["released"] is True
         assert client.post("/api/voice/lease", headers=widget).json()["acquired"] is True
+
+
+def test_voices_lists_provider_options() -> None:
+    with _client(synthesizer=ListedSynthesizer()) as client:
+        body = client.get("/api/voice/voices").json()
+        assert body["provider"] == "listed-tts"
+        assert body["available"] is True
+        assert body["reason"] is None
+        assert [item["id"] for item in body["voices"]] == [
+            "Chinese (Mandarin)_Soft_Girl",
+            "deskmate_voice_01",
+        ]
+        assert body["voices"][1]["kind"] == "cloned"
+
+
+def test_voices_degrades_when_provider_has_no_list() -> None:
+    """供应商不支持列举音色时返回空列表 + 原因，前端回退手填。"""
+    with _client() as client:
+        body = client.get("/api/voice/voices").json()
+        assert body["voices"] == []
+        assert body["reason"]
+
+
+def test_voices_reports_unconfigured_provider() -> None:
+    with _client(synthesizer=DisabledSynthesizer("语音合成不可用（测试）")) as client:
+        body = client.get("/api/voice/voices").json()
+        assert body["available"] is False
+        assert body["voices"] == []
+        assert body["reason"]
+
+
+def test_voices_rejects_unknown_profile() -> None:
+    with _client() as client:
+        assert client.get("/api/voice/voices?profile_id=missing").status_code == 404
+
+
+def test_voices_uses_profile_scoped_openai_compatible_provider(tmp_path, monkeypatch) -> None:
+    """非 MiniMax 供应商：配置好档案后按 profile_id 自动拉取音色列表。"""
+    import json
+    import shutil
+    from pathlib import Path
+
+    from app.speech import openai_tts
+
+    project_root = Path(__file__).resolve().parents[3]
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    for key in ("DASHSCOPE_API_KEY", "MINIMAX_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(project_root / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
+    (tmp_path / "config" / "personas" / "default.yaml").write_text(
+        "id: default\nname: 默认\nvoice: {}\nactivation: {}\n", encoding="utf-8"
+    )
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "settings.local.json").write_text(
+        json.dumps(
+            {
+                "model_profiles": [
+                    {
+                        "id": "tts_local",
+                        "name": "本地 Kokoro",
+                        "category": "tts",
+                        "provider": "openai_compatible",
+                        "base_url": "https://tts.example.com/v1",
+                        "model": "kokoro",
+                        "voice": "zf_xiaobei",
+                        "enabled": True,
+                        "is_default": True,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _Response:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"voices": ["zf_xiaobei", {"id": "zm_yunxi", "name": "云希"}]}
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc) -> bool:
+            return False
+
+        async def get(self, url, headers=None):
+            assert url == "https://tts.example.com/v1/audio/voices"
+            return _Response()
+
+    monkeypatch.setattr(openai_tts.httpx, "AsyncClient", _Client)
+
+    with TestClient(create_app(load_settings())) as client:
+        body = client.get("/api/voice/voices?profile_id=tts_local").json()
+        assert body["provider"] == "openai_compatible"
+        assert body["available"] is True
+        assert [item["id"] for item in body["voices"]] == ["zf_xiaobei", "zm_yunxi"]
+        assert body["voices"][1]["name"] == "云希"

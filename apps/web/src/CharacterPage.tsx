@@ -4,12 +4,14 @@ import {
   fetchModelProfiles,
   fetchPersonas,
   fetchSettings,
+  fetchVoiceOptions,
   updatePersona,
   updateSettings,
   uploadPersonaAvatar,
   type AppSettings,
   type ModelProfile,
   type PersonaCard,
+  type VoiceOption,
 } from "./api";
 import ModelProfileSelect from "./ModelProfileSelect";
 
@@ -149,6 +151,9 @@ export default function CharacterPage() {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
+  const [voiceProvider, setVoiceProvider] = useState("");
+  const [voiceOptionsReason, setVoiceOptionsReason] = useState<string | null>(null);
 
   const load = async (): Promise<void> => {
     setLoading(true);
@@ -168,6 +173,16 @@ export default function CharacterPage() {
       );
       setDraft(nextPersonas.find((item) => item.id === nextSettings.active_persona_id) ?? nextPersonas[0] ?? null);
       setDirty(false);
+      void fetchVoiceOptions()
+        .then((list) => {
+          setVoiceOptions(list.voices);
+          setVoiceProvider(list.provider);
+          setVoiceOptionsReason(list.reason);
+        })
+        .catch(() => {
+          setVoiceOptions([]);
+          setVoiceOptionsReason("音色列表获取失败，可直接填写音色 ID");
+        });
     } catch (e) {
       setError(e instanceof Error ? e.message : "角色卡加载失败");
     } finally {
@@ -554,13 +569,38 @@ export default function CharacterPage() {
                     语音引擎：{draft.voice?.provider ? `${draft.voice.provider} · ` : ""}{draft.voice?.model ?? "默认模型"}
                   </p>
                 ) : null}
-                <Field
-                  label="音色"
-                  value={draft.voice?.voice ?? ""}
-                  onChange={(value) => setVoiceField("voice", value)}
-                  placeholder="MiniMax Soft_Girl 类"
-                  hint="填写供应商音色 ID，例如 Chinese (Mandarin)_Soft_Girl。"
-                />
+                {voiceOptions.length > 0 ? (
+                  <label className="flex flex-col gap-1.5 text-xs text-muted min-w-0">
+                    音色
+                    <select
+                      className={inputCls}
+                      value={draft.voice?.voice ?? ""}
+                      onChange={(event) => setVoiceField("voice", event.target.value)}
+                    >
+                      <option value="">跟随全局默认</option>
+                      {draft.voice?.voice && !voiceOptions.some((item) => item.id === draft.voice?.voice) ? (
+                        <option value={draft.voice.voice}>{draft.voice.voice}（当前值，不在列表）</option>
+                      ) : null}
+                      {voiceOptions.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                          {item.kind === "cloned" ? "（克隆）" : item.kind === "preset" ? "（预置）" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="text-[11px] text-muted break-words">
+                      共 {voiceOptions.length} 个音色，来自 {voiceProvider}。不同角色可绑定不同音色。
+                    </small>
+                  </label>
+                ) : (
+                  <Field
+                    label="音色"
+                    value={draft.voice?.voice ?? ""}
+                    onChange={(value) => setVoiceField("voice", value)}
+                    placeholder="MiniMax Soft_Girl 类"
+                    hint={voiceOptionsReason ?? "填写供应商音色 ID，例如 Chinese (Mandarin)_Soft_Girl。"}
+                  />
+                )}
                 <div className="grid grid-cols-2 gap-2.5 min-w-0">
                   <Field
                     label="语速"
