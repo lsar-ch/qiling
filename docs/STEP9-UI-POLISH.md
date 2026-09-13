@@ -105,3 +105,31 @@ Still open (unchanged):
 
 - Character-card testing follow-up for widget asset, animation, movement, and character-specific visual tuning.
 - Step 8 macOS 真机人工项（launcher 拉起、麦克风授权/拒绝降级、Codex 不可用 banner、退出进程回收）与随后的 Windows 回归。清单见 `docs/HANDOVER-2026-09-09.md`。
+
+## 2026-09-13 Progress（角色卡调优 + 视觉回归）
+
+Completed（角色卡调优）：
+
+- 新增 `apps/web/src/VoiceSelect.tsx`：音色下拉按种类分组（系统 / 克隆 / 预置）并带关键词过滤，
+  设置页模型档案编辑器与角色卡共用。此前 MiniMax 一个账号就是 300+ 项扁平下拉，克隆音色沉在最后。
+- 角色库卡片音色徽标改为优先显示供应商音色表里的中文名（如「软软女孩」），与下拉框保持一致；
+  拿不到名单时仍回退到 ID 尾段，tooltip 保留完整音色 ID。
+- 角色卡切换走查（真机浏览器）：点「启用」后 `active_persona_id`、语速、唤醒角色名整套切换生效，
+  再切回原角色可完整还原；未保存改动时启用其它角色会先确认。
+
+Completed（视觉回归）：
+
+- 八页（主页 / 对话 / 角色卡 / 记忆 / 知识库 / 我的智能体 / 设置 / 关于）在 1440×900 与 390×844 两档逐页审计：
+  `documentElement.scrollWidth ≤ viewport`，排除可横向滚动祖先外无越界元素；移动端导航横向滚动属预期设计。
+- 新标签页走查八页控制台 0 报错；仅保留已知的 ScriptProcessorNode 弃用提示。
+- `./scripts/check.sh` 全绿（154 passed + Web/Desktop 类型检查）。
+
+顺带修掉的回归噪音：
+
+- `tests/test_activation.py` 的接口级用例此前读开发者本地角色配置，本机启用「蓝猫」后
+  「你好，千问」被判成 chat，长期红。改为用临时 `DESKMATE_HOME` 固定角色名，测试不再随环境漂移。
+
+Still open:
+
+- 挂件侧角色化表现（立绘动效、移动、角色专属观感）仍需人工对着运行中的挂件看，自动化覆盖不到。
+- Step 8 macOS 真机人工项剩余系统设置层麦克风摘除 + 真人说话转写；Windows 回归待 macOS 定稿后统一跑。

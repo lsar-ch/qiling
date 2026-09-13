@@ -49,12 +49,35 @@ def test_classify_priority_and_default() -> None:
     assert classify_intent("千问，先别说话", persona_name="千问") == "sleep"
 
 
-def _client():
+def _client(tmp_path, monkeypatch):
+    """临时 DESKMATE_HOME：固定角色名为「千问」。
+
+    接口级用例不能读开发者本地的角色配置，否则本机启用别的角色后
+    唤醒词会变，测试结果随环境漂移。
+    """
+    import shutil
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[3]
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(project_root / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
+    (tmp_path / "config" / "personas" / "default.yaml").write_text(
+        "id: default\n"
+        "name: 千问\n"
+        "voice: {}\n"
+        "activation:\n"
+        "  persona_name: 千问\n"
+        "  wake_prefixes: [你好, 嗨]\n"
+        "  sleep_phrases: [暂时静默, 先别说话]\n",
+        encoding="utf-8",
+    )
     return TestClient(create_app(load_settings()))
 
 
-def test_intent_api_wake_and_sleep() -> None:
-    with _client() as client:
+def test_intent_api_wake_and_sleep(tmp_path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
         headers = {"X-Voice-Client": "web"}
         assert client.post("/api/voice/lease", headers=headers).json()["acquired"] is True
         wake = client.post("/api/voice/intent", json={"text": "你好，千问"}, headers=headers).json()
@@ -69,8 +92,8 @@ def test_intent_api_wake_and_sleep() -> None:
         assert chat["intent"] == "chat"
 
 
-def test_status_includes_activation() -> None:
-    with _client() as client:
+def test_status_includes_activation(tmp_path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
         body = client.get("/api/voice/status").json()
         act = body["activation"]
         assert act["enabled"] is True
