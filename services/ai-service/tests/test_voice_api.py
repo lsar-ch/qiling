@@ -230,17 +230,15 @@ def test_voices_rejects_unknown_profile() -> None:
         assert client.get("/api/voice/voices?profile_id=missing").status_code == 404
 
 
-def test_voices_uses_profile_scoped_openai_compatible_provider(tmp_path, monkeypatch) -> None:
-    """非 MiniMax 供应商：配置好档案后按 profile_id 自动拉取音色列表。"""
+def _prepare_tts_home(tmp_path, monkeypatch) -> None:
+    """临时 DESKMATE_HOME：只有一个 openai_compatible 的 TTS 档案。"""
     import json
     import shutil
     from pathlib import Path
 
-    from app.speech import openai_tts
-
     project_root = Path(__file__).resolve().parents[3]
     monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
-    for key in ("DASHSCOPE_API_KEY", "MINIMAX_API_KEY"):
+    for key in ("DASHSCOPE_API_KEY", "MINIMAX_API_KEY", "VOICE_TTS_PROVIDER", "VOICE_TTS_VOICE"):
         monkeypatch.delenv(key, raising=False)
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(project_root / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
@@ -270,13 +268,25 @@ def test_voices_uses_profile_scoped_openai_compatible_provider(tmp_path, monkeyp
         encoding="utf-8",
     )
 
-    class _Response:
+
+def _fake_openai_tts(monkeypatch):
+    """假 httpx：/audio/voices 返回两条音色，/audio/speech 返回假音频。"""
+    from app.speech import openai_tts
+
+    calls: list = []
+
+    class _JsonResponse:
         status_code = 200
         text = ""
 
         @staticmethod
         def json():
             return {"voices": ["zf_xiaobei", {"id": "zm_yunxi", "name": "云希"}]}
+
+    class _AudioResponse:
+        status_code = 200
+        text = ""
+        content = b"FAKE-PREVIEW-AUDIO"
 
     class _Client:
         def __init__(self, *args, **kwargs) -> None:
@@ -289,10 +299,23 @@ def test_voices_uses_profile_scoped_openai_compatible_provider(tmp_path, monkeyp
             return False
 
         async def get(self, url, headers=None):
+            calls.append(("GET", url))
             assert url == "https://tts.example.com/v1/audio/voices"
-            return _Response()
+            return _JsonResponse()
+
+        async def post(self, url, json=None, headers=None):
+            calls.append(("POST", url, json))
+            assert url == "https://tts.example.com/v1/audio/speech"
+            return _AudioResponse()
 
     monkeypatch.setattr(openai_tts.httpx, "AsyncClient", _Client)
+    return calls
+
+
+def test_voices_uses_profile_scoped_openai_compatible_provider(tmp_path, monkeypatch) -> None:
+    """非 MiniMax 供应商：配置好档案后按 profile_id 自动拉取音色列表。"""
+    _prepare_tts_home(tmp_path, monkeypatch)
+    _fake_openai_tts(monkeypatch)
 
     with TestClient(create_app(load_settings())) as client:
         body = client.get("/api/voice/voices?profile_id=tts_local").json()
@@ -300,3 +323,47 @@ def test_voices_uses_profile_scoped_openai_compatible_provider(tmp_path, monkeyp
         assert body["available"] is True
         assert [item["id"] for item in body["voices"]] == ["zf_xiaobei", "zm_yunxi"]
         assert body["voices"][1]["name"] == "云希"
+
+
+def test_preview_synthesizes_with_selected_voice(tmp_path, monkeypatch) -> None:
+    _prepare_tts_home(tmp_path, monkeypatch)
+    calls = _fake_openai_tts(monkeypatch)
+
+    with TestClient(create_app(load_settings())) as client:
+        resp = client.post(
+            "/api/voice/preview",
+            json={"profile_id": "tts_local", "voice": "zm_yunxi", "text": "试听一句"},
+        )
+        assert resp.status_code == 200
+        assert resp.content == b"FAKE-PREVIEW-AUDIO"
+        assert resp.headers["content-type"].startswith("audio/")
+        assert resp.headers["X-Speech-Format"] == "wav"
+        method, _url, payload = calls[-1]
+        assert method == "POST"
+        assert payload["voice"] == "zm_yunxi"
+        assert payload["input"] == "试听一句"
+
+
+def test_preview_rejects_unknown_profile() -> None:
+    with _client() as client:
+        assert client.post("/api/voice/preview", json={"profile_id": "missing"}).status_code == 404
+
+
+def test_preview_requires_key_for_cloud_provider(tmp_path, monkeypatch) -> None:
+    """未配置密钥的云供应商：给出明确 400，而不是让它打到网络上。"""
+    _prepare_tts_home(tmp_path, monkeypatch)
+    with TestClient(create_app(load_settings())) as client:
+        resp = client.post("/api/voice/preview", json={"provider": "minimax", "voice": "v"})
+        assert resp.status_code == 400
+        assert "API Key" in resp.json()["detail"]
+
+
+def test_preview_allows_keyless_self_hosted_service(tmp_path, monkeypatch) -> None:
+    """自建 OpenAI 兼容服务通常无鉴权：不填 Key 也能试听。"""
+    _prepare_tts_home(tmp_path, monkeypatch)
+    _fake_openai_tts(monkeypatch)
+
+    with TestClient(create_app(load_settings())) as client:
+        resp = client.post("/api/voice/preview", json={"profile_id": "tts_local"})
+        assert resp.status_code == 200
+        assert resp.content == b"FAKE-PREVIEW-AUDIO"

@@ -5,6 +5,7 @@ import {
   fetchPersonas,
   fetchSettings,
   fetchVoiceOptions,
+  previewVoice,
   updatePersona,
   updateSettings,
   uploadPersonaAvatar,
@@ -154,6 +155,28 @@ export default function CharacterPage() {
   const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
   const [voiceProvider, setVoiceProvider] = useState("");
   const [voiceOptionsReason, setVoiceOptionsReason] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  const previewVoiceSample = async (): Promise<void> => {
+    setPreviewing(true);
+    setError("");
+    try {
+      const blob = await previewVoice({
+        provider: draft?.voice?.provider || undefined,
+        model: draft?.voice?.model || undefined,
+        voice: draft?.voice?.voice || undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.onerror = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "试听失败");
+    } finally {
+      setPreviewing(false);
+    }
+  };
 
   const load = async (): Promise<void> => {
     setLoading(true);
@@ -564,11 +587,22 @@ export default function CharacterPage() {
 
               <CardSection title="语音" badge="绑定本角色">
                 <p className="text-xs text-muted leading-relaxed break-words">语音引擎与音色随角色启用生效；语音总开关、激活与默认状态见设置页「语音能力」。</p>
-                {draft.voice?.provider || draft.voice?.model ? (
+                <div className="flex items-center justify-between gap-2 min-w-0">
                   <p className="text-[11px] text-muted leading-relaxed break-words">
-                    语音引擎：{draft.voice?.provider ? `${draft.voice.provider} · ` : ""}{draft.voice?.model ?? "默认模型"}
+                    {draft.voice?.provider || draft.voice?.model
+                      ? `语音引擎：${draft.voice?.provider ? `${draft.voice.provider} · ` : ""}${draft.voice?.model ?? "默认模型"}`
+                      : "语音引擎跟随全局默认"}
                   </p>
-                ) : null}
+                  <button
+                    type="button"
+                    className="shrink-0 text-[11px] text-brand hover:underline disabled:opacity-50"
+                    onClick={() => void previewVoiceSample()}
+                    disabled={previewing}
+                    title="用当前音色合成一句样音（会消耗供应商额度，未保存的选择也会生效）"
+                  >
+                    {previewing ? "合成中…" : "试听"}
+                  </button>
+                </div>
                 {voiceOptions.length > 0 ? (
                   <label className="flex flex-col gap-1.5 text-xs text-muted min-w-0">
                     音色

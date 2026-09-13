@@ -157,6 +157,7 @@
 | `POST /api/voice/recognize` | 上传 WAV（16k 单声道）→ 返回转写文本 |
 | `POST /api/voice/synthesize` | 文本 + 可选表现参数 → 返回音频字节 |
 | `GET /api/voice/voices` | 供应商可用音色列表（`?profile_id=` 按指定模型档案取），只读不占语音租约 |
+| `POST /api/voice/preview` | 试听：用指定音色合成一句样音，不占租约、不驱动挂件状态 |
 
 ## 7. 升级路径（全双工）
 
@@ -180,6 +181,11 @@ Step 8+ 再做流式升级时，接口层只换适配器，前端与契约基本
 | OpenAI 兼容 / 自建 | `GET {base}/audio/voices`，失败退 `GET {base}/models` | 非官方规范，Kokoro-FastAPI / openedai-speech / LocalAI 等事实约定 |
 
 **取不到怎么办**：返回空列表 + `reason`，前端回退为手填音色 ID，并说明原因，不阻塞保存。
+
+**试听**：`POST /api/voice/preview`，可选传 `profile_id / provider / base_url / model / voice / api_key / text`，
+缺省项按「指定档案 → 当前生效配置」兜底。设置页与角色卡都有「试听」按钮，按当前选中（含未保存）的音色合成。
+自建 OpenAI 兼容服务通常无鉴权，不填 Key 也可试听；MiniMax / DashScope 缺 Key 时返回 400 而不是空跑网络。
+试听会消耗供应商额度，所以只在用户点击时触发。
 
 **角色绑定优先级**：角色卡里显式选了音色（`persona_voice` 非空）时，语音合成模型档案不再覆盖它；
 未选（「跟随全局默认」）时用默认 TTS 档案的音色。因此不同角色可以绑定不同音色。

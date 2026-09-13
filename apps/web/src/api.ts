@@ -737,6 +737,29 @@ export async function fetchVoiceOptions(profileId?: string): Promise<VoiceOption
   return fetchJson<VoiceOptionList>(`/api/voice/voices${query}`);
 }
 
+export interface VoicePreviewRequest {
+  profile_id?: string;
+  provider?: string;
+  base_url?: string;
+  model?: string;
+  voice?: string;
+  api_key?: string;
+  text?: string;
+}
+
+/** 试听：用指定音色合成一句样音。会消耗供应商额度，只在用户点击时调用。 */
+export async function previewVoice(payload: VoicePreviewRequest): Promise<Blob> {
+  const resp = await fetch("/api/voice/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    throw new Error(await readDetail(resp));
+  }
+  return await resp.blob();
+}
+
 export async function acquireVoiceLease(): Promise<boolean> {
   const resp = await fetch("/api/voice/lease", {
     method: "POST",

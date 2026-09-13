@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from deskmate_contracts.events import EventEnvelope
 from deskmate_contracts.voice import VoiceParams
 
-from app.config import is_lite_mode
+from app.config import is_lite_mode, resolve_tts_provider
 from app.speech.base import (
     SpeechProviderError,
     SpeechStack,
@@ -34,6 +34,20 @@ class SynthesizeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     params: VoiceParams | None = None
     conversation_id: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+class PreviewRequest(BaseModel):
+    """试听请求：字段缺省时按「指定档案 → 当前生效配置」兜底。"""
+
+    profile_id: str | None = None
+    provider: str | None = None
+    base_url: str = ""
+    model: str = ""
+    voice: str = ""
+    api_key: str | None = None      # 前端只在新填未保存时提交
+    text: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -181,6 +195,93 @@ async def list_tts_voices(request: Request, profile_id: str | None = None) -> di
     if not voices:
         payload["reason"] = "该供应商未提供音色列表接口，请手动填写音色 ID"
     return payload
+
+
+_PREVIEW_TEXT = "你好，我是你的桌面助理，很高兴见到你。"
+_KEY_REQUIRED = {"minimax", "dashscope"}
+_SETTINGS_KEYS = {
+    "minimax": lambda settings: settings.minimax_api_key or "",
+    "dashscope": lambda settings: settings.dashscope_api_key or "",
+    "openai_compatible": lambda settings: settings.tts_api_key or "",
+}
+
+
+def _settings_key(settings, provider: str) -> str:
+    lookup = _SETTINGS_KEYS.get(provider)
+    return lookup(settings) if lookup else ""
+
+
+@router.post("/preview")
+async def preview_voice(request: Request, body: PreviewRequest) -> Response:
+    """用指定音色合成一句样音，供设置页/角色卡试听。
+
+    只读试听：不占语音租约、不推送挂件状态，失败直接把原因给前端。
+    供应商与密钥的取值顺序：请求显式传入 → 指定模型档案 → 当前生效配置。
+    """
+    settings = request.app.state.settings
+    if is_lite_mode(settings):
+        raise HTTPException(status_code=503, detail="轻量模式已禁用语音合成")
+
+    profile = None
+    if body.profile_id:
+        profile = find_model_profile(load_model_profiles(settings.repo_root), body.profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="模型档案不存在")
+        if profile.category != "tts":
+            raise HTTPException(status_code=400, detail="该模型档案不是语音合成模型")
+
+    fallback_provider, _reason = resolve_tts_provider(settings)
+    provider = (body.provider or (profile.provider if profile else "") or fallback_provider).strip()
+    base_url = body.base_url or (profile.base_url if profile else "") or settings.tts_base_url
+    model = body.model or (profile.model if profile else "") or settings.tts_model
+    voice = body.voice or (profile.voice if profile else "") or settings.tts_voice
+    api_key = (
+        (body.api_key or "").strip()
+        or ((profile.api_key or "") if profile else "")
+        or _settings_key(settings, provider)
+    )
+
+    if provider == "disabled":
+        raise HTTPException(status_code=503, detail="语音合成未配置：请先配置语音供应商")
+    if provider == "openai_compatible" and not base_url:
+        raise HTTPException(status_code=400, detail="请先填写语音合成服务地址（Base URL）")
+    # 自建/本地 OpenAI 兼容服务常常不需要鉴权，只有云供应商强制要求密钥。
+    if not api_key and provider in _KEY_REQUIRED:
+        raise HTTPException(status_code=400, detail=f"未配置 {provider} 的 API Key，请先填写并保存")
+
+    synthesizer = build_tts_synthesizer(
+        provider,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        voice=voice,
+        fmt=settings.tts_format,
+        sample_rate=settings.tts_sample_rate,
+    )
+    if not synthesizer.available:
+        raise HTTPException(status_code=503, detail="语音合成未配置：请先配置语音供应商")
+
+    try:
+        audio = await synthesizer.synthesize((body.text or "").strip() or _PREVIEW_TEXT)
+    except SpeechUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SpeechProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    media_type = "audio/wav"
+    if audio.format == "mp3":
+        media_type = "audio/mpeg"
+    elif audio.format == "pcm":
+        media_type = "audio/pcm"
+    return Response(
+        content=audio.data,
+        media_type=media_type,
+        headers={
+            "X-Speech-Format": audio.format,
+            "X-Speech-Sample-Rate": str(audio.sample_rate),
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/intent")

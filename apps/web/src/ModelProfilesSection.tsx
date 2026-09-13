@@ -4,6 +4,7 @@ import {
   deleteModelProfile,
   fetchModelProfiles,
   fetchVoiceOptions,
+  previewVoice,
   testModelProfile,
   updateModelProfile,
   type ModelProfile,
@@ -120,6 +121,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
   const [voiceProvider, setVoiceProvider] = useState("");
   const [voiceReason, setVoiceReason] = useState<string | null>(null);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
 
   const load = async (): Promise<void> => {
@@ -154,6 +156,31 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
       setVoiceReason("音色列表获取失败，可直接填写音色 ID");
     } finally {
       setVoiceBusy(false);
+    }
+  };
+
+  const preview = async (): Promise<void> => {
+    if (!draft) return;
+    setPreviewing(true);
+    setError("");
+    try {
+      const blob = await previewVoice({
+        profile_id: savedProfileIds.has(draft.id) ? draft.id : undefined,
+        provider: draft.provider,
+        base_url: draft.baseUrl.trim(),
+        model: draft.model.trim(),
+        voice: draft.voice.trim(),
+        api_key: draft.apiKey.trim() || undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.onerror = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "试听失败");
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -281,14 +308,25 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
               <div className="flex flex-col gap-1.5 text-xs text-muted sm:col-span-2">
                 <div className="flex items-center justify-between gap-2">
                   <span>音色</span>
-                  <button
-                    type="button"
-                    className="text-[11px] text-brand hover:underline disabled:opacity-50"
-                    onClick={() => void loadVoiceOptions(draft && savedProfileIds.has(draft.id) ? draft.id : undefined)}
-                    disabled={voiceBusy}
-                  >
-                    {voiceBusy ? "获取中…" : "重新获取音色列表"}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      className="text-[11px] text-brand hover:underline disabled:opacity-50"
+                      onClick={() => void preview()}
+                      disabled={previewing || busy}
+                      title="用当前音色合成一句样音（会消耗供应商额度）"
+                    >
+                      {previewing ? "合成中…" : "试听"}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[11px] text-brand hover:underline disabled:opacity-50"
+                      onClick={() => void loadVoiceOptions(draft && savedProfileIds.has(draft.id) ? draft.id : undefined)}
+                      disabled={voiceBusy}
+                    >
+                      {voiceBusy ? "获取中…" : "重新获取音色列表"}
+                    </button>
+                  </div>
                 </div>
                 {voiceOptions.length > 0 ? (
                   <>
