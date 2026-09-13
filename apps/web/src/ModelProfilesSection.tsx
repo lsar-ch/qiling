@@ -12,6 +12,7 @@ import {
   type ModelProfilePayload,
   type VoiceOption,
 } from "./api";
+import VoiceSelect from "./VoiceSelect";
 
 const CATEGORY_META: Record<
   ModelProfileCategory,
@@ -330,18 +331,14 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
                 </div>
                 {voiceOptions.length > 0 ? (
                   <>
-                    <select className={inputCls} value={draft.voice} onChange={(event) => setDraft({ ...draft, voice: event.target.value })}>
-                      <option value="">未指定（使用供应商默认音色）</option>
-                      {draft.voice && !voiceOptions.some((item) => item.id === draft.voice) ? (
-                        <option value={draft.voice}>{draft.voice}（当前值，不在列表）</option>
-                      ) : null}
-                      {voiceOptions.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                          {item.kind === "cloned" ? "（克隆）" : item.kind === "preset" ? "（预置）" : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <VoiceSelect
+                      options={voiceOptions}
+                      value={draft.voice}
+                      onChange={(next) => setDraft({ ...draft, voice: next })}
+                      emptyLabel="未指定（使用供应商默认音色）"
+                      className={inputCls}
+                      previousOptionLabels={draft.voice ? { [draft.voice]: "当前值，不在列表" } : undefined}
+                    />
                     <small className="text-[11px] text-muted break-words">
                       共 {voiceOptions.length} 个音色，来自 {voiceProvider}
                       {draft && savedProfileIds.has(draft.id) ? " 该档案" : " 当前生效配置"}。

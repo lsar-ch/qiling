@@ -15,6 +15,7 @@ import {
   type VoiceOption,
 } from "./api";
 import ModelProfileSelect from "./ModelProfileSelect";
+import VoiceSelect from "./VoiceSelect";
 
 const inputCls =
   "w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20";
@@ -23,9 +24,12 @@ const cardCls = "rounded-lg border border-line bg-white shadow-card p-4 flex fle
 const splitList = (value: string): string[] =>
   value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean);
 
-function voiceBadgeText(persona: PersonaCard): string {
+function voiceBadgeText(persona: PersonaCard, voiceOptions: VoiceOption[] = []): string {
   const voice = persona.voice?.voice;
   if (voice?.trim()) {
+    // 供应商音色表里有中文名就优先用中文名，跟下拉框保持一致
+    const matched = voiceOptions.find((item) => item.id === voice);
+    if (matched?.name && matched.name !== matched.id) return matched.name;
     const parts = voice.split(/[_/]/).filter(Boolean);
     if (parts.length >= 2) return parts.slice(-2).join("_");
     return parts[parts.length - 1] ?? voice;
@@ -463,7 +467,7 @@ export default function CharacterPage() {
                   <div className="flex items-center justify-between gap-2 min-w-0">
                     <span className="inline-flex items-center gap-1 rounded-full bg-line-subtle px-2 py-0.5 text-[11px] text-muted min-w-0" title={persona.voice?.voice ?? persona.voice?.provider}>
                       <span className="w-1.5 h-1.5 rounded-full bg-muted shrink-0" />
-                      <span className="truncate">{voiceBadgeText(persona)}</span>
+                      <span className="truncate">{voiceBadgeText(persona, voiceOptions)}</span>
                     </span>
                     <button
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors shrink-0 ${
@@ -604,28 +608,18 @@ export default function CharacterPage() {
                   </button>
                 </div>
                 {voiceOptions.length > 0 ? (
-                  <label className="flex flex-col gap-1.5 text-xs text-muted min-w-0">
-                    音色
-                    <select
-                      className={inputCls}
+                  <div className="flex flex-col gap-1.5 text-xs text-muted min-w-0">
+                    <span>音色</span>
+                    <VoiceSelect
+                      options={voiceOptions}
                       value={draft.voice?.voice ?? ""}
-                      onChange={(event) => setVoiceField("voice", event.target.value)}
-                    >
-                      <option value="">跟随全局默认</option>
-                      {draft.voice?.voice && !voiceOptions.some((item) => item.id === draft.voice?.voice) ? (
-                        <option value={draft.voice.voice}>{draft.voice.voice}（当前值，不在列表）</option>
-                      ) : null}
-                      {voiceOptions.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                          {item.kind === "cloned" ? "（克隆）" : item.kind === "preset" ? "（预置）" : ""}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(next) => setVoiceField("voice", next)}
+                      previousOptionLabels={draft.voice?.voice ? { [draft.voice.voice]: "当前值，不在列表" } : undefined}
+                    />
                     <small className="text-[11px] text-muted break-words">
-                      共 {voiceOptions.length} 个音色，来自 {voiceProvider}。不同角色可绑定不同音色。
+                      共 {voiceOptions.length} 个音色，来自 {voiceProvider}。不同角色可绑定不同音色；音色多时可用上方输入框按名称或 ID 筛选。
                     </small>
-                  </label>
+                  </div>
                 ) : (
                   <Field
                     label="音色"
