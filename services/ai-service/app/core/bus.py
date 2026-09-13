@@ -51,7 +51,16 @@ class EventHub:
         return list(reversed(self._history[-limit:]))
 
     async def publish(self, envelope: EventEnvelope) -> None:
-        """分发给所有订阅者；队列满丢弃最旧；写入历史；触发状态钩子。"""
+        """分发给所有订阅者；队列满丢弃最旧；写入历史；触发状态钩子。
+
+        钩子必须先于序列化执行：expression / presentation 由钩子在发布时补全，
+        若先序列化再跑钩子，广播出去的载荷会缺少这些字段。
+        """
+        if self._on_publish is not None:
+            try:
+                self._on_publish(envelope)
+            except Exception:  # 状态钩子失败不影响广播
+                logger.exception("widget state hook failed")
         data = envelope.to_ws_dict()
         async with self._lock:
             self._history.append(data)
@@ -68,8 +77,3 @@ class EventHub:
                 queue.put_nowait(data)
             except asyncio.QueueFull:
                 logger.warning("event queue full, dropped %s", envelope.event_type)
-        if self._on_publish is not None:
-            try:
-                self._on_publish(envelope)
-            except Exception:  # 状态钩子失败不影响广播
-                logger.exception("widget state hook failed")

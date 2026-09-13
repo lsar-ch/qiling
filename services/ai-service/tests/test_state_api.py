@@ -82,3 +82,20 @@ def test_expression_attached_automatically() -> None:
         # 不在状态映射表的事件（如 memory.created）不附加 expression
         result = _publish(client, "memory.created")
         assert result["event"].get("expression") is None
+
+
+def test_expression_broadcast_over_ws() -> None:
+    """回归：expression 必须出现在 WS 广播载荷里。
+
+    此前 EventHub 先 to_ws_dict() 再跑 on_publish，HTTP 响应带 expression、
+    但广播出去的载荷是 null，挂件因此永远停在 neutral 情绪。
+    """
+    with make_client() as client:
+        with client.websocket_connect("/api/events") as ws:
+            assert ws.receive_json()["event_type"] == "system.health"
+            _publish(client, "conversation.completed")
+            msg = ws.receive_json()
+            while msg["event_type"] != "conversation.completed":
+                msg = ws.receive_json()
+            assert msg["expression"]["emotion"] == "success"
+            assert msg["expression"]["state"] == "completed"
