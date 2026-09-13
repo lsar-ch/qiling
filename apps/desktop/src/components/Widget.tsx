@@ -43,6 +43,14 @@ const STATE_LABEL: Record<string, string> = {
 
 type VoiceMode = "off" | "starting" | "listening" | "sleeping";
 
+// 一次性情绪动画的停留时长：动画播完由前端回落 neutral。
+// 后端只在事件到达时下发情绪、不自动复位，长驻情绪会让弹跳/抖动停不下来。
+const EMOTION_HOLD_MS: Partial<Record<ExpressionEmotion, number>> = {
+  attentive: 1100,
+  success: 1900,
+  error: 1400,
+};
+
 type WidgetPreferences = {
   x: number | null;
   y: number | null;
@@ -123,6 +131,7 @@ export default function Widget() {
   const composerRef = useRef<HTMLDivElement | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resizeRafRef = useRef<number | null>(null);
   const persistentHintRef = useRef("");
   const conversationIdRef = useRef<string | null>(null);
@@ -201,6 +210,22 @@ export default function Widget() {
     setBubble(text);
   };
 
+  /** 设置情绪；一次性情绪播完自动回落 neutral。 */
+  const applyEmotion = (next: ExpressionEmotion): void => {
+    if (emotionTimerRef.current) {
+      window.clearTimeout(emotionTimerRef.current);
+      emotionTimerRef.current = null;
+    }
+    setEmotion(next);
+    const hold = EMOTION_HOLD_MS[next];
+    if (hold) {
+      emotionTimerRef.current = window.setTimeout(() => {
+        emotionTimerRef.current = null;
+        setEmotion("neutral");
+      }, hold);
+    }
+  };
+
   const closeComposer = (deactivate = true): void => {
     setInput("");
     setInputOpen(false);
@@ -243,6 +268,23 @@ export default function Widget() {
     speakingRef.current = false;
     speakEndAtRef.current = Date.now();
     setSpeaking(false);
+  };
+
+  /** 通知服务端「用户打断」：挂件徽标与主界面状态同步回落（V1 按钮打断）。 */
+  const notifySpeechInterrupted = async (): Promise<void> => {
+    try {
+      await fetch(`${SERVICE_BASE}/api/events/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: "speech.interrupted",
+          source: "speech",
+          payload: {},
+        }),
+      });
+    } catch {
+      /* 服务不可用时只做本地停止 */
+    }
   };
 
   const speak = async (text: string): Promise<void> => {
@@ -481,7 +523,7 @@ export default function Widget() {
       // Step 9.5: 从 expression 载荷提取情绪和气泡
       const expr = msg.expression as ExpressionEvent | undefined;
       if (expr) {
-        setEmotion(expr.emotion);
+        applyEmotion(expr.emotion);
         if (expr.bubble) {
           showBrief(expr.bubble.text, expr.bubble.duration_ms);
         }
@@ -963,19 +1005,27 @@ export default function Widget() {
       <div
         className="stage"
         data-active={active ? "1" : "0"}
-        title="点击激活 · 双击打开主界面 · 按住拖动 · 右键菜单"
+        title="点击激活（播报中点击打断）· 双击打开主界面 · 按住拖动 · 右键菜单"
         onPointerDown={startStageDrag}
-        onMouseEnter={() => setEmotion("attentive")}
+        onMouseEnter={() => applyEmotion("attentive")}
         onMouseLeave={() => {
-          if (state === "idle") setEmotion("neutral");
+          if (state === "idle") applyEmotion("neutral");
         }}
         onMouseUp={() => {
-          if (state === "idle") setEmotion("neutral");
+          if (state === "idle") applyEmotion("neutral");
         }}
         onClick={(event) => {
           if (clickSuppressed()) {
             event.preventDefault();
             event.stopPropagation();
+            return;
+          }
+          // 播报中点击 = 打断当前语音（与主界面 ⏹ 停止等价）
+          if (speakingRef.current) {
+            stopSpeaking();
+            showBrief("已打断", 1600);
+            void notifySpeechInterrupted();
+            setCtxMenu(null);
             return;
           }
           activateStage();
