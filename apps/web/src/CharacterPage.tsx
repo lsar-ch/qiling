@@ -136,6 +136,7 @@ function CardSection({
 export default function CharacterPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [personas, setPersonas] = useState<PersonaCard[]>([]);
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([]);
   const [draft, setDraft] = useState<PersonaCard | null>(null);
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -184,6 +185,13 @@ export default function CharacterPage() {
       return;
     }
     patch((current) => ({ ...current, activation: { ...current.activation, [key]: splitList(value) } }));
+  };
+
+  const setModelProfile = (profileId: string): void => {
+    patch((current) => ({
+      ...current,
+      llm: profileId ? { ...current.llm, profile_id: profileId } : {},
+    }));
   };
 
   const voicePayload = (persona: PersonaCard): Record<string, unknown> => ({

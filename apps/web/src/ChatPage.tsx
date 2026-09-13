@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   fetchConversation,
   fetchConversations,
+  fetchModelProfiles,
+  fetchPersonas,
   fetchSession,
+  fetchSettings,
   fetchVoiceStatus,
   apiVoiceIntent,
   publishEvent,
@@ -10,6 +13,7 @@ import {
   streamChat,
   synthesizeSpeech,
   type ChatMessageView,
+  type ModelProfile,
   type VoiceEndpointStatus,
 } from "./api";
 import { startRecording, type MicRecorder } from "./recorder";
@@ -18,6 +22,7 @@ import {
   type AlwaysListener,
   type AlwaysListenSegment,
 } from "./alwaysListen";
+import ModelProfileSelect from "./ModelProfileSelect";
 
 // 语音模式：off（未监听）/ listening（聆听中）/ sleeping（静默，仅唤醒词可打断）
 type VoiceMode = "off" | "listening" | "sleeping";
@@ -67,6 +72,8 @@ export default function ChatPage() {
   useEffect(() => {
     let alive = true;
     const init = async () => {
+      let loadedProfiles: ModelProfile[] = [];
+      let personaProfileId = "";
       try {
         const session = await fetchSession();
         if (alive) setEchoMode(session.model.echo_mode);
@@ -85,12 +92,39 @@ export default function ChatPage() {
         /* 语音未启用时保持 null */
       }
       try {
+        const [profiles, appSettings, personas] = await Promise.all([
+          fetchModelProfiles(),
+          fetchSettings(),
+          fetchPersonas(),
+        ]);
+        loadedProfiles = profiles.filter(
+          (profile) => profile.enabled && (profile.category === "text" || profile.category === "multimodal"),
+        );
+        personaProfileId =
+          personas.find((persona) => persona.id === appSettings.active_persona_id)?.llm?.profile_id ?? "";
+        if (alive) setModelProfiles(loadedProfiles);
+      } catch {
+        /* 模型档案未配置时保持演示模式 */
+      }
+      try {
         const list = await fetchConversations();
-        if (!alive || list.length === 0) return;
+        if (!alive) return;
+        if (list.length === 0) {
+          setSelectedProfileId(
+            personaProfileId || loadedProfiles.find((profile) => profile.is_default)?.id || "",
+          );
+          return;
+        }
         const conv = await fetchConversation(list[0].conversation_id);
         if (!alive) return;
         setConversationId(conv.conversation_id);
         setMessages(conv.messages);
+        setSelectedProfileId(
+          conv.model_profile_id ||
+            personaProfileId ||
+            loadedProfiles.find((profile) => profile.is_default)?.id ||
+            "",
+        );
       } catch {
         /* 首次进入无历史属正常 */
       }
@@ -110,6 +144,14 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+
+  const modelOptions = [
+    { id: "", label: "跟随角色 / 全局" },
+    ...modelProfiles.map((profile) => ({
+      id: profile.id,
+      label: `${profile.name} · ${profile.model || profile.provider}`,
+    })),
+  ];
 
   const ensureAudioContext = async (): Promise<AudioContext | null> => {
     const AC =
@@ -196,9 +238,9 @@ export default function ChatPage() {
           }
           return next;
         });
-      });
+      }, selectedProfileId || null);
       setConversationId(done.conversation_id);
-      if (speakReply && voiceStatus?.enabled) {
+      if (speakReply && voiceStatus?.enabled && voiceStatus.auto_speak) {
         // 短回复朗读全文；长回复朗读摘要（全文保留在消息里，可点 🔊 听全文）
         stopSpeaking();
         void speak(done.speak_text || done.message);

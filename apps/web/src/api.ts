@@ -166,6 +166,73 @@ export interface PersonaCard {
     wake_prefixes?: string[];
     sleep_phrases?: string[];
   };
+  llm?: {
+    profile_id?: string;
+  };
+}
+
+export type ModelProfileCategory = "text" | "multimodal" | "stt" | "tts";
+
+export interface ModelProfile {
+  id: string;
+  name: string;
+  category: ModelProfileCategory;
+  provider: string;
+  base_url: string;
+  model: string;
+  voice: string;
+  enabled: boolean;
+  is_default: boolean;
+  api_key_configured: boolean;
+}
+
+export interface ModelProfilePayload {
+  id: string;
+  name: string;
+  category: ModelProfileCategory;
+  provider: string;
+  base_url?: string;
+  model?: string;
+  api_key?: string;
+  voice?: string;
+  enabled: boolean;
+  is_default: boolean;
+}
+
+export async function fetchModelProfiles(): Promise<ModelProfile[]> {
+  const data = await fetchJson<{ items: ModelProfile[] }>("/api/model-profiles");
+  return data.items;
+}
+
+export async function createModelProfile(payload: ModelProfilePayload): Promise<ModelProfile> {
+  const resp = await fetch("/api/model-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return (await resp.json()) as ModelProfile;
+}
+
+export async function updateModelProfile(id: string, payload: ModelProfilePayload): Promise<ModelProfile> {
+  const resp = await fetch(`/api/model-profiles/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return (await resp.json()) as ModelProfile;
+}
+
+export async function deleteModelProfile(id: string): Promise<void> {
+  const resp = await fetch(`/api/model-profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+}
+
+export async function testModelProfile(id: string): Promise<{ ok: boolean; message: string }> {
+  const resp = await fetch(`/api/model-profiles/${encodeURIComponent(id)}/test`, { method: "POST" });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return (await resp.json()) as { ok: boolean; message: string };
 }
 
 export interface AppSettings {
@@ -375,6 +442,7 @@ export interface ChatMessageView {
 export interface ConversationDetail {
   conversation_id: string;
   title: string;
+  model_profile_id: string | null;
   messages: ChatMessageView[];
 }
 
@@ -496,6 +564,7 @@ export async function streamChat(
   conversationId: string | null,
   message: string,
   onDelta: (content: string) => void,
+  modelProfileId?: string | null,
 ): Promise<{
   conversation_id: string;
   short: boolean;
@@ -509,6 +578,7 @@ export async function streamChat(
       conversation_id: conversationId,
       message,
       modality: "text",
+      model_profile_id: modelProfileId ?? null,
     }),
   });
   if (!resp.ok || !resp.body) {

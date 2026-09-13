@@ -42,6 +42,7 @@ import { DEMO_ACTIONS, STATE_LABEL_ZH } from "./state";
 import ChatPage from "./ChatPage";
 import CharacterPage from "./CharacterPage";
 import AboutPage from "./AboutPage";
+import ModelProfilesSection from "./ModelProfilesSection";
 
 type PageKey = "home" | "chat" | "character" | "memory" | "kb" | "agents" | "settings" | "about";
 
@@ -1243,15 +1244,21 @@ function MyAgentsPage() {
 
 function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [apiKeys, setApiKeys] = useState({ llm: "", dashscope: "", minimax: "" });
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const loadSettings = async (): Promise<void> => {
+    try {
+      setSettings(await fetchSettings());
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "设置加载失败");
+    }
+  };
+
   useEffect(() => {
-    void fetchSettings()
-      .then(setSettings)
-      .catch((e) => setError(e instanceof Error ? e.message : "设置加载失败"));
+    void loadSettings();
   }, []);
 
   if (!settings) {
@@ -1270,7 +1277,6 @@ function SettingsPage() {
     try {
       const nextSettings = await updateSettings(body);
       setSettings(nextSettings);
-      setApiKeys({ llm: "", dashscope: "", minimax: "" });
       setNotice(label);
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
@@ -1279,8 +1285,6 @@ function SettingsPage() {
     }
   };
 
-  const llmDemo = settings.llm.provider === "echo";
-  const llmKeyCfg = settings.llm.api_key_configured;
   const voiceCfg = settings.voice.dashscope_configured || settings.voice.minimax_configured;
   const liteMode = settings.performance_mode === "lite";
 
@@ -1290,16 +1294,10 @@ function SettingsPage() {
       ui_theme: settings.ui.theme,
       permission_level: settings.permission_level,
       performance_mode: settings.performance_mode,
-      llm_provider: settings.llm.provider,
-      llm_base_url: settings.llm.base_url,
-      llm_model: settings.llm.model,
       voice_enabled: settings.voice.enabled,
       activation_enabled: settings.voice.activation_enabled,
       activation_default_state: settings.voice.activation_default_state,
     };
-    if (apiKeys.llm) body.llm_api_key = apiKeys.llm;
-    if (apiKeys.dashscope) body.dashscope_api_key = apiKeys.dashscope;
-    if (apiKeys.minimax) body.minimax_api_key = apiKeys.minimax;
     void save(body, "已保存。");
   };
 
@@ -1318,44 +1316,20 @@ function SettingsPage() {
             onClick={saveSystem}
             disabled={saving}
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? "保存中…" : "保存系统设置"}
           </button>
         </div>
       </div>
 
+      <ModelProfilesSection onChanged={loadSettings} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
-        {/* 模型与权限 */}
+        {/* 权限 */}
         <section className={cardCls}>
           <div className="flex items-center justify-between gap-2.5">
-            <h3 className="text-sm font-semibold text-ink">模型与权限</h3>
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${llmDemo ? "bg-warn-50 text-warn" : llmKeyCfg ? "bg-ok-50 text-ok" : "bg-warn-50 text-warn"}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${llmDemo ? "bg-warn" : llmKeyCfg ? "bg-ok" : "bg-warn"}`} />
-              {llmDemo ? "演示模式" : llmKeyCfg ? "API 已配置" : "未配置 API Key"}
-            </span>
+            <h3 className="text-sm font-semibold text-ink">权限</h3>
+            <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">任务授权</span>
           </div>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">LLM Provider
-            <select className={inputCls} value={settings.llm.provider} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, provider: e.target.value } })}>
-              <option value="auto">自动</option>
-              <option value="openai">OpenAI 兼容</option>
-              <option value="echo">演示模式</option>
-            </select>
-            <small className="text-[11px] text-muted">自动模式会根据本地配置选择可用的 Provider。</small>
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">API 地址
-            <input className={inputCls} value={settings.llm.base_url} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, base_url: e.target.value } })} placeholder="https://.../v1" />
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">模型
-            <input className={inputCls} value={settings.llm.model} onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, model: e.target.value } })} />
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">LLM API key
-            <input className={inputCls} type="password" value={apiKeys.llm} onChange={(e) => setApiKeys({ ...apiKeys, llm: e.target.value })} placeholder={settings.llm.api_key_configured ? "已配置，输入新值可覆盖" : "未配置"} />
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">DashScope API key（语音识别）
-            <input className={inputCls} type="password" value={apiKeys.dashscope} onChange={(e) => setApiKeys({ ...apiKeys, dashscope: e.target.value })} placeholder={settings.voice.dashscope_configured ? "已配置，输入新值可覆盖" : "未配置"} />
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">MiniMax API key（语音合成）
-            <input className={inputCls} type="password" value={apiKeys.minimax} onChange={(e) => setApiKeys({ ...apiKeys, minimax: e.target.value })} placeholder={settings.voice.minimax_configured ? "已配置，输入新值可覆盖" : "未配置"} />
-          </label>
           <label className="flex flex-col gap-1.5 text-xs text-muted">权限级别
             <select className={inputCls} value={settings.permission_level} onChange={(e) => setSettings({ ...settings, permission_level: e.target.value })}>
               <option value="confirm_risky">高风险操作确认</option>

@@ -291,17 +291,26 @@ def load_settings() -> Settings:
     llm_cfg = _load_yaml_section(root, "llm")
     chat_cfg = _load_yaml_section(root, "chat")
     local_llm = overrides.get("llm", {}) if isinstance(overrides.get("llm"), dict) else {}
-    settings.llm_provider = os.environ.get(
-        "LLM_PROVIDER", str(local_llm.get("provider", llm_cfg.get("provider", "auto")))
+    # 用户在设置页保存的配置优先于开发环境 .env；未保存时继续使用环境变量。
+    settings.llm_provider = str(
+        local_llm.get("provider")
+        or os.environ.get("LLM_PROVIDER")
+        or llm_cfg.get("provider", "auto")
     )
-    settings.llm_base_url = os.environ.get(
-        "OPENAI_BASE_URL", local_llm.get("base_url", llm_cfg.get("base_url")) or None
+    settings.llm_base_url = _nonempty(
+        local_llm.get("base_url")
+        or os.environ.get("OPENAI_BASE_URL")
+        or llm_cfg.get("base_url")
     )
-    settings.llm_api_key = os.environ.get(
-        "OPENAI_API_KEY", local_llm.get("api_key", llm_cfg.get("api_key")) or None
+    settings.llm_api_key = _nonempty(
+        local_llm.get("api_key")
+        or os.environ.get("OPENAI_API_KEY")
+        or llm_cfg.get("api_key")
     )
-    settings.llm_model = os.environ.get(
-        "OPENAI_MODEL", str(local_llm.get("model", llm_cfg.get("model", "")))
+    settings.llm_model = str(
+        local_llm.get("model")
+        or os.environ.get("OPENAI_MODEL")
+        or llm_cfg.get("model", "")
     )
     settings.llm_temperature = _as_float(
         os.environ.get("LLM_TEMPERATURE", llm_cfg.get("temperature", 0.7)), 0.7
@@ -454,6 +463,10 @@ def load_settings() -> Settings:
         ),
         False,
     )
+    # 模型档案优先级最高；用户新建/设为默认后无需重启服务。
+    from app.model_profiles import apply_default_profiles
+
+    apply_default_profiles(settings, overrides)
     return settings
 
 

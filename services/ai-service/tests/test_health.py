@@ -44,7 +44,8 @@ def test_health_reports_capability_summary_without_secrets() -> None:
 
 def test_session_info() -> None:
     settings = load_settings()
-    # 显式清空 LLM key：断言 echo 演示模式，避免依赖本地 .env 是否已配真实模型
+    # 显式切换 echo：默认模型档案优先级高于 .env，不能只清空 key 来断言演示模式。
+    settings.llm_provider = "echo"
     settings.llm_api_key = None
     settings.llm_base_url = None
     with TestClient(create_app(settings)) as client:

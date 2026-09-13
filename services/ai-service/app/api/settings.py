@@ -173,16 +173,142 @@ def update_settings(payload: SettingsUpdate, request: Request) -> dict[str, Any]
         if key in data:
             memory[key.removeprefix("memory_")] = data[key]
     _write_overrides(request, current)
-    request.app.state.settings = load_settings()
-    request.app.state.speech = build_speech_stack(request.app.state.settings)
-    request.app.state.llm_provider = create_provider(request.app.state.settings)
-    request.app.state.echo_mode = request.app.state.settings.llm_provider == "echo"
-    vault = Path(request.app.state.settings.obsidian_vault_path).expanduser()
-    if request.app.state.settings.memory_mode == "obsidian_linked" and vault.is_dir():
-        request.app.state.memory.set_vault_mirror(vault)
-    else:
-        request.app.state.memory.set_vault_mirror(None)
+    _reload_runtime(request)
+    # Step 9.5: 角色切换后广播 PersonaPresentation
+    if switched_persona_id is not None:
+        await request.app.state.presentation_bridge.broadcast(
+            switched_persona_id,
+            request.app.state.event_hub,
+        )
     return _public_settings(request)
+
+
+@router.get("/model-profiles")
+def list_model_profiles(request: Request) -> dict[str, Any]:
+    root = request.app.state.settings.repo_root
+    profiles = ensure_initial_profiles(root, request.app.state.settings)
+    _reload_runtime(request)
+    return {
+        "items": [public_model_profile(profile) for profile in profiles],
+        "categories": [
+            {"id": category, "label": label}
+            for category, label in CATEGORY_LABELS.items()
+        ],
+    }
+
+
+@router.post("/model-profiles")
+def create_model_profile(payload: ModelProfile, request: Request) -> dict[str, Any]:
+    root = request.app.state.settings.repo_root
+    profiles = load_model_profiles(root)
+    if find_model_profile(profiles, payload.id) is not None:
+        raise HTTPException(status_code=409, detail="模型档案 ID 已存在")
+    if payload.is_default and payload.enabled:
+        profiles = [
+            profile.model_copy(update={"is_default": False})
+            if profile.category == payload.category
+            else profile
+            for profile in profiles
+        ]
+    elif not payload.enabled:
+        payload = payload.model_copy(update={"is_default": False})
+    if payload.enabled and not any(
+        profile.category == payload.category and profile.enabled and profile.is_default
+        for profile in profiles
+    ):
+        payload = payload.model_copy(update={"is_default": True})
+    profiles.append(payload)
+    save_model_profiles(root, profiles)
+    _reload_runtime(request)
+    return public_model_profile(payload)
+
+
+@router.put("/model-profiles/{profile_id}")
+def update_model_profile(
+    profile_id: str,
+    payload: ModelProfile,
+    request: Request,
+) -> dict[str, Any]:
+    if payload.id != profile_id:
+        raise HTTPException(status_code=400, detail="模型档案 ID 不一致")
+    root = request.app.state.settings.repo_root
+    profiles = load_model_profiles(root)
+    existing = find_model_profile(profiles, profile_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="模型档案不存在")
+    if "api_key" not in payload.model_fields_set:
+        payload = payload.model_copy(update={"api_key": existing.api_key})
+    if not payload.enabled:
+        payload = payload.model_copy(update={"is_default": False})
+    if payload.is_default:
+        profiles = [
+            profile.model_copy(update={"is_default": False})
+            if profile.category == payload.category and profile.id != profile_id
+            else profile
+            for profile in profiles
+        ]
+    profiles = [payload if profile.id == profile_id else profile for profile in profiles]
+    if not any(
+        profile.category == payload.category and profile.enabled and profile.is_default
+        for profile in profiles
+    ):
+        replacement = next(
+            (profile for profile in profiles if profile.category == payload.category and profile.enabled),
+            None,
+        )
+        if replacement is not None:
+            profiles = [
+                profile.model_copy(update={"is_default": True})
+                if profile.id == replacement.id
+                else profile.model_copy(update={"is_default": False})
+                if profile.category == payload.category
+                else profile
+                for profile in profiles
+            ]
+    save_model_profiles(root, profiles)
+    _reload_runtime(request)
+    saved = find_model_profile(profiles, profile_id)
+    assert saved is not None
+    return public_model_profile(saved)
+
+
+@router.delete("/model-profiles/{profile_id}")
+def delete_model_profile(profile_id: str, request: Request) -> dict[str, Any]:
+    root = request.app.state.settings.repo_root
+    profiles = load_model_profiles(root)
+    existing = find_model_profile(profiles, profile_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="模型档案不存在")
+    for path in _persona_dir(request).glob("*.yaml"):
+        persona = _persona_from_file(path)
+        llm = persona.get("llm") if isinstance(persona.get("llm"), dict) else {}
+        if llm.get("profile_id") == profile_id:
+            raise HTTPException(status_code=409, detail=f"角色「{persona.get('name') or path.stem}」正在使用该模型档案")
+    profiles = [profile for profile in profiles if profile.id != profile_id]
+    if existing.is_default and not default_profile(profiles, (existing.category,)):
+        replacement = next(
+            (profile for profile in profiles if profile.category == existing.category and profile.enabled),
+            None,
+        )
+        if replacement is not None:
+            profiles = [
+                profile.model_copy(update={"is_default": True})
+                if profile.id == replacement.id
+                else profile
+                for profile in profiles
+            ]
+    save_model_profiles(root, profiles)
+    _reload_runtime(request)
+    return {"deleted": True, "profile_id": profile_id}
+
+
+@router.post("/model-profiles/{profile_id}/test")
+async def test_saved_model_profile(profile_id: str, request: Request) -> dict[str, Any]:
+    profiles = load_model_profiles(request.app.state.settings.repo_root)
+    profile = find_model_profile(profiles, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="模型档案不存在")
+    return await test_model_profile(profile, request.app.state.settings.llm_api_key)
 
 
 @router.get("/personas")

@@ -37,6 +37,7 @@ class ConversationMessage(BaseModel):
 class Conversation(BaseModel):
     conversation_id: str = Field(default_factory=lambda: f"conv_{uuid4().hex[:10]}")
     title: str = "新对话"
+    model_profile_id: str | None = None
     messages: list[ConversationMessage] = Field(default_factory=list)
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()

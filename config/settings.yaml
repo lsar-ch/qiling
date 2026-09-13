@@ -62,9 +62,9 @@ voice:
 
 # ── LLM ─────────────────────────────────────────────────────
 llm:
-  provider: ollama
+  provider: auto
   fallback_provider: openai
-  model: qwen3:8b
+  model: qwen-plus
   temperature: 0.7
   max_tokens: 512
   system_prompt_path: "config/system_prompt.md"
@@ -75,7 +75,7 @@ llm:
 memory:
   storage: sqlite
   db_path: "./data/memory/chat_history.db"
-  embedding:
+  embedding:  # 预留：语义检索未启用，当前无代码消费
     model: "sentence-transformers/all-MiniLM-L6-v2"
     dimension: 384
   retention:
@@ -84,7 +84,7 @@ memory:
   summary:
     enabled: true
     every_n_messages: 10    # 每 N 条消息生成一次摘要
-    model: "qwen3:8b"
+    model: "qwen-plus"
 
 # ── 主动感知 ─────────────────────────────────────────────────
 awareness:

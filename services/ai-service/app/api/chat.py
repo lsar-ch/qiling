@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field
 from deskmate_contracts import new_event_id
 from deskmate_contracts.events import EventEnvelope
 from app.chat.context import build_llm_messages
+from app.core.persona_prompt import compose_system_prompt, load_persona
+from app.llm import create_provider
+from app.model_profiles import find_model_profile, load_model_profiles, profile_settings
 from app.routing import classify_task_input
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -22,6 +25,7 @@ class ChatTurnRequest(BaseModel):
     conversation_id: str | None = None
     message: str = Field(min_length=1, max_length=8000)
     modality: Literal["text", "voice"] = "text"
+    model_profile_id: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -63,13 +67,32 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
     store = request.app.state.conversation_store
     hub = request.app.state.event_hub
     settings = request.app.state.settings
-    provider = request.app.state.llm_provider
     memory = request.app.state.memory
 
+    existing = await store.get(body.conversation_id) if body.conversation_id else None
+    if "model_profile_id" in body.model_fields_set:
+        conversation_profile_id: str | None = body.model_profile_id or ""
+    else:
+        conversation_profile_id = existing.model_profile_id if existing else None
+
     conversation = await store.append_message(
-        body.conversation_id, "user", body.message, modality=body.modality
+        body.conversation_id,
+        "user",
+        body.message,
+        modality=body.modality,
+        model_profile_id=conversation_profile_id,
     )
     conversation_id = conversation.conversation_id
+    profiles = load_model_profiles(settings.repo_root)
+    active_profile = find_model_profile(
+        profiles,
+        conversation.model_profile_id or _persona_model_profile_id(request),
+    )
+    provider = (
+        create_provider(profile_settings(settings, active_profile))
+        if active_profile is not None and active_profile.enabled
+        else request.app.state.llm_provider
+    )
     await hub.publish(
         EventEnvelope(
             event_type="conversation.input",
@@ -186,6 +209,8 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             "speak_text": speak_text,
             "task_id": task.task_id if task else None,
             "task_category": task.category if task else "answer",
+            "model_profile_id": active_profile.id if active_profile else None,
+            "model_name": active_profile.name if active_profile else provider.display_name,
         }
     )
 

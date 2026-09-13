@@ -75,6 +75,7 @@ class ConversationStore:
         content: str,
         *,
         modality: str = "text",
+        model_profile_id: str | None = None,
     ) -> Conversation:
         conversation_id = conversation_id or ""
         async with self._lock_for(conversation_id):
@@ -91,6 +92,8 @@ class ConversationStore:
                     updated_at=now,
                 )
                 conversation_id = conversation.conversation_id
+            if model_profile_id is not None:
+                conversation.model_profile_id = model_profile_id or None
             conversation.messages.append(
                 ConversationMessage(
                     role=role,  # type: ignore[arg-type]
