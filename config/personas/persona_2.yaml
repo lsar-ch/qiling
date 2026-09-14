@@ -12,7 +12,7 @@ avatar: /api/personas/persona_2/avatar?v=1789283544501
 voice:
   provider: minimax
   model: speech-2.8-hd
-  voice: Chinese (Mandarin)_Soft_Girl
+  voice: Chinese (Mandarin)_Cute_Spirit
   speed: 1.05
   pitch: 1
 activation:
