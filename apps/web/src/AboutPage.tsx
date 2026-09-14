@@ -169,7 +169,7 @@ export default function AboutPage() {
           </span>
           、
           <span className="font-mono text-ink break-all">
-            docs/HANDOVER-2026-09-09.md
+            docs/HANDOVER-2026-09-13.md
           </span>
           。
         </p>

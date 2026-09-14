@@ -37,15 +37,15 @@ Obsidian 记忆库：
 - 新架构主线：`apps/`、`services/`、`packages/`、`docs/`
 - 早期原型：`src/`，仅作参考，不作为新架构主运行入口
 - 已完成：Step 1-3、Step 4 语音闭环、Step 4.5 设置与角色配置、Step 5 本地项目记忆/Obsidian 三档模式、Step 6 任务分流主链路；Step 7 执行器目录与 Codex ACP 真实执行已完成，包括 6 个默认执行器的配置驱动目录（`config/agents.yaml`）、`AgentRunManager`、Codex ACP/stdio 真实提交/取消/授权、`/api/agent-runs` 与前端真实运行控件；Step 8 自动化回归与 Codex 真实 `read-only` 任务已通过（`task_eff6a657ae`）
-- 当前阶段：Step 9 V1 视觉与体验打磨进行中；桌面挂件交互层已完成并暂停，等角色卡测试继续调优。主界面六页视觉、Step 8 macOS 人工项与 Windows 验收仍未收口
-- 顺序：先按 `docs/STEP9-UI-POLISH.md` 完成主界面视觉；随后跑自动化与真机 macOS/Windows 人工验收；角色卡接入后回到挂件做角色化表现调优
+- 当前阶段：V1 收口中。功能开发、macOS 人工验收、角色化表现均已完成；只剩 Windows 真机回归（WI-05 复验 + 18 项回归，任务卡 `WORKBUDDY-WINDOWS-REGRESSION-2026-09-14.md`），vite 升级挂 P2
+- 顺序：先跑 Windows 真机回归收口 V1；收口后再按 `docs/PROJECT-ROADMAP.md` 进入 P1（浏览器窄场景执行）
 
 继续工作前优先阅读：
 
-1. `docs/HANDOVER-2026-09-04.md`
-2. `docs/HANDOVER-2026-09-07.md`
-3. `docs/PROJECT-ROADMAP.md`
-4. `docs/V1-IMPLEMENTATION-PLAN.md`
+1. `docs/HANDOVER-2026-09-13.md`
+2. `docs/PROJECT-ROADMAP.md`
+3. `docs/V1-IMPLEMENTATION-PLAN.md`
+4. `docs/WINDOWS-MIGRATION-2026-09.md`（Windows 迁移主题唯一入口）
 5. 与当前任务相关的专题文档，例如 `docs/STEP9-UI-POLISH.md`、`docs/STEP8-RELEASE-DEGRADATION.md`、`docs/VOICE-ACTIVATION.md`、`docs/TASK-ROUTING.md`、`docs/MAIN-INTERFACE.md`
 
 ## 工具路由

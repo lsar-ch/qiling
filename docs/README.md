@@ -2,9 +2,9 @@
 
 这组文档用于先把项目目标、范围和技术路线说清楚，再进入实现。
 
-> 最新：2026-09-07 —— 产品方向为“角色化、本地优先、懂项目记忆的 AI 工作伙伴”；Step 1~8 自动化回归与 Codex 真实任务已完成，
-> 当前进入 Step 9 视觉与体验打磨；桌面挂件交互层已阶段性完成。
-> 进度见 [项目路线图](./PROJECT-ROADMAP.md)、[Step 9 视觉打磨 Spec](./STEP9-UI-POLISH.md)、[Step 8 发布回归与降级验收](./STEP8-RELEASE-DEGRADATION.md)、[2026-09-07 交接单](./HANDOVER-2026-09-07.md) 与 [2026-09-04 交接单](./HANDOVER-2026-09-04.md)。
+> 最新：2026-09-14 —— 产品方向为“角色化、本地优先、懂项目记忆的 AI 工作伙伴”；功能开发、macOS 人工验收与角色化表现均已完成，
+> V1 只剩 Windows 真机回归（WI-05 复验 + 18 项回归）。
+> 进度见 [项目路线图](./PROJECT-ROADMAP.md)、[Windows 迁移结论与遗留](./WINDOWS-MIGRATION-2026-09.md)、[Step 9 视觉打磨 Spec](./STEP9-UI-POLISH.md)、[Step 8 发布回归与降级验收](./STEP8-RELEASE-DEGRADATION.md) 与 [2026-09-13 交接单](./HANDOVER-2026-09-13.md)。
 
 - [需求说明](./PRD.md)
 - [技术方案](./TECHNICAL-PLAN.md)
@@ -38,6 +38,4 @@
 
 ## 交接单
 
-- [2026-09-04 交接单](./HANDOVER-2026-09-04.md)
-- [2026-09-03 交接单](./HANDOVER-2026-09-03.md)
-- [2026-09-07 交接单](./HANDOVER-2026-09-07.md)
+- [2026-09-13 交接单](./HANDOVER-2026-09-13.md)

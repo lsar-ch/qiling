@@ -104,7 +104,7 @@ Completed (page polish):
 Still open (unchanged):
 
 - Character-card testing follow-up for widget asset, animation, movement, and character-specific visual tuning.
-- Step 8 macOS 真机人工项（launcher 拉起、麦克风授权/拒绝降级、Codex 不可用 banner、退出进程回收）与随后的 Windows 回归。清单见 `docs/HANDOVER-2026-09-09.md`。
+- Step 8 macOS 真机人工项（launcher 拉起、麦克风授权/拒绝降级、Codex 不可用 banner、退出进程回收）已完成，只剩 Windows 回归；清单见 `docs/STEP8-RELEASE-DEGRADATION.md` 与 `docs/WINDOWS-MIGRATION-2026-09.md`。
 
 ## 2026-09-13 Progress（角色卡调优 + 视觉回归）
 
