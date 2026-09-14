@@ -40,6 +40,7 @@ from app.agents.base import (
     AgentTaskResult,
 )
 from app.agents.catalog import AgentCatalogEntry
+from app.agents.windows_install import fixed_drive_roots, registry_candidates
 
 # CLI 相对安装根目录的位置（Windows / macOS 一致，只是根目录形态不同）
 _CLI_RELATIVE = ("resources", "app.asar.unpacked", "cli", "bin", "codebuddy")
@@ -161,16 +162,26 @@ def _platform_install_candidates() -> tuple[Path, ...]:
     """常见安装位置兜底（只用于自动发现，用户在页面显式配置优先）。"""
     if sys.platform == "win32":
         roots = [
-            Path(os.environ.get("ProgramFiles", "C:\\Program Files")),
-            Path(os.environ.get("LOCALAPPDATA", "")),
-            Path(os.environ.get("ProgramW6432", "")),
+            os.environ.get("ProgramFiles") or "C:\\Program Files",
+            os.environ.get("LOCALAPPDATA", ""),
+            os.environ.get("ProgramW6432", ""),
         ]
         hits: list[Path] = []
-        for root in roots:
-            if not root:
+        for raw in roots:
+            if not raw:
                 continue
+            root = Path(raw)
             hits.append(root / "WorkBuddy" / "WorkBuddy.exe")
             hits.append(root / "Programs" / "WorkBuddy" / "WorkBuddy.exe")
+        # 安装器允许换盘（WI-05）：环境变量只覆盖 C 盘，补注册表与非系统盘
+        hits.extend(
+            registry_candidates(
+                ("WorkBuddy", "CodeBuddy"), ("WorkBuddy.exe", "CodeBuddy.exe")
+            )
+        )
+        for drive in fixed_drive_roots():
+            hits.append(drive / "Program Files" / "WorkBuddy" / "WorkBuddy.exe")
+            hits.append(drive / "Program Files (x86)" / "WorkBuddy" / "WorkBuddy.exe")
         return tuple(hits)
     if sys.platform == "darwin":
         return (

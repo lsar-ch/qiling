@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import load_settings
@@ -135,27 +137,63 @@ def test_obsidian_search_skips_mirror_tree(tmp_path: Path, monkeypatch) -> None:
         assert hidden["items"] == []
 
 
-def test_unwritable_vault_fails_quietly(tmp_path: Path, monkeypatch) -> None:
+def assert_mirror_write_is_skipped_quietly(vault: Path) -> None:
+    """镜像目录建不出来时：状态接口不报错、镜像目录不存在、写入请求仍返回 200。
+
+    还要证明「只有镜像这一路降级」——本地记忆仍真实写入（读回能查到），
+    否则「整个请求空操作也返回 200」同样能骗过这个用例。
+    """
+    with TestClient(create_app(load_settings())) as client:
+        enable_linked(client, vault)
+        status = client.get("/api/memories/vault/status")
+        assert status.status_code == 200
+        body = status.json()
+        assert body["available"] is True
+        assert body["mirror_dir_exists"] is False
+        assert body["doc_files"] == 0
+        upsert = client.post(
+            "/api/memories/docs/L3/progress/entries",
+            json={"section": "项目进度", "text": "不可写时静默跳过", "refs": []},
+        )
+        assert upsert.status_code == 200
+        local = client.get("/api/memories/docs/L3/progress").json()["raw_markdown"]
+        assert "不可写时静默跳过" in local
+        assert client.get("/api/memories/vault/status").status_code == 200
+
+
+def test_mirror_dir_creation_failure_fails_quietly(tmp_path: Path, monkeypatch) -> None:
+    """WI-02：镜像目录建不出来时静默降级。
+
+    这里用「同名文件占住镜像目录名」制造失败，两个平台都成立
+    （POSIX 权限位在 Windows 上没有对应物，chmod 拦不住写入）。
+    """
+    prepare_home(tmp_path, monkeypatch)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "DeskMate").write_text("占住镜像目录名", encoding="utf-8")
+
+    assert_mirror_write_is_skipped_quietly(vault)
+
+    assert (vault / "DeskMate").is_file()
+    assert (vault / "DeskMate").read_text(encoding="utf-8") == "占住镜像目录名"
+
+
+def test_readonly_vault_fails_quietly(tmp_path: Path, monkeypatch) -> None:
+    """POSIX 只读目录（chmod 0o500）下的同类行为。
+
+    Windows 没有 POSIX 权限语义，构造不出「只读目录」这个前提，
+    因此该平台只跑上面的跨平台用例（见 WI-02）。
+    """
+    if sys.platform == "win32":
+        pytest.skip("Windows 无 POSIX 权限位；同一行为已由 test_mirror_dir_creation_failure_fails_quietly 覆盖")
+
     prepare_home(tmp_path, monkeypatch)
     vault = tmp_path / "vault"
     vault.mkdir()
     vault.chmod(0o500)
     try:
-        with TestClient(create_app(load_settings())) as client:
-            enable_linked(client, vault)
-            status = client.get("/api/memories/vault/status")
-            assert status.status_code == 200
-            body = status.json()
-            assert body["available"] is True
-            assert body["mirror_dir_exists"] is False
-            assert body["doc_files"] == 0
-            upsert = client.post(
-                "/api/memories/docs/L3/progress/entries",
-                json={"section": "项目进度", "text": "不可写时静默跳过", "refs": []},
-            )
-            assert upsert.status_code == 200
-            assert client.get("/api/memories/vault/status").status_code == 200
-            assert not (vault / "DeskMate").exists()
+        assert_mirror_write_is_skipped_quietly(vault)
+        assert not (vault / "DeskMate").exists()
     finally:
         vault.chmod(0o700)
 
