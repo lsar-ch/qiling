@@ -1650,8 +1650,14 @@ export default function App() {
   const [events, setEvents] = useState<EventEnvelope[]>([]);
   const [widgetState, setWidgetState] = useState<WidgetStatusReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [serviceLost, setServiceLost] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const [demoMsg, setDemoMsg] = useState("");
   const stopRef = useRef<(() => void) | undefined>(undefined);
+  // 曾经连上过服务：只有这种情况下的失联才算「DeskMate 退出了」
+  const everOnlineRef = useRef(false);
+  // 连续探活失败次数：单次超时/瞬时拒绝不算退出，避免误报
+  const failStreakRef = useRef(0);
 
   const onEvent = useCallback((env: EventEnvelope) => {
     setEvents((prev) => [...prev.slice(-14), env]);
@@ -1745,9 +1751,12 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     const refresh = async () => {
+      // 只看 health/session 是否拿到；后面的挂件状态与事件流失败不算「服务没了」
+      let online = false;
       try {
         const [h, s] = await Promise.all([fetchHealth(), fetchSession()]);
         if (!alive) return;
+        online = true;
         setHealth(h);
         setSession(s);
         setError(null);
@@ -1758,8 +1767,23 @@ export default function App() {
         }
       } catch (e) {
         if (!alive) return;
-        setError(e instanceof Error ? e.message : "无法连接本地服务");
+        // 只有服务本身不可达才占用顶部错误横幅；挂件状态/事件流失败不算失联
+        if (!online) {
+          setError(e instanceof Error ? e.message : "无法连接本地服务");
+        } else {
+          console.warn("挂件状态或事件流刷新失败：", e);
+        }
         setWsOpen(false);
+      } finally {
+        if (alive) {
+          if (online) {
+            everOnlineRef.current = true;
+            failStreakRef.current = 0;
+          } else {
+            failStreakRef.current += 1;
+          }
+          setServiceLost(failStreakRef.current >= 2 && everOnlineRef.current);
+        }
       }
     };
     void refresh();
@@ -1770,9 +1794,9 @@ export default function App() {
       stopRef.current?.();
       stopRef.current = undefined;
     };
-  }, [onEvent]);
+  }, [onEvent, retryTick]);
 
-  const serviceOk = health?.status === "ok";
+  const serviceOk = !serviceLost && health?.status === "ok";
   const current = widgetState?.state ?? "idle";
 
   const runDemo = async (action: (typeof DEMO_ACTIONS)[number]) => {
@@ -1874,15 +1898,26 @@ export default function App() {
             </p>
           </div>
           <span className={`inline-flex items-center self-start md:self-auto rounded-full px-3.5 py-1.5 text-xs font-medium ${
-            serviceOk ? "bg-ok-50 text-ok" : "bg-bad-50 text-bad"
+            serviceLost ? "bg-warn-50 text-warn" : serviceOk ? "bg-ok-50 text-ok" : "bg-bad-50 text-bad"
           }`}>
-            {serviceOk ? "服务正常" : "服务离线"}
+            {serviceLost ? "服务已退出" : serviceOk ? "服务正常" : "服务离线"}
           </span>
         </header>
 
-        {error && (
+        {serviceLost ? (
+          <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-warn-50 text-warn px-4 py-3 text-sm">
+            <span className="font-medium">DeskMate 已退出</span>
+            <span className="text-xs">本地服务已停止，页面不会再更新，可以直接关闭；重新启动 DeskMate 后再点右侧按钮。</span>
+            <button
+              className="ml-auto border border-warn/40 bg-white rounded-lg px-3 py-1 text-xs text-warn hover:bg-warn-50 transition-colors cursor-pointer"
+              onClick={() => setRetryTick((tick) => tick + 1)}
+            >
+              重新连接
+            </button>
+          </div>
+        ) : error ? (
           <div className="mb-4 rounded-lg bg-bad-50 text-bad px-4 py-3 text-sm">连接失败：{error}</div>
-        )}
+        ) : null}
 
         {page === "home" && (
           <div className="flex flex-col gap-5">
