@@ -341,7 +341,7 @@ fn service_status(state: State<'_, ChildState>) -> Result<ServiceStatus, String>
 }
 
 #[tauri::command]
-fn open_main_ui(state: State<'_, ChildState>) -> Result<(), String> {
+fn open_main_ui(state: State<'_, ChildState>, page: Option<String>) -> Result<(), String> {
     let log_path = {
         let mut shared = state.0.lock().map_err(|_| "服务状态锁不可用".to_string())?;
         start_service(&mut shared);
@@ -356,7 +356,24 @@ fn open_main_ui(state: State<'_, ChildState>) -> Result<(), String> {
             None => "AI 服务尚未就绪".to_string(),
         });
     }
-    open_url_in_browser(&format!("http://127.0.0.1:{SERVICE_PORT}/"))
+    open_url_in_browser(&format!(
+        "http://127.0.0.1:{SERVICE_PORT}/{}",
+        page_fragment(page)
+    ))
+}
+
+/// 页面名 → URL 片段（`chat` → `#/chat`）；只放行纯字母，其余一律回到主页。
+fn page_fragment(page: Option<String>) -> String {
+    match page {
+        Some(value)
+            if !value.is_empty()
+                && value.len() <= 16
+                && value.chars().all(|c| c.is_ascii_lowercase()) =>
+        {
+            format!("#/{value}")
+        }
+        _ => String::new(),
+    }
 }
 
 #[tauri::command]
@@ -490,11 +507,23 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::tail_text;
+    use super::{page_fragment, tail_text};
 
     #[test]
     fn log_tail_keeps_utf8_and_ignores_blank_text() {
         assert_eq!(tail_text(" \n\t"), None);
         assert_eq!(tail_text("服务启动失败").as_deref(), Some("服务启动失败"));
+    }
+
+    #[test]
+    fn page_fragment_only_allows_plain_page_names() {
+        assert_eq!(page_fragment(Some("chat".to_string())), "#/chat");
+        assert_eq!(page_fragment(Some("memory".to_string())), "#/memory");
+        assert_eq!(page_fragment(None), "");
+        assert_eq!(page_fragment(Some(String::new())), "");
+        assert_eq!(page_fragment(Some("Chat".to_string())), "");
+        assert_eq!(page_fragment(Some("../evil".to_string())), "");
+        assert_eq!(page_fragment(Some("chat?x=1".to_string())), "");
+        assert_eq!(page_fragment(Some("a".repeat(17))), "");
     }
 }

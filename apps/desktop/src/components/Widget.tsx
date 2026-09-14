@@ -237,9 +237,9 @@ export default function Widget() {
     }
   };
 
-  const openMainUi = async (): Promise<void> => {
+  const openMainUi = async (page?: string): Promise<void> => {
     try {
-      await invoke("open_main_ui");
+      await invoke("open_main_ui", { page: page ?? null });
     } catch {
       /* 桌面调用失败时静默，保留当前挂件 */
     }
@@ -340,7 +340,8 @@ export default function Widget() {
       });
       conversationIdRef.current = done.conversation_id;
       if (!done.short) {
-        void openMainUi();
+        // 长回复直接落到对话页，用户不用再手点一次
+        void openMainUi("chat");
       } else {
         showBrief(done.message || done.speak_text);
         if (speakReply && voiceStatusRef.current?.enabled && voiceStatusRef.current.auto_speak && voiceModeRef.current !== "off") {
@@ -574,7 +575,8 @@ export default function Widget() {
 
       if (msg.event_type === "conversation.completed") {
         if (msg.payload?.expand_ui === true && widgetTurnRef.current) {
-          void openMainUi();
+          // 与 submitText 里的长回复分支保持一致，落到对话页
+          void openMainUi("chat");
         }
       }
 

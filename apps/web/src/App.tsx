@@ -120,6 +120,35 @@ const NAV: { key: PageKey; label: string }[] = [
   { key: "about", label: "关于" },
 ];
 
+/** URL 片段 → 页面：`#/chat` → chat，未知或缺失回落主页。 */
+function pageFromHash(hash: string): PageKey {
+  const key = hash.replace(/^#\/?/, "");
+  return NAV.some((item) => item.key === key) ? (key as PageKey) : "home";
+}
+
+/**
+ * 页面状态与 URL 片段双向同步（WP-02）。
+ * 挂件用 `open_main_ui(page="chat")` 打开带片段的 URL，这里据此直接落到目标页。
+ */
+function useHashPage(): [PageKey, (key: PageKey) => void] {
+  const [page, setPage] = useState<PageKey>(() => pageFromHash(window.location.hash));
+
+  useEffect(() => {
+    const sync = (): void => setPage(pageFromHash(window.location.hash));
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+
+  const navigate = useCallback((key: PageKey) => {
+    if (window.location.hash !== `#/${key}`) {
+      window.location.hash = `#/${key}`;
+    }
+    setPage(key);
+  }, []);
+
+  return [page, navigate];
+}
+
 function eventToState(eventType: string): string | null {
   const map: Record<string, string> = {
     "speech.started": "listening",
@@ -1612,7 +1641,7 @@ function ExecutorStatusSection({ agents }: { agents: AgentInfo[] }) {
 }
 
 export default function App() {
-  const [page, setPage] = useState<PageKey>("home");
+  const [page, setPage] = useHashPage();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
