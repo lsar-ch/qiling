@@ -15,6 +15,8 @@
 - [Step 8 发布回归与降级验收](./STEP8-RELEASE-DEGRADATION.md)
 - [Step 9 UI 视觉与体验打磨](./STEP9-UI-POLISH.md)
 - [双系统测试与 Windows 迁移](./CROSS-PLATFORM-TESTING.md)
+- [Windows 迁移结论与遗留（2026-09）](./WINDOWS-MIGRATION-2026-09.md)
+- [依赖漏洞与 vite 升级影响面](./DEPENDENCY-VULNERABILITIES.md)
 - [竞品与差异](./LANDSCAPE.md)
 - [HanaAgent 调研与路线结论](./HANAAGENT-ANALYSIS.md)
 - [外部项目可借鉴改进建议](./EXTERNAL-INSIGHTS.md)

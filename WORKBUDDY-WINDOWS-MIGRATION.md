@@ -45,8 +45,11 @@
 - `__pycache__/`
 - `.env`
 - `data/` 中除 `data/persona-assets/` 以外的运行时数据、日志、音频、会话和缓存
+- `.research/`（调研阶段克隆的参考仓库，未被 git 跟踪，代码中零引用）
+- `.firecrawl/`（网页抓取缓存，已进 `.gitignore`，代码中零引用）
 
 Windows 上只恢复 `data/persona-assets/`。不要把 macOS 的整个 `data/` 目录覆盖到 Windows 新环境中。
+上面前两项仅用于压缩包减重，不影响 `scripts/check.sh`、类型检查或任何运行时路径。
 
 ## 3. macOS 生成源码包
 
@@ -60,11 +63,13 @@ cp "desktop assistant project/WORKBUDDY-WINDOWS-MIGRATION.md" \
 ditto "desktop assistant project" "DeskMate-Windows-src-2026-09-13"
 cd "DeskMate-Windows-src-2026-09-13"
 rm -rf .venv .pytest_cache apps/web/node_modules apps/desktop/node_modules \
-  apps/web/dist apps/desktop/dist apps/desktop/src-tauri/target data
+  apps/web/dist apps/desktop/dist apps/desktop/src-tauri/target data \
+  .research .firecrawl
 mkdir -p data
 ditto "../desktop assistant project/data/persona-assets" "data/persona-assets"
 find . -type d -name __pycache__ -prune -exec rm -rf {} +
 find . -type f -name .env -delete
+git gc --prune=now --quiet   # 仅压缩副本的 .git；原仓库不受影响
 cd ..
 zip -r DeskMate-Windows-src-2026-09-13.zip "DeskMate-Windows-src-2026-09-13"
 rm -rf "DeskMate-Windows-src-2026-09-13"
@@ -178,6 +183,42 @@ cargo --version
 如果缺少命令，WorkBuddy 只报告缺少的工具、安装建议和检查命令，等待用户安装完成后重新检查；不要自动安装，也不要继续安装项目依赖。
 
 ## 7. Windows 项目初始化
+
+### 7.1 先处理上一轮遗留（2026-09-12 包）
+
+上一轮 Windows 测试使用的源码包与解压目录很可能仍在磁盘上。WorkBuddy 必须先做只读检查，
+把结果报给用户，**不要自动删除、移动或覆盖任何旧目录**。需要确认的位置：
+
+```text
+下载目录中的 DeskMate-Windows-src-2026-09-12.zip
+D:\Projects\desktop-assistant（是否已存在上一轮内容）
+其它形如 desktop-assistant-2026-09-12 的旧解压目录
+```
+
+处理原则：**新包独立解压，旧目录改名保留，不做原地覆盖，不做 Git 合并。**
+
+1. 若 `D:\Projects\desktop-assistant` 已存在上一轮内容：先由用户确认，把它**改名**为
+   `D:\Projects\desktop-assistant-2026-09-12`（改名可回退，删除不可回退），再把本轮新包解压到
+   `D:\Projects\desktop-assistant`。
+2. 解压前先从旧目录里取出**只有旧目录才有的东西**，逐项让用户确认后再复制进新目录：
+   - `.env`：密钥文件，新包刻意不带，是唯一无法重新生成的内容；
+   - `data/` 中需要延续的运行时数据（会话、任务、记忆）：确认后再恢复；
+   - `data/persona-assets/`：以新包里的为准，不要从旧目录覆盖。
+3. 先从旧目录执行并回传结果，由用户判断是否有需要迁移的手改源码：
+
+   ```powershell
+   cd D:\Projects\desktop-assistant-2026-09-12
+   git status
+   git diff --stat
+   ```
+
+   有本地修改时，逐条列出并交用户决定，不要自动搬运或 `git stash`/`reset`。
+4. 明确禁止：直接删除旧目录；把旧 `node_modules`、`.venv`、`src-tauri\target` 复制进新目录
+   （跨版本二进制依赖会直接坏掉）；把旧目录的 `.git` 合并进新目录的 `.git`
+   （两个包是不同快照，合并只会产生无意义冲突）；覆盖用户在旧目录里的数据。
+5. 旧压缩包先不删。确认本轮验收通过后，再由用户自行清理磁盘。
+
+### 7.2 解压当前源码包
 
 将源码包解压到：
 
