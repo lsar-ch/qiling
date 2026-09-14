@@ -19,6 +19,9 @@ macOS 侧修复已全部落地：`./scripts/check.sh` → **161 passed** + web/d
 | 2 | **vite 5.4.21 → 7/8.x 升级** | 建议放到 P2 发布加固（见第 4 节） | `npm audit` 清零 + `check.sh` + Tauri dev 全过 |
 | 3 | **Windows 侧 18 项回归重跑一遍**（确认本轮 8 项修复在 Windows 上无退化） | 下次回 Windows，与 WI-05 同轮 | 清单见 `docs/archive/windows-migration-2026-09/WINDOWS-MIGRATION-RUNBOOK-2026-09-13.md` 第 7 节 |
 
+> 2026-09-14 下发任务卡：`WORKBUDDY-WINDOWS-REGRESSION-2026-09-14.md`（遗留 1 与 3 的测法与预期结果都在里面），
+> 随源码包 `DeskMate-Windows-src-2026-09-14.zip` 一起带回 Windows 交给 WorkBuddy。
+
 ## 3. 问题明细（均已修复）
 
 | 编号 | 一句话问题 | 处置 |
