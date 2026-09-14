@@ -1298,6 +1298,7 @@ function SettingsPage() {
       permission_level: settings.permission_level,
       performance_mode: settings.performance_mode,
       voice_enabled: settings.voice.enabled,
+      voice_auto_speak: settings.voice.auto_speak,
       activation_enabled: settings.voice.activation_enabled,
       activation_default_state: settings.voice.activation_default_state,
     };
@@ -1356,6 +1357,11 @@ function SettingsPage() {
             <span className="text-xs text-muted">启用语音（总开关）</span>
             <input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.enabled} disabled={liteMode} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, enabled: e.target.checked } })} />
           </label>
+          <label className="flex flex-row items-center justify-between gap-3">
+            <span className="text-xs text-muted">自动播报回复</span>
+            <input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.auto_speak} disabled={liteMode || !settings.voice.enabled} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, auto_speak: e.target.checked } })} />
+          </label>
+          <small className="text-[11px] text-muted -mt-1">关闭后语音输入仍可用，回复不自动朗读（任务待确认提醒的语音播报一并关闭）；消息下方 🔊 仍可手动播报。</small>
           <label className="flex flex-row items-center justify-between gap-3">
             <span className="text-xs text-muted">启用语音激活（唤醒与静默）</span>
             <input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.activation_enabled} disabled={liteMode || !settings.voice.enabled} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, activation_enabled: e.target.checked } })} />
