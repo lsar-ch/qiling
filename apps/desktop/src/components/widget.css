@@ -31,6 +31,21 @@ html, body, #root {
 }
 .w-root[data-input-open="1"] .stage { bottom: 68px; }
 .stage:active { cursor: grabbing; }
+
+/* ── 上边缘隐藏 ──
+   macOS 的窗口顶边越不过菜单栏，窗口挪不出屏幕上方，于是改成「窗口留在顶部、
+   角色在窗口内上移」：底部 [whenTop, innerHeight] 那段正好落到窗口顶部。
+   窗口屏幕占位不变，所以不会多出透明死区。 */
+.w-root[data-hidden-edge="top"] .stage {
+  bottom: calc(8px + var(--top-peek-offset, 0px));
+}
+/* 藏起来时只留可抓取的那一条，状态徽标 / 语音点 / 气泡不要浮在屏幕中央。 */
+.w-root[data-hidden-edge="top"] .badge,
+.w-root[data-hidden-edge="top"] .voice-chip,
+.w-root[data-hidden-edge="top"] .bubble {
+  opacity: 0;
+  pointer-events: none;
+}
 .mascot {
   width: var(--mascot-size, 338px);
   height: var(--mascot-size, 338px);

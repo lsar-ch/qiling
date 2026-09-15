@@ -161,6 +161,9 @@ pub struct WidgetPreferences {
     pub scale: f64,
     /// 前端按当前素材算出的贴边保留量；缺失时用 VisibleEdges::default()。
     pub visible_edges: VisibleEdges,
+    /// 吸附在屏幕上边缘且当前平台不允许窗口越过工作区顶部时为 `Some("top")`，
+    /// 前端据此把角色在窗口内上移，做出与其它三边一致的隐藏效果。
+    pub hidden_edge: Option<String>,
 }
 
 impl Default for WidgetPreferences {
@@ -172,6 +175,7 @@ impl Default for WidgetPreferences {
             auto_hide: true,
             scale: 1.0,
             visible_edges: VisibleEdges::default(),
+            hidden_edge: None,
         }
     }
 }
@@ -340,6 +344,33 @@ fn preserve_position_in_work_area(
         x: (position.x as i64).clamp(min_x.min(max_x), max_x) as i32,
         y: (position.y as i64).clamp(min_y.min(max_y), max_y) as i32,
     }
+}
+
+/// macOS 的窗口服务器不允许窗口顶边越过工作区顶部（菜单栏），
+/// 把窗口挪出屏幕上方的做法会被夹回工作区顶 —— 贴到上边缘就等于完全不隐藏。
+/// 这里把位置收回工作区顶部，并把「上边缘隐藏」交给前端在窗口内上移角色实现；
+/// 其它平台窗口可以正常挪出屏幕上方，行为保持不变。
+#[cfg(target_os = "macos")]
+const PLATFORM_CLAMPS_WINDOW_TOP: bool = true;
+#[cfg(not(target_os = "macos"))]
+const PLATFORM_CLAMPS_WINDOW_TOP: bool = false;
+
+/// 返回实际要设置的位置，以及是否需要前端做「上边缘探出」处理。
+fn clamp_top_peek(
+    settled: WidgetPosition,
+    area: WorkArea,
+    platform_clamps_top: bool,
+) -> (WidgetPosition, bool) {
+    if !platform_clamps_top || settled.y >= area.y {
+        return (settled, false);
+    }
+    (
+        WidgetPosition {
+            x: settled.x,
+            y: area.y,
+        },
+        true,
+    )
 }
 
 #[tauri::command]
@@ -644,13 +675,19 @@ fn apply_position(
             settle_position_in_work_area(position, size, area, true, scale_factor, visible)
         }
     };
+    let (target, top_peek) = clamp_top_peek(settled, area, PLATFORM_CLAMPS_WINDOW_TOP);
     window
-        .set_position(PhysicalPosition::new(settled.x, settled.y))
+        .set_position(PhysicalPosition::new(target.x, target.y))
         .map_err(|error| format!("移动挂件失败: {error}"))?;
-    schedule_position_retry(window, PhysicalPosition::new(settled.x, settled.y));
-    preferences.x = Some(settled.x);
-    preferences.y = Some(settled.y);
+    schedule_position_retry(window, PhysicalPosition::new(target.x, target.y));
+    preferences.x = Some(target.x);
+    preferences.y = Some(target.y);
     preferences.monitor = monitor_name;
+    preferences.hidden_edge = if top_peek {
+        Some("top".to_string())
+    } else {
+        None
+    };
     Ok(())
 }
 
@@ -1044,5 +1081,45 @@ mod tests {
                 when_bottom: 64,
             }
         );
+    }
+
+    /// 带菜单栏的工作区：顶部不在 0，模拟真实 macOS 工作区。
+    const AREA_WITH_MENUBAR: WorkArea = WorkArea {
+        x: 0,
+        y: 50,
+        width: 3584,
+        height: 1970,
+    };
+
+    #[test]
+    fn top_snap_falls_back_to_peek_when_platform_clamps_window_top() {
+        // settle 想把窗口推到工作区上方（y < 50），但平台不允许。
+        let settled = WidgetPosition { x: 100, y: -910 };
+        let (target, peek) = clamp_top_peek(settled, AREA_WITH_MENUBAR, true);
+        assert_eq!(target, WidgetPosition { x: 100, y: 50 });
+        assert!(peek, "上边缘被平台钳制时必须让前端做窗口内上移");
+    }
+
+    #[test]
+    fn top_peek_is_not_used_where_the_window_may_leave_the_screen() {
+        // Windows 允许窗口越出屏幕上方，保持原来的移窗隐藏。
+        let settled = WidgetPosition { x: 100, y: -910 };
+        let (target, peek) = clamp_top_peek(settled, AREA_WITH_MENUBAR, false);
+        assert_eq!(target, settled);
+        assert!(!peek);
+    }
+
+    #[test]
+    fn other_edges_keep_their_position_untouched() {
+        for settled in [
+            WidgetPosition { x: -245, y: 600 },
+            WidgetPosition { x: 1607, y: 600 },
+            WidgetPosition { x: 300, y: 836 },
+            WidgetPosition { x: 300, y: 50 },
+        ] {
+            let (target, peek) = clamp_top_peek(settled, AREA_WITH_MENUBAR, true);
+            assert_eq!(target, settled);
+            assert!(!peek);
+        }
     }
 }

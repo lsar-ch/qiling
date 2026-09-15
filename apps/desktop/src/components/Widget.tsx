@@ -59,6 +59,8 @@ type WidgetPreferences = {
   monitor: string | null;
   autoHide: boolean;
   scale: number;
+  /** 贴在上边缘且平台不允许窗口越过工作区顶部时为 "top"，角色需在窗口内上移。 */
+  hiddenEdge?: string | null;
 };
 
 type DragStart = {
@@ -145,6 +147,8 @@ export default function Widget() {
     autoHide: true,
     scale: 1,
   });
+  /** 上边缘隐藏时角色要上移的像素（窗口逻辑坐标）。 */
+  const [topPeekOffset, setTopPeekOffset] = useState(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
@@ -1016,6 +1020,8 @@ export default function Widget() {
         whenTop: Math.round(window.innerHeight - box.y - box.height + handle),
         whenBottom: Math.round(box.y + handle),
       };
+      // 上边缘隐藏时角色上移这么多，窗口底部 [whenTop, innerHeight] 那段正好落到窗口顶部。
+      setTopPeekOffset(Math.max(0, Math.round(window.innerHeight - edges.whenTop)));
       void invoke("set_widget_visible_edges", { edges }).catch(() => {
         /* 非 Tauri 环境或后端不支持时忽略 */
       });
@@ -1142,6 +1148,8 @@ export default function Widget() {
       data-connected={connected}
       data-active={active ? "1" : "0"}
       data-input-open={inputOpen ? "1" : "0"}
+      data-hidden-edge={preferences.hiddenEdge === "top" ? "top" : undefined}
+      style={{ "--top-peek-offset": `${topPeekOffset}px` } as CSSProperties}
     >
       {inputOpen && (
         <div className="composer" data-no-drag ref={composerRef}>
