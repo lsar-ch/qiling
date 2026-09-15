@@ -647,10 +647,35 @@ fn apply_position(
     window
         .set_position(PhysicalPosition::new(settled.x, settled.y))
         .map_err(|error| format!("移动挂件失败: {error}"))?;
+    schedule_position_retry(window, PhysicalPosition::new(settled.x, settled.y));
     preferences.x = Some(settled.x);
     preferences.y = Some(settled.y);
     preferences.monitor = monitor_name;
     Ok(())
+}
+
+/// macOS 上原生拖拽刚结束时，窗口服务器会把窗口再摆一次（把窗口夹回屏幕内），
+/// 这一下会盖掉我们刚设好的贴边位置，表现成「松手后弹回原位」。
+/// 这里异步校验并补设：位置已经对了、或用户又开始拖了，就立刻收手。
+fn schedule_position_retry(window: &tauri::WebviewWindow, target: PhysicalPosition<i32>) {
+    let window = window.clone();
+    thread::spawn(move || {
+        for _ in 0..8 {
+            thread::sleep(Duration::from_millis(150));
+            if let Some(state) = window.app_handle().try_state::<WidgetRuntimeState>() {
+                if state.dragging.load(Ordering::SeqCst) {
+                    return;
+                }
+            }
+            match window.outer_position() {
+                Ok(current) if current.x == target.x && current.y == target.y => return,
+                Ok(_) => {
+                    let _ = window.set_position(target);
+                }
+                Err(_) => return,
+            }
+        }
+    });
 }
 
 fn default_position(
