@@ -119,6 +119,26 @@ def test_file_organization_routes_to_delegate_backend(tmp_path: Path, monkeypatc
         assert body["task"]["preferred_executor"] is None
 
 
+def test_short_chitchat_is_not_a_task(tmp_path: Path, monkeypatch) -> None:
+    """顺口一说（哪怕超过 8 个字）不该被判成后台任务。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        for text in ("就是你看那个落花生。", "你刚才那句话什么意思"):
+            resp = client.post("/api/tasks", json={"input": text})
+            assert resp.status_code == 200
+            assert resp.json()["task"]["category"] == "answer", text
+
+
+def test_plain_command_is_medium_risk_so_it_auto_runs(tmp_path: Path, monkeypatch) -> None:
+    """真指令即使不含「代码/项目」等词，也要落到 medium 才会自动起跑。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        for text in ("帮我改一下 README 的错别字", "查一下石家庄中考招生政策"):
+            resp = client.post("/api/tasks", json={"input": text})
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["task"]["category"] == "delegate_backend", text
+            assert body["task"]["risk_level"] == "medium", text
+
+
 def test_route_endpoint_and_task_listing(tmp_path: Path, monkeypatch) -> None:
     with make_client(tmp_path, monkeypatch) as client:
         resp = client.post("/api/tasks/route", json={"input": "帮我改一下这个项目代码"})

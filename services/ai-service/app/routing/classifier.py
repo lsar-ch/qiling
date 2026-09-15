@@ -61,6 +61,10 @@ _ANSWER_HINTS = (
     r"在吗",
     r"你好",
     r"嗨",
+    r"什么意思",
+    r"啥意思",
+    r"在干嘛",
+    r"干嘛呢",
     r"hey",
 )
 
@@ -101,10 +105,33 @@ _BACKEND_HINTS = (
     r"日志",
     r"代码结构",
     r"技术方案",
+    r"错别字",
+    r"文档",
+    r"排版",
+    r"依赖",
+    r"版本",
+    r"构建",
     r"任务",
     r"agent",
     r"codex",
     r"claude",
+)
+
+# 真实指令的动词特征：用于把「顺口一说」和「真让它干活」分开。
+# 只影响风险档位（是否会自动起跑）与短句判定，不改变四类的匹配顺序。
+# 刻意不收「帮我 / 请帮 / 给我」这类泛化前缀——「帮我倒杯水」仍是闲聊。
+_ACTION_HINTS = (
+    r"查一下",
+    r"查查",
+    r"看一下",
+    r"改一下",
+    r"写一下",
+    r"做一下",
+    r"跑一下",
+    r"整理",
+    r"检查",
+    r"修复",
+    r"优化",
 )
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip()).lower()
@@ -138,7 +165,11 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         _matches_any(normalized, _ANSWER_HINTS)
         or "?" in normalized
         or "？" in normalized
-        or len(compact) <= 8
+        or (
+            len(compact) <= 12
+            and not _matches_any(normalized, _BACKEND_HINTS)
+            and not _matches_any(normalized, _ACTION_HINTS)
+        )
     ) and not _matches_any(normalized, _FRONTEND_HINTS) and not (
         _matches_any(normalized, _BACKEND_HINTS)
         and _matches_any(normalized, (r"整理", r"修改", r"帮我", r"更新", r"新建"))
@@ -156,7 +187,11 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         preferred_executor = "frontend"
     else:
         category = "delegate_backend"
-        risk_level = "medium" if _matches_any(normalized, _BACKEND_HINTS) else "low"
+        risk_level = (
+            "medium"
+            if _matches_any(normalized, _BACKEND_HINTS) or _matches_any(normalized, _ACTION_HINTS)
+            else "low"
+        )
         complexity = "complex" if _matches_any(normalized, (r"批量", r"多步", r"多阶段", r"项目", r"代码", r"测试", r"分析")) else "medium"
         estimated_duration = "long" if complexity == "complex" else "medium"
         # 分流器不指定具体执行器：由 config/agents.yaml 的 default_executor 决定，
