@@ -15,6 +15,11 @@ from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
+# ACP 单行 JSON-RPC 可能非常大（工具输出、文件内容、转录）。asyncio 的
+# StreamReader 默认只给 64 KiB，超了 readline() 会直接抛错，reader 停摆后整条
+# 会话被判失败。这里放宽到 16 MiB；再大就该走分片协议而不是加内存。
+ACP_STREAM_LIMIT = 16 * 1024 * 1024
+
 UpdateHandler = Callable[[dict[str, Any]], Awaitable[None]]
 PermissionHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
@@ -72,6 +77,7 @@ class AcpClient:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=ACP_STREAM_LIMIT,
         )
         client = cls(process, on_update=on_update, on_permission=on_permission)
         client._reader = asyncio.create_task(client._read_loop())
