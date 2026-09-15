@@ -1,4 +1,4 @@
-# Windows 迁移与验收 — 结论与遗留（2026-09-13 轮，2026-09-14 收口）
+# Windows 迁移与验收 — 结论与遗留（2026-09-13 轮，2026-09-15 收口）
 
 > **本文是 Windows 迁移主题的唯一入口，读完这一份即可。**
 > 原始过程记录（逐项证据、环境清单、执行流水）已移入
@@ -7,17 +7,18 @@
 
 ## 1. 状态一句话
 
-Windows 轮（2026-09-13）发现的 5 个 WI + 3 个 WP **全部处置完毕**，
-只剩 **WI-05 的真机复验**要等回到 Windows 机器上执行。
-macOS 侧修复已全部落地：`./scripts/check.sh` → **161 passed** + web/desktop 类型检查通过。
+Windows 轮（2026-09-13）发现的 5 个 WI + 3 个 WP **全部处置完毕**。
+Windows 侧的 WI-05 真机复验与 18 项回归已于 2026-09-14 回传全绿；
+同日的第二轮修复（WI-06/07/08/09/10）已在 macOS 落地并完成真机复验（见第 7 节）。
+`./scripts/check.sh` → **163 passed** + web/desktop 类型检查通过。
 
 ## 2. 遗留待办
 
-| # | 事项 | 何时做 | 完成判据 |
+| # | 事项 | 状态 | 完成判据 |
 |---|---|---|---|
-| 1 | **WI-05 真机复验**：Windows 上确认注册表扫描能发现非 C 盘安装的 WorkBuddy | 下次回 Windows | 见第 5 节命令，能打印出 `D:\Program Files\WorkBuddy\WorkBuddy.exe` |
-| 2 | **vite 5.4.21 → 7/8.x 升级** | 建议放到 P2 发布加固（见第 4 节） | `npm audit` 清零 + `check.sh` + Tauri dev 全过 |
-| 3 | **Windows 侧 18 项回归重跑一遍**（确认本轮 8 项修复在 Windows 上无退化） | 下次回 Windows，与 WI-05 同轮 | 清单见 `docs/archive/windows-migration-2026-09/WINDOWS-MIGRATION-RUNBOOK-2026-09-13.md` 第 7 节 |
+| 1 | **WI-05 真机复验**：Windows 上确认注册表扫描能发现非 C 盘安装的 WorkBuddy | ✅ 2026-09-14 通过（T1 3/3，卡片自动显示 D 盘路径，全程未手填） | 见第 5 节命令 |
+| 2 | **vite 5.4.21 → 7/8.x 升级** | ⏳ 挂 P2 发布加固（见第 4 节） | `npm audit` 清零 + `check.sh` + Tauri dev 全过 |
+| 3 | **Windows 侧 18 项回归重跑一遍**（确认 8 项修复在 Windows 上无退化） | ✅ 2026-09-14 通过（18/18，含第 18 项退出回收两次干净验证） | 清单见 `docs/archive/windows-migration-2026-09/WINDOWS-MIGRATION-RUNBOOK-2026-09-13.md` 第 7 节 |
 
 > 2026-09-14 下发任务卡：`WORKBUDDY-WINDOWS-REGRESSION-2026-09-14.md`（遗留 1 与 3 的测法与预期结果都在里面），
 > 随源码包 `DeskMate-Windows-src-2026-09-14.zip` 一起带回 Windows 交给 WorkBuddy。
@@ -90,3 +91,53 @@ cd D:\Projects\desktop-assistant\services\ai-service
 
 结论：**Tauri 自管模式下关闭 DeskMate，uvicorn 一并退出，无残留。**
 附带观察：手动启动的 uvicorn 在该环境下**不吃 SIGTERM**，需 `kill -9`（与产品无关）。
+
+## 7. 第二轮修复与 macOS 复验（2026-09-14 补丁 → 2026-09-15 复验）
+
+2026-09-14 第二轮改由 Windows 侧直接改代码交付补丁
+（`DeskMate-Windows-fixes-20260914.patch`，14 文件，逐条说明见随包的 `FIX-NOTES-2026-09-14.md`），
+覆盖 WI-06 长回复重复开标签页、WI-07 提示配色、WI-08 执行器解绑、
+WI-09 右键菜单被窗口裁切、WI-10 贴边保留量/点击穿透。补丁已落地（commit `1cad554`）。
+
+### 7.1 FIX-NOTES §4.1 清单的 macOS 真机复验
+
+| 项 | 结果 |
+|---|---|
+| 右键菜单三处（角色头部 / 身体中部 / 最下沿） | ✅ 三处「退出 DeskMate」都完整可见；最下沿那次菜单自动上移避让裁切 |
+| WI-06 长回复只开一个标签页 | ✅ 自动路径只开 1 个，地址 `127.0.0.1:8736/#/chat`；双击挂件手动打开仍照常新开 |
+| WI-08 复杂任务真实落到 WorkBuddy | ✅ 见 7.2 |
+
+### 7.2 WI-08 端到端（真实执行，不是只看路由）
+
+`preferred_executor` 已解绑（`classifier.py` 置 `None`）后，
+提复杂任务 → `delegate_backend / complex` → 落到 `config/agents.yaml` 的 `default_executor: workbuddy`。
+
+首跑（`run_706a989d36`）**失败**，但根因不在 WorkBuddy：`agents/acp.py` 用
+`asyncio.create_subprocess_exec` 建子进程时没传 `limit`，`StreamReader` 默认只有 64 KiB；
+ACP 端吐超长单行时 `readline()` 抛 `Separator is not found, and chunk exceed the limit`，
+reader 停摆，整条会话被判「ACP process exited」（该 run 已真实执行 107 秒并留下工具调用记录）。
+该报错已在隔离环境 100% 复现（同样 64 KiB 限制 + 200 KB 单行）。
+
+修复：`acp.py` 新增 `ACP_STREAM_LIMIT = 16 MiB` 并在 spawn 时传入 ——
+共享客户端对 codex / workbuddy 两条 ACP 通路同时生效；补回归测试
+`tests/test_acp.py::test_acp_reader_survives_oversized_line`。
+
+复验：`run_2db5180948`（`task_b297ce2553`，read-only）**completed**，
+6 分 14 秒、98 次工具调用，产出真实的目录结构分析结果。
+
+> WorkBuddy 桌面端**不需要**开着：适配器直接拉起其自带 CLI
+> （`/Applications/WorkBuddy.app/Contents/resources/app.asar.unpacked/cli/bin/codebuddy`）。
+
+### 7.3 macOS 上边缘隐藏（2026-09-15 修复）
+
+原问题：macOS 上吸附到屏幕上边缘完全不隐藏。实测窗口顶边越不过工作区顶部
+（AX 强行设成 `y=-200` 也被夹回 `y=25`），说明不是拖拽收尾造成的，是窗口服务器的硬限制；
+Windows 没有这条限制。
+
+修法：其它三边仍是「把窗口挪出屏幕、由系统裁掉」，上边缘改成「窗口留在工作区顶部、
+角色在窗口内上移」。Rust 侧把位置收回工作区顶部并把 `hiddenEdge: "top"` 带进 preferences，
+前端据此给 `.stage` 加 `bottom` 偏移（复用已有的 `transition`，隐藏/恢复带动画）。
+窗口屏幕占位没变，所以不会比原来多出透明死区。
+
+回归（macOS 真机、逐个边缘拖拽后读窗口位置）：上 `y=25` + 角色只留底部一条 ✓、
+右 `1607` ✓、左 `-245` ✓、下 `836` ✓；拖离边缘后 `hiddenEdge` 复位为 `null`、角色落回原位 ✓。
