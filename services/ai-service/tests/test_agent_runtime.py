@@ -295,6 +295,21 @@ def test_chat_task_reports_back_into_conversation(tmp_path, monkeypatch) -> None
         assert any(text.startswith("✓ 任务完成") and "fake result" in text for text in notes)
 
 
+def test_low_risk_chatter_is_not_auto_started(tmp_path, monkeypatch) -> None:
+    """随机一句闲聊：仍记进任务台，但不自动拉真实 agent。"""
+    adapter = FakeReadyAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        resp = client.post("/api/chat/stream", json={"message": "就是你看那个落花生。"})
+        done = next(
+            json.loads(line[6:])
+            for line in resp.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        assert done["task_category"] == "delegate_backend"
+        assert client.get(f"/api/tasks/{done['task_id']}/run").json()["run"] is None
+
+
 def test_execute_completed_updates_task_run_and_events(tmp_path, monkeypatch) -> None:
     adapter = FakeReadyAdapter()
     with make_client(tmp_path, monkeypatch, adapter) as client:

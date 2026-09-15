@@ -163,9 +163,15 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
         )
     # 后台任务直接起跑（read-only）：进度、报错、授权、结果都会写回本会话，
     # 不让用户再去「我的智能体」手动运行、翻找状态。
+    # 只在分流器识别出后台特征（risk_level != low）时自动起跑：随口一句闲聊
+    # 不该拉起真实 agent（这类任务仍会记进任务台，需要时手动运行）。
     auto_run = None
     auto_start_error = ""
-    if task.category == "delegate_backend" and not _is_echo_of_reply(body.message, conversation):
+    if (
+        task.category == "delegate_backend"
+        and task.risk_level != "low"
+        and not _is_echo_of_reply(body.message, conversation)
+    ):
         try:
             auto_run = await request.app.state.agent_run_manager.execute(task, mode="read-only")
         except Exception as exc:
