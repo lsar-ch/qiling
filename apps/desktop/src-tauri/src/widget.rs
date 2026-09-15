@@ -660,7 +660,9 @@ fn apply_position(
 fn schedule_position_retry(window: &tauri::WebviewWindow, target: PhysicalPosition<i32>) {
     let window = window.clone();
     thread::spawn(move || {
-        for _ in 0..8 {
+        // 每 150ms 校验一次、最多 3 秒：位置一旦对上就立刻退出，
+        // 正常情况下只会跑 1~2 轮；给窗口服务器慢的机器留足余量。
+        for _ in 0..20 {
             thread::sleep(Duration::from_millis(150));
             if let Some(state) = window.app_handle().try_state::<WidgetRuntimeState>() {
                 if state.dragging.load(Ordering::SeqCst) {
