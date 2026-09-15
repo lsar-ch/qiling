@@ -475,6 +475,8 @@ pub fn run() {
             widget::get_widget_preferences,
             widget::set_widget_auto_hide,
             widget::set_widget_scale,
+            widget::set_widget_visible_edges,
+            widget::set_widget_interactive_area,
             widget::start_widget_drag,
             widget::cancel_widget_drag,
             widget::finish_widget_drag,

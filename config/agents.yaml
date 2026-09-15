@@ -7,7 +7,9 @@
 # 默认只保留用户确认的 6 个执行器；后续需要新增时优先修改此目录，
 # 或使用同目录 config/agents.local.yaml 覆盖/追加，不改前端硬编码。
 version: 1
-default_executor: codex
+# 后台任务的兜底执行器。分流器不再硬编码 codex，所以这里才是真正的默认值。
+# 换成 workbuddy：它是 DeskMate 自带、开箱可用的一条 ACP 通路。
+default_executor: workbuddy
 executors:
   - name: codex
     label: Codex CLI

@@ -2,6 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+#[cfg(target_os = "windows")]
+use std::sync::Mutex;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -12,18 +14,21 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Physical
 const WIDGET_LABEL: &str = "widget";
 const WIDGET_EDGE_MARGIN: i32 = 18;
 const WIDGET_EDGE_TRIGGER: i32 = 44;
-// The default artwork has a large transparent area on its left, so the right-edge
-// snap needs to retain more pixels to keep the character itself visible.
-const WIDGET_VISIBLE_LEFT_EDGE: i32 = 128;
-const WIDGET_VISIBLE_RIGHT_EDGE: i32 = 232;
-const WIDGET_VISIBLE_TOP_EDGE: i32 = 176;
-const WIDGET_VISIBLE_BOTTOM_EDGE: i32 = 176;
 // ponytail: portable Tauri has no drag-release event, so quiet time approximates the end.
 // Replace it with a platform drag-end event if pausing during a drag feels premature.
 const WIDGET_DRAG_SETTLE_DELAY: Duration = Duration::from_millis(350);
 const WIDGET_MIN_SCALE: f64 = 0.75;
 const WIDGET_MAX_SCALE: f64 = 1.15;
 const WIDGET_PREFERENCES_FILE: &str = "widget.json";
+// 贴边隐藏后让透明区域不再拦截鼠标点击（目前只在 Windows 分支实现）。
+// 若隐藏态的挂件变得难以抓取，把这个开关改成 false 即可整体关掉该行为。
+#[cfg(target_os = "windows")]
+const WIDGET_POINTER_PASS_THROUGH: bool = true;
+#[cfg(target_os = "windows")]
+const WIDGET_POINTER_POLL_INTERVAL: Duration = Duration::from_millis(80);
+// 光标落在可交互区域外这么多个逻辑像素才算“不打算抓挂件”，避免边缘抖动。
+#[cfg(target_os = "windows")]
+const WIDGET_POINTER_GRAB_MARGIN: f64 = 20.0;
 
 #[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -37,7 +42,31 @@ fn primary_mouse_down() -> bool {
     unsafe { CGEventSourceButtonState(0, 0) }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+extern "system" {
+    fn GetAsyncKeyState(v_key: i32) -> i16;
+    fn GetCursorPos(point: *mut ScreenPoint) -> i32;
+}
+
+/// 屏幕物理像素坐标，布局与 Windows 的 POINT 一致。
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+struct ScreenPoint {
+    x: i32,
+    y: i32,
+}
+
+/// VK_LBUTTON = 0x01，返回值最高位为 1 表示当前按下。
+/// 旧实现在非 macOS 平台直接返回 false，于是 settle_worker 里
+/// “等鼠标真的松开”那段循环在 Windows 上完全空转。
+#[cfg(target_os = "windows")]
+fn primary_mouse_down() -> bool {
+    unsafe { (GetAsyncKeyState(0x01) as u16 & 0x8000) != 0 }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn primary_mouse_down() -> bool {
     false
 }
@@ -66,6 +95,55 @@ pub struct WidgetPosition {
     pub y: i32,
 }
 
+/// 贴边隐藏时窗口保留在屏幕内的逻辑像素数，按吸附到哪条屏幕边区分：
+/// `when_left` / `when_right` 是吸附到屏幕左 / 右边缘时保留的宽度，
+/// `when_top` / `when_bottom` 是吸附到屏幕上 / 下边缘时保留的高度。
+/// 由前端根据立绘的内容包围盒推算后回传，避免针对某一版素材硬编码
+/// （旧常量假设立绘左侧有大片透明区，换素材或改缩放大小时切割位置就会错位）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisibleEdges {
+    pub when_left: i32,
+    pub when_right: i32,
+    pub when_top: i32,
+    pub when_bottom: i32,
+}
+
+impl Default for VisibleEdges {
+    fn default() -> Self {
+        // 前端尚未回传时的兜底值，等价于旧版常量。
+        Self {
+            when_left: 128,
+            when_right: 232,
+            when_top: 176,
+            when_bottom: 176,
+        }
+    }
+}
+
+impl VisibleEdges {
+    fn sanitized(self) -> Self {
+        let clamp = |value: i32| value.clamp(0, 4096);
+        Self {
+            when_left: clamp(self.when_left),
+            when_right: clamp(self.when_right),
+            when_top: clamp(self.when_top),
+            when_bottom: clamp(self.when_bottom),
+        }
+    }
+}
+
+/// 前端回传的“角色可交互矩形”，窗口逻辑坐标（CSS px）。
+/// 光标落在它之外时，隐藏态的挂件不再拦截鼠标点击。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractiveArea {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PositionMode {
     Preserve,
@@ -81,6 +159,8 @@ pub struct WidgetPreferences {
     pub monitor: Option<String>,
     pub auto_hide: bool,
     pub scale: f64,
+    /// 前端按当前素材算出的贴边保留量；缺失时用 VisibleEdges::default()。
+    pub visible_edges: VisibleEdges,
 }
 
 impl Default for WidgetPreferences {
@@ -91,6 +171,7 @@ impl Default for WidgetPreferences {
             monitor: None,
             auto_hide: true,
             scale: 1.0,
+            visible_edges: VisibleEdges::default(),
         }
     }
 }
@@ -105,6 +186,8 @@ impl WidgetPreferences {
 pub struct WidgetRuntimeState {
     move_tx: Sender<()>,
     dragging: Arc<AtomicBool>,
+    #[cfg(target_os = "windows")]
+    interactive: Arc<Mutex<Option<InteractiveArea>>>,
 }
 
 impl WidgetRuntimeState {
@@ -112,8 +195,34 @@ impl WidgetRuntimeState {
         let (move_tx, move_rx) = mpsc::channel();
         let dragging = Arc::new(AtomicBool::new(false));
         let worker_dragging = Arc::clone(&dragging);
-        thread::spawn(move || settle_worker(app, move_rx, worker_dragging));
-        Self { move_tx, dragging }
+        let settle_app = app.clone();
+        thread::spawn(move || settle_worker(settle_app, move_rx, worker_dragging));
+
+        #[cfg(target_os = "windows")]
+        let interactive = {
+            // 穿透线程通过 app.try_state 反查本结构体，所以这里不用再克隆一份 Arc。
+            thread::spawn(move || pointer_pass_through_worker(app));
+            Arc::new(Mutex::new(None))
+        };
+
+        Self {
+            move_tx,
+            dragging,
+            #[cfg(target_os = "windows")]
+            interactive,
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn set_interactive_area(&self, area: Option<InteractiveArea>) {
+        if let Ok(mut guard) = self.interactive.lock() {
+            *guard = area;
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn interactive_area(&self) -> Option<InteractiveArea> {
+        self.interactive.lock().ok().and_then(|guard| *guard)
     }
 
     pub fn begin_drag(&self) {
@@ -147,6 +256,7 @@ pub fn settle_position_in_work_area(
     area: WorkArea,
     auto_hide: bool,
     scale_factor: f64,
+    visible: VisibleEdges,
 ) -> WidgetPosition {
     let width = size.width as i64;
     let height = size.height as i64;
@@ -181,19 +291,18 @@ pub fn settle_position_in_work_area(
         };
     }
 
-    let visible_left = ((WIDGET_VISIBLE_LEFT_EDGE as f64 * scale_factor).round() as i64).min(width);
-    let visible_right =
-        ((WIDGET_VISIBLE_RIGHT_EDGE as f64 * scale_factor).round() as i64).min(width);
-    let visible_top = ((WIDGET_VISIBLE_TOP_EDGE as f64 * scale_factor).round() as i64).min(height);
-    let visible_bottom =
-        ((WIDGET_VISIBLE_BOTTOM_EDGE as f64 * scale_factor).round() as i64).min(height);
+    let to_physical = |value: i32| ((value as f64) * scale_factor).round() as i64;
+    let visible_left = to_physical(visible.when_left).min(width);
+    let visible_right = to_physical(visible.when_right).min(width);
+    let visible_top = to_physical(visible.when_top).min(height);
+    let visible_bottom = to_physical(visible.when_bottom).min(height);
     let mut x = clamped_x;
     let mut y = clamped_y;
     match edge {
         0 => x = area.x as i64 - width + visible_left,
         1 => x = area.right() - visible_right,
-        2 => y = area.y as i64 - height + visible_bottom,
-        3 => y = area.bottom() - visible_top,
+        2 => y = area.y as i64 - height + visible_top,
+        3 => y = area.bottom() - visible_bottom,
         _ => unreachable!("edge index is bounded"),
     }
 
@@ -214,19 +323,19 @@ fn preserve_position_in_work_area(
     size: PhysicalSize<u32>,
     area: WorkArea,
     scale_factor: f64,
+    visible: VisibleEdges,
 ) -> WidgetPosition {
     let width = size.width as i64;
     let height = size.height as i64;
-    let visible_left = ((WIDGET_VISIBLE_LEFT_EDGE as f64 * scale_factor).round() as i64).min(width);
-    let visible_right =
-        ((WIDGET_VISIBLE_RIGHT_EDGE as f64 * scale_factor).round() as i64).min(width);
-    let visible_top = ((WIDGET_VISIBLE_TOP_EDGE as f64 * scale_factor).round() as i64).min(height);
-    let visible_bottom =
-        ((WIDGET_VISIBLE_BOTTOM_EDGE as f64 * scale_factor).round() as i64).min(height);
+    let to_physical = |value: i32| ((value as f64) * scale_factor).round() as i64;
+    let visible_left = to_physical(visible.when_left).min(width);
+    let visible_right = to_physical(visible.when_right).min(width);
+    let visible_top = to_physical(visible.when_top).min(height);
+    let visible_bottom = to_physical(visible.when_bottom).min(height);
     let min_x = area.x as i64 - width + visible_left;
     let max_x = area.right() - visible_right;
-    let min_y = area.y as i64 - height + visible_bottom;
-    let max_y = area.bottom() - visible_top;
+    let min_y = area.y as i64 - height + visible_top;
+    let max_y = area.bottom() - visible_bottom;
     WidgetPosition {
         x: (position.x as i64).clamp(min_x.min(max_x), max_x) as i32,
         y: (position.y as i64).clamp(min_y.min(max_y), max_y) as i32,
@@ -255,6 +364,44 @@ pub fn set_widget_scale(app: AppHandle, scale: f64) -> Result<WidgetPreferences,
     preferences.scale = normalize_scale(scale);
     save_preferences(&app, &preferences)?;
     Ok(preferences)
+}
+
+#[tauri::command]
+pub fn set_widget_visible_edges(
+    app: AppHandle,
+    edges: VisibleEdges,
+) -> Result<WidgetPreferences, String> {
+    let mut preferences = load_preferences(&app);
+    preferences.visible_edges = edges.sanitized();
+    // 立刻按新的保留量重新收边，否则要等下一次拖动才生效。
+    let mode = if preferences.auto_hide {
+        PositionMode::Preserve
+    } else {
+        PositionMode::ClampInside
+    };
+    settle_current_widget_position(&app, mode, &mut preferences)?;
+    save_preferences(&app, &preferences)?;
+    Ok(preferences)
+}
+
+/// 前端把「角色/右键菜单当前占据的矩形」报上来，供 Windows 下的鼠标穿透判定使用。
+#[tauri::command]
+pub fn set_widget_interactive_area(
+    app: AppHandle,
+    area: Option<InteractiveArea>,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let state = app
+            .try_state::<WidgetRuntimeState>()
+            .ok_or_else(|| "挂件运行状态不可用".to_string())?;
+        state.set_interactive_area(area);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, area);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -368,6 +515,76 @@ fn settle_worker(app: AppHandle, move_rx: Receiver<()>, dragging: Arc<AtomicBool
     }
 }
 
+/// 贴边隐藏后，窗口里那块透明区域照样会吃掉鼠标点击 —— Windows 上窗口既没有
+/// WS_EX_TRANSPARENT 也没有 WS_EX_LAYERED。这里轮询系统光标位置：光标不在
+/// 角色/右键菜单矩形内时把整窗设为点击穿透，移回来立刻恢复。
+#[cfg(target_os = "windows")]
+fn pointer_pass_through_worker(app: AppHandle) {
+    let mut ignoring = false;
+    loop {
+        thread::sleep(WIDGET_POINTER_POLL_INTERVAL);
+        let Some(window) = app.get_webview_window(WIDGET_LABEL) else {
+            continue;
+        };
+        let wanted = WIDGET_POINTER_PASS_THROUGH && should_ignore_cursor(&app, &window);
+        if wanted != ignoring && window.set_ignore_cursor_events(wanted).is_ok() {
+            ignoring = wanted;
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn should_ignore_cursor(app: &AppHandle, window: &tauri::WebviewWindow) -> bool {
+    // 只有「自动隐藏开着」且「窗口确实被屏幕切掉一块」时才接管，正常态一律不干预。
+    if !load_preferences(app).auto_hide {
+        return false;
+    }
+    let Some(state) = app.try_state::<WidgetRuntimeState>() else {
+        return false;
+    };
+    let Some(rect) = state.interactive_area() else {
+        return false;
+    };
+    let (Ok(position), Ok(size), Ok(scale_factor)) = (
+        window.outer_position(),
+        window.outer_size(),
+        window.scale_factor(),
+    ) else {
+        return false;
+    };
+    let Ok((area, _)) = monitor_for_position(
+        window,
+        WidgetPosition {
+            x: position.x,
+            y: position.y,
+        },
+        size,
+    ) else {
+        return false;
+    };
+    let cut = position.x < area.x
+        || position.x as i64 + size.width as i64 > area.right()
+        || position.y < area.y
+        || position.y as i64 + size.height as i64 > area.bottom();
+    if !cut {
+        return false;
+    }
+    let mut cursor = ScreenPoint::default();
+    if unsafe { GetCursorPos(&mut cursor) } == 0 {
+        return false;
+    }
+    let margin = WIDGET_POINTER_GRAB_MARGIN * scale_factor;
+    let left = position.x as f64 + rect.x * scale_factor - margin;
+    let top = position.y as f64 + rect.y * scale_factor - margin;
+    let right = position.x as f64 + (rect.x + rect.width) * scale_factor + margin;
+    let bottom = position.y as f64 + (rect.y + rect.height) * scale_factor + margin;
+    let inside = cursor.x as f64 >= left
+        && cursor.x as f64 <= right
+        && cursor.y as f64 >= top
+        && cursor.y as f64 <= bottom;
+    !inside
+}
+
 fn settle_and_emit(app: &AppHandle) -> Result<(), String> {
     let mut preferences = load_preferences(app);
     let mode = if preferences.auto_hide {
@@ -415,15 +632,16 @@ fn apply_position(
     let scale_factor = window
         .scale_factor()
         .map_err(|error| format!("读取显示器缩放失败: {error}"))?;
+    let visible = preferences.visible_edges;
     let settled = match mode {
         PositionMode::Preserve => {
-            preserve_position_in_work_area(position, size, area, scale_factor)
+            preserve_position_in_work_area(position, size, area, scale_factor, visible)
         }
         PositionMode::ClampInside => {
-            settle_position_in_work_area(position, size, area, false, scale_factor)
+            settle_position_in_work_area(position, size, area, false, scale_factor, visible)
         }
         PositionMode::SnapToEdge => {
-            settle_position_in_work_area(position, size, area, true, scale_factor)
+            settle_position_in_work_area(position, size, area, true, scale_factor, visible)
         }
     };
     window
@@ -564,6 +782,7 @@ mod tests {
             AREA,
             false,
             1.0,
+            VisibleEdges::default(),
         );
         assert_eq!(result, WidgetPosition { x: 1490, y: 600 });
     }
@@ -571,19 +790,19 @@ mod tests {
     #[test]
     fn hides_at_each_edge_but_keeps_visible_pixels() {
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 20, y: 300 }, SIZE, AREA, true, 1.0),
+            settle_position_in_work_area(WidgetPosition { x: 20, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
             WidgetPosition { x: -302, y: 300 }
         );
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 1640, y: 300 }, SIZE, AREA, true, 1.0),
+            settle_position_in_work_area(WidgetPosition { x: 1640, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
             WidgetPosition { x: 1688, y: 300 }
         );
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 300, y: 20 }, SIZE, AREA, true, 1.0),
+            settle_position_in_work_area(WidgetPosition { x: 300, y: 20 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
             WidgetPosition { x: 300, y: -304 }
         );
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 300, y: 780 }, SIZE, AREA, true, 1.0),
+            settle_position_in_work_area(WidgetPosition { x: 300, y: 780 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
             WidgetPosition { x: 300, y: 904 }
         );
     }
@@ -592,7 +811,7 @@ mod tests {
     fn leaves_center_positions_unchanged() {
         let position = WidgetPosition { x: 600, y: 400 };
         assert_eq!(
-            settle_position_in_work_area(position, SIZE, AREA, true, 1.0),
+            settle_position_in_work_area(position, SIZE, AREA, true, 1.0, VisibleEdges::default()),
             position
         );
     }
@@ -600,14 +819,14 @@ mod tests {
     #[test]
     fn snaps_only_the_dominant_edge_at_a_corner() {
         let result =
-            settle_position_in_work_area(WidgetPosition { x: 20, y: 10 }, SIZE, AREA, true, 1.0);
+            settle_position_in_work_area(WidgetPosition { x: 20, y: 10 }, SIZE, AREA, true, 1.0, VisibleEdges::default());
         assert_eq!(result, WidgetPosition { x: 20, y: -304 });
     }
 
     #[test]
     fn snaps_when_drag_crosses_an_edge() {
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 2000, y: 300 }, SIZE, AREA, true, 1.0),
+            settle_position_in_work_area(WidgetPosition { x: 2000, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
             WidgetPosition { x: 1688, y: 300 }
         );
     }
@@ -630,6 +849,7 @@ mod tests {
                 },
                 true,
                 2.0,
+                VisibleEdges::default(),
             ),
             WidgetPosition { x: 3376, y: 1000 }
         );
@@ -638,11 +858,11 @@ mod tests {
     #[test]
     fn preserves_saved_offscreen_position_but_keeps_it_reachable() {
         assert_eq!(
-            preserve_position_in_work_area(WidgetPosition { x: 1688, y: 600 }, SIZE, AREA, 1.0),
+            preserve_position_in_work_area(WidgetPosition { x: 1688, y: 600 }, SIZE, AREA, 1.0, VisibleEdges::default()),
             WidgetPosition { x: 1688, y: 600 }
         );
         assert_eq!(
-            preserve_position_in_work_area(WidgetPosition { x: 5000, y: -5000 }, SIZE, AREA, 1.0),
+            preserve_position_in_work_area(WidgetPosition { x: 5000, y: -5000 }, SIZE, AREA, 1.0, VisibleEdges::default()),
             WidgetPosition { x: 1688, y: -304 }
         );
     }
@@ -652,5 +872,150 @@ mod tests {
         assert_eq!(normalize_scale(0.2), 0.75);
         assert_eq!(normalize_scale(4.0), 1.15);
         assert_eq!(normalize_scale(f64::NAN), 1.0);
+    }
+
+    #[test]
+    fn keeps_the_requested_amount_visible_at_each_edge() {
+        // 前端按内容包围盒回传的保留量互不相等，用来锁住「每条边保留多少」的语义。
+        let visible = VisibleEdges {
+            when_left: 200,
+            when_right: 120,
+            when_top: 90,
+            when_bottom: 150,
+        };
+        // 吸附左边缘：保留窗口最右侧 200px
+        assert_eq!(
+            settle_position_in_work_area(
+                WidgetPosition { x: 10, y: 300 },
+                SIZE,
+                AREA,
+                true,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: -230, y: 300 }
+        );
+        // 吸附右边缘：保留窗口最左侧 120px
+        assert_eq!(
+            settle_position_in_work_area(
+                WidgetPosition { x: 1900, y: 300 },
+                SIZE,
+                AREA,
+                true,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: 1800, y: 300 }
+        );
+        // 吸附上边缘：保留窗口最下侧 90px
+        assert_eq!(
+            settle_position_in_work_area(
+                WidgetPosition { x: 600, y: 10 },
+                SIZE,
+                AREA,
+                true,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: 600, y: -390 }
+        );
+        // 吸附下边缘：保留窗口最上侧 150px
+        assert_eq!(
+            settle_position_in_work_area(
+                WidgetPosition { x: 600, y: 1000 },
+                SIZE,
+                AREA,
+                true,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: 600, y: 930 }
+        );
+        // 保存位置时同样不能用小于保留量的范围把窗口推回屏幕里
+        assert_eq!(
+            preserve_position_in_work_area(
+                WidgetPosition { x: -230, y: 930 },
+                SIZE,
+                AREA,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: -230, y: 930 }
+        );
+    }
+
+    #[test]
+    fn clamps_oversized_visible_edges_to_the_window() {
+        // 前端算出的保留量大于窗口尺寸时，不能让窗口被推成负方向。
+        let visible = VisibleEdges {
+            when_left: 9_999,
+            when_right: 9_999,
+            when_top: 9_999,
+            when_bottom: 9_999,
+        };
+        assert_eq!(
+            settle_position_in_work_area(
+                WidgetPosition { x: 10, y: 300 },
+                SIZE,
+                AREA,
+                true,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: 0, y: 300 }
+        );
+        assert_eq!(
+            settle_position_in_work_area(
+                WidgetPosition { x: 1900, y: 300 },
+                SIZE,
+                AREA,
+                true,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: 1490, y: 300 }
+        );
+        assert_eq!(
+            settle_position_in_work_area(
+                WidgetPosition { x: 600, y: 10 },
+                SIZE,
+                AREA,
+                true,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: 600, y: 0 }
+        );
+        assert_eq!(
+            settle_position_in_work_area(
+                WidgetPosition { x: 600, y: 1000 },
+                SIZE,
+                AREA,
+                true,
+                1.0,
+                visible
+            ),
+            WidgetPosition { x: 600, y: 600 }
+        );
+    }
+
+    #[test]
+    fn sanitizes_front_end_visible_edges() {
+        let sanitized = VisibleEdges {
+            when_left: -5,
+            when_right: 99_999,
+            when_top: 0,
+            when_bottom: 64,
+        }
+        .sanitized();
+        assert_eq!(
+            sanitized,
+            VisibleEdges {
+                when_left: 0,
+                when_right: 4096,
+                when_top: 0,
+                when_bottom: 64,
+            }
+        );
     }
 }

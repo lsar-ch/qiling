@@ -18,6 +18,7 @@ import {
   synthesizeSpeech,
   type ExpressionEmotion,
   type ExpressionEvent,
+  type PersonaAssetMetrics,
   type PersonaPresentation,
   type VoiceEndpointStatus,
   type WsMessage,
@@ -66,6 +67,14 @@ type DragStart = {
   y: number;
 };
 
+/** 挂件窗口逻辑坐标（CSS px）下的矩形。 */
+type InteractiveBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 function normText(text: string): string {
   return text.replace(/[\s，。！？、,.!?'"“”]/g, "").toLowerCase();
 }
@@ -85,6 +94,14 @@ const WIDGET_SCALE_MIN = 0.75;
 const WIDGET_SCALE_MAX = 1.15;
 const CONTEXT_MENU_WIDTH = 188;
 const CONTEXT_MENU_HEIGHT = 170;
+// 贴边隐藏后角色仍需露在屏幕内的「抓手」宽度（逻辑像素），按角色实际内容尺寸等比推算。
+const WIDGET_HIDE_HANDLE_MIN = 64;
+const WIDGET_HIDE_HANDLE_MAX = 140;
+const WIDGET_HIDE_HANDLE_RATIO = 0.34;
+// 判定鼠标是否落在挂件可交互区域时给的额外容差，便于隐藏后把角色拖回来。
+const WIDGET_INTERACTIVE_PADDING = 16;
+// 同一轮对话里 submitText 与 conversation.completed 都会要求展开主界面，去重窗口。
+const MAIN_UI_AUTO_DEDUPE_MS = 2000;
 
 function applyPresentation(pres: PersonaPresentation): void {
   const root = document.querySelector<HTMLDivElement>(".w-root");
@@ -120,6 +137,7 @@ export default function Widget() {
   const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   const [alert, setAlert] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [assetMetrics, setAssetMetrics] = useState<PersonaAssetMetrics | null>(null);
   const [preferences, setPreferences] = useState<WidgetPreferences>({
     x: null,
     y: null,
@@ -157,6 +175,12 @@ export default function Widget() {
   const draggingRef = useRef(false);
   const suppressClickUntilRef = useRef(0);
   const dragFallbackTimerRef = useRef<number | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const mascotRef = useRef<HTMLImageElement | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement | null>(null);
+  const mainUiOpenedAtRef = useRef(0);
+  // 供 window.resize 监听拿到最新一版同步函数（闭包里要用最新的 assetMetrics）。
+  const syncOverlayRef = useRef<() => void>(() => {});
 
   busyRef.current = busy;
   voiceModeRef.current = voiceMode;
@@ -243,6 +267,23 @@ export default function Widget() {
     } catch {
       /* 桌面调用失败时静默，保留当前挂件 */
     }
+  };
+
+  /**
+   * 自动展开（长回复落地到对话页）会同时从 submitText 和 conversation.completed
+   * 两条路径触发，过去一轮对话会开出两个标签页 —— 这里按时间窗去重。
+   */
+  const openMainUiAuto = (page?: string): void => {
+    const now = Date.now();
+    if (now - mainUiOpenedAtRef.current < MAIN_UI_AUTO_DEDUPE_MS) return;
+    mainUiOpenedAtRef.current = now;
+    void openMainUi(page);
+  };
+
+  /** 用户主动打开（双击 / 右键菜单）：始终放行，并占用去重窗口避免紧接着再自动弹一次。 */
+  const openMainUiManual = (page?: string): void => {
+    mainUiOpenedAtRef.current = Date.now();
+    void openMainUi(page);
   };
 
   const ensureAudioContext = async (): Promise<AudioContext | null> => {
@@ -339,15 +380,16 @@ export default function Widget() {
         /* 挂件只展示短回复，不渲染流式全文 */
       });
       conversationIdRef.current = done.conversation_id;
+      // 长回复只把摘要放进气泡并朗读，全文交给对话页。早先这里跳过气泡，
+      // 挂件会一直停在「正在思考…」并且一句话都不播报。
+      showBrief(done.short ? done.message || done.speak_text : done.speak_text || done.message);
+      if (speakReply && voiceStatusRef.current?.enabled && voiceStatusRef.current.auto_speak && voiceModeRef.current !== "off") {
+        stopSpeaking();
+        void speak(done.speak_text || done.message);
+      }
       if (!done.short) {
         // 长回复直接落到对话页，用户不用再手点一次
-        void openMainUi("chat");
-      } else {
-        showBrief(done.message || done.speak_text);
-        if (speakReply && voiceStatusRef.current?.enabled && voiceStatusRef.current.auto_speak && voiceModeRef.current !== "off") {
-          stopSpeaking();
-          void speak(done.speak_text || done.message);
-        }
+        openMainUiAuto("chat");
       }
     } catch (e) {
       showBrief(e instanceof Error ? `回复失败：${e.message}` : "回复失败");
@@ -490,6 +532,12 @@ export default function Widget() {
         if (!alive) return;
         setMascotArt(resolveMascotUrl(asset.avatar));
         setPresentation((current) => current ? { ...current, style: asset.style } : current);
+        setAssetMetrics({
+          personaId: asset.personaId,
+          canvasWidth: asset.canvasWidth,
+          canvasHeight: asset.canvasHeight,
+          contentBbox: asset.contentBbox,
+        });
       })
       .catch(() => {
         /* WebSocket 的 persona.presentation 仍会提供角色资产 */
@@ -575,8 +623,8 @@ export default function Widget() {
 
       if (msg.event_type === "conversation.completed") {
         if (msg.payload?.expand_ui === true && widgetTurnRef.current) {
-          // 与 submitText 里的长回复分支保持一致，落到对话页
-          void openMainUi("chat");
+          // 与 submitText 里的长回复分支保持一致，落到对话页（重复触发由去重窗口吸收）
+          openMainUiAuto("chat");
         }
       }
 
@@ -899,43 +947,169 @@ export default function Widget() {
       });
   };
 
+  /**
+   * 把素材清单里的内容包围盒换算成窗口逻辑坐标矩形。
+   * 用 stage 的 getBoundingClientRect（含 translateX(-50%)）叠加 img 的 offset 系列，
+   * 既含舞台定位偏移、又不含呼吸缩放动画，测量值不会随动画抖动。
+   */
+  const measureContentBox = (): InteractiveBox | null => {
+    const img = mascotRef.current;
+    const stage = stageRef.current;
+    const metrics = assetMetrics;
+    if (!img || !stage || !metrics?.contentBbox) return null;
+    const baseW = metrics.canvasWidth || img.naturalWidth;
+    const baseH = metrics.canvasHeight || img.naturalHeight;
+    const boxW = img.offsetWidth;
+    const boxH = img.offsetHeight;
+    if (!baseW || !baseH || !boxW || !boxH) return null;
+    // .mascot 是 object-fit: contain —— 图片在元素内等比居中绘制
+    const drawScale = Math.min(boxW / baseW, boxH / baseH);
+    const stageRect = stage.getBoundingClientRect();
+    const drawX = stageRect.left + img.offsetLeft + (boxW - baseW * drawScale) / 2;
+    const drawY = stageRect.top + img.offsetTop + (boxH - baseH * drawScale) / 2;
+    const [x0, y0, x1, y1] = metrics.contentBbox;
+    return {
+      x: drawX + x0 * drawScale,
+      y: drawY + y0 * drawScale,
+      width: Math.max(1, (x1 - x0 + 1) * drawScale),
+      height: Math.max(1, (y1 - y0 + 1) * drawScale),
+    };
+  };
+
+  /** 角色内容 + 展开中的右键菜单的并集：贴边隐藏后这块区域不穿透鼠标，保证还能抓回来。 */
+  const interactiveArea = (box: InteractiveBox | null): InteractiveBox | null => {
+    const rects: InteractiveBox[] = [];
+    if (box) rects.push(box);
+    const menu = ctxMenuRef.current?.getBoundingClientRect();
+    if (menu && menu.width > 0 && menu.height > 0) {
+      rects.push({ x: menu.left, y: menu.top, width: menu.width, height: menu.height });
+    }
+    if (rects.length === 0) return null;
+    const pad = WIDGET_INTERACTIVE_PADDING;
+    const left = Math.min(...rects.map((r) => r.x)) - pad;
+    const top = Math.min(...rects.map((r) => r.y)) - pad;
+    const right = Math.max(...rects.map((r) => r.x + r.width)) + pad;
+    const bottom = Math.max(...rects.map((r) => r.y + r.height)) + pad;
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  };
+
+  /**
+   * 把「贴边保留量」和「鼠标穿透区域」回传给 Rust 侧。
+   * 旧实现把保留量写死成四个常量（假设立绘左侧有大片透明区），换角色或调大小后
+   * 切边位置立刻错位，极端情况下整个角色被推出屏幕、拖不回来；现在按实际内容包围盒推算。
+   */
+  const syncWidgetOverlayGeometry = (includeEdges: boolean): void => {
+    const box = measureContentBox();
+    if (includeEdges && box) {
+      const handle = Math.min(
+        WIDGET_HIDE_HANDLE_MAX,
+        Math.max(
+          WIDGET_HIDE_HANDLE_MIN,
+          Math.round(Math.min(box.width, box.height) * WIDGET_HIDE_HANDLE_RATIO),
+        ),
+      );
+      const edges = {
+        // 吸附到屏幕左 / 右边缘时保留的宽度
+        whenLeft: Math.round(window.innerWidth - box.x - box.width + handle),
+        whenRight: Math.round(box.x + handle),
+        // 吸附到屏幕上 / 下边缘时保留的高度
+        whenTop: Math.round(window.innerHeight - box.y - box.height + handle),
+        whenBottom: Math.round(box.y + handle),
+      };
+      void invoke("set_widget_visible_edges", { edges }).catch(() => {
+        /* 非 Tauri 环境或后端不支持时忽略 */
+      });
+    }
+    void invoke("set_widget_interactive_area", { area: interactiveArea(box) }).catch(() => {
+      /* 同上 */
+    });
+  };
+  syncOverlayRef.current = () => syncWidgetOverlayGeometry(true);
+
+  // 素材 / 缩放 / 气泡 / 输入条变化会同时改变内容位置与窗口高度，需重新测量。
+  useLayoutEffect(() => {
+    syncWidgetOverlayGeometry(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetMetrics, mascotArt, preferences.scale, preferences.autoHide, bubble, inputOpen]);
+
+  // 右键菜单展开时把菜单本身并入可交互区域。
+  useLayoutEffect(() => {
+    syncWidgetOverlayGeometry(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxMenu]);
+
+  useEffect(() => {
+    const onResize = (): void => syncOverlayRef.current();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const openContextMenu = (event: React.MouseEvent): void => {
     event.preventDefault();
-    const fallback = {
-      x: Math.max(4, Math.min(event.clientX, window.innerWidth - CONTEXT_MENU_WIDTH)),
-      y: Math.max(4, Math.min(event.clientY, window.innerHeight - CONTEXT_MENU_HEIGHT)),
-    };
-    setCtxMenu(fallback);
+    const clampToWindow = (x: number, y: number, width: number, height: number) => ({
+      x: Math.max(4, Math.min(x, Math.max(4, window.innerWidth - width - 4))),
+      y: Math.max(4, Math.min(y, Math.max(4, window.innerHeight - height - 4))),
+    });
+    setCtxMenu(clampToWindow(event.clientX, event.clientY, CONTEXT_MENU_WIDTH, CONTEXT_MENU_HEIGHT));
 
     const desktopWindow = getCurrentWindow();
-    void Promise.all([
-      desktopWindow.outerPosition(),
-      currentMonitor(),
-    ])
+    void Promise.all([desktopWindow.outerPosition(), currentMonitor()])
       .then(([position, monitor]) => {
         if (!monitor) return;
         const scale = monitor.scaleFactor;
-        const minX = monitor.workArea.position.x + 4 * scale;
-        const maxX =
-          monitor.workArea.position.x +
-          monitor.workArea.size.width -
-          (CONTEXT_MENU_WIDTH + 4) * scale;
-        const minY = monitor.workArea.position.y + 4 * scale;
-        const maxY =
-          monitor.workArea.position.y +
-          monitor.workArea.size.height -
-          (CONTEXT_MENU_HEIGHT + 4) * scale;
-        const desiredX = position.x + event.clientX * scale;
-        const desiredY = position.y + event.clientY * scale;
+        // 菜单是窗口内的 fixed 元素：既不能超出显示器工作区，也不能被挂件窗口自身裁掉。
+        // 两个约束换算到窗口逻辑坐标后取交集，交集为空（挂件被贴边切掉大半）时以窗口为准。
+        const localMinX = (monitor.workArea.position.x + 4 * scale - position.x) / scale;
+        const localMaxX =
+          (monitor.workArea.position.x +
+            monitor.workArea.size.width -
+            (CONTEXT_MENU_WIDTH + 4) * scale -
+            position.x) /
+          scale;
+        const localMinY = (monitor.workArea.position.y + 4 * scale - position.y) / scale;
+        const localMaxY =
+          (monitor.workArea.position.y +
+            monitor.workArea.size.height -
+            (CONTEXT_MENU_HEIGHT + 4) * scale -
+            position.y) /
+          scale;
+        const intersect = (
+          windowRange: [number, number],
+          monitorRange: [number, number],
+        ): [number, number] =>
+          windowRange[0] > monitorRange[1] || monitorRange[0] > windowRange[1]
+            ? windowRange
+            : [Math.max(windowRange[0], monitorRange[0]), Math.min(windowRange[1], monitorRange[1])];
+        const [minX, maxX] = intersect(
+          [4, Math.max(4, window.innerWidth - CONTEXT_MENU_WIDTH - 4)],
+          [localMinX, localMaxX],
+        );
+        const [minY, maxY] = intersect(
+          [4, Math.max(4, window.innerHeight - CONTEXT_MENU_HEIGHT - 4)],
+          [localMinY, localMaxY],
+        );
         setCtxMenu({
-          x: (Math.max(minX, Math.min(desiredX, maxX)) - position.x) / scale,
-          y: (Math.max(minY, Math.min(desiredY, maxY)) - position.y) / scale,
+          x: Math.max(minX, Math.min(event.clientX, maxX)),
+          y: Math.max(minY, Math.min(event.clientY, maxY)),
         });
       })
       .catch(() => {
         /* 非 Tauri 环境保留窗口内回退位置 */
       });
   };
+
+  // 菜单高度随内容与角色缩放浮动，渲染后按实测尺寸再收一次窗口边界，
+  // 确保最下面的「退出 DeskMate」不会被挂件窗口裁掉。
+  useLayoutEffect(() => {
+    if (!ctxMenu) return;
+    const el = ctxMenuRef.current;
+    if (!el) return;
+    const width = el.offsetWidth || CONTEXT_MENU_WIDTH;
+    const height = el.offsetHeight || CONTEXT_MENU_HEIGHT;
+    const x = Math.max(4, Math.min(ctxMenu.x, Math.max(4, window.innerWidth - width - 4)));
+    const y = Math.max(4, Math.min(ctxMenu.y, Math.max(4, window.innerHeight - height - 4)));
+    if (x !== ctxMenu.x || y !== ctxMenu.y) setCtxMenu({ x, y });
+  }, [ctxMenu]);
 
   const voiceEnabled = voiceStatus?.enabled === true;
   const chipText =
@@ -1007,6 +1181,7 @@ export default function Widget() {
 
       <div
         className="stage"
+        ref={stageRef}
         data-active={active ? "1" : "0"}
         style={{ "--mascot-size": `${MASCOT_BASE_SIZE * preferences.scale}px` } as CSSProperties}
         title="点击激活（播报中点击打断）· 双击打开主界面 · 按住拖动 · 右键菜单"
@@ -1041,7 +1216,7 @@ export default function Widget() {
             event.stopPropagation();
             return;
           }
-          void openMainUi();
+          void openMainUiManual();
         }}
         onContextMenu={(e) => {
           openContextMenu(e);
@@ -1057,6 +1232,7 @@ export default function Widget() {
         </div>
         <img
           className="mascot"
+          ref={mascotRef}
           src={mascotArt}
           alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
           draggable={false}
@@ -1099,13 +1275,14 @@ export default function Widget() {
       {ctxMenu && (
         <div
           className="ctx-menu"
+          ref={ctxMenuRef}
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           data-no-drag
         >
           <button
             onClick={() => {
               setCtxMenu(null);
-              void openMainUi();
+              void openMainUiManual();
             }}
           >
             打开主界面

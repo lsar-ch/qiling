@@ -32,7 +32,7 @@ def test_health_reports_capability_summary_without_secrets() -> None:
         assert caps["text_chat"] is True
         assert caps["memory"] is True
         assert isinstance(caps["voice"], bool)
-        assert caps["agents"]["default_executor"] == "codex"
+        assert caps["agents"]["default_executor"] == "workbuddy"
         assert isinstance(caps["agents"]["ready"], list)
         assert isinstance(caps["agents"]["degraded"], list)
         assert all("integration_status" in item for item in caps["agents"]["degraded"])

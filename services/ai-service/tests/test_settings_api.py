@@ -123,6 +123,13 @@ def test_persona_avatar_upload_and_validation(tmp_path: Path, monkeypatch) -> No
         assert manifest["content_bbox"][3] == 975
         assert manifest["canvas"]["baseline"] == 976
 
+        # 挂件按 asset-manifest 推算贴边保留量，接口必须原样透出 content_bbox
+        listed = client.get("/api/personas/default/asset-manifest")
+        assert listed.status_code == 200
+        assert listed.json()["content_bbox"] == manifest["content_bbox"]
+        assert listed.json()["width"] == 1024
+        assert client.get("/api/personas/missing/asset-manifest").status_code == 404
+
         image = client.get("/api/personas/default/avatar")
         assert image.status_code == 200
         with Image.open(io.BytesIO(image.content)) as normalized:

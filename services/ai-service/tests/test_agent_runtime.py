@@ -266,6 +266,20 @@ def test_execute_completed_updates_task_run_and_events(tmp_path, monkeypatch) ->
         assert task_body["status"] == "completed"
 
 
+def test_execute_falls_back_to_default_executor_when_task_has_none(tmp_path, monkeypatch) -> None:
+    """WI-08 回归：分流器不再硬编码 codex，任务未指定执行器时应落到 registry 默认执行器。"""
+    adapter = FakeReadyAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        task = _route(client, preferred_executor=None)
+        assert task["preferred_executor"] is None
+
+        resp = client.post(f"/api/tasks/{task['task_id']}/execute", json={"mode": "read-only"})
+        assert resp.status_code == 200
+        run = _wait_for(client, task["task_id"], ("completed",))
+        assert run["executor"] == adapter.name
+
+
 def test_execute_failure_marks_failed_and_emits_event(tmp_path, monkeypatch) -> None:
     adapter = FakeReadyAdapter(result_status="failed", error="boom")
     with make_client(tmp_path, monkeypatch, adapter) as client:

@@ -423,6 +423,26 @@ def get_persona_avatar(persona_id: str, request: Request) -> Response:
     return FileResponse(path)
 
 
+@router.get("/personas/{persona_id}/asset-manifest")
+def get_persona_asset_manifest(persona_id: str, request: Request) -> dict[str, Any]:
+    """归一化后的素材清单。
+
+    桌面挂件靠 `content_bbox` 推算贴边隐藏时该保留多少像素，
+    避免把「某一版立绘的透明边距」写死成常量。
+    """
+    directory = _persona_asset_dir(request, persona_id)
+    path = directory / "asset-manifest.json"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="角色素材清单不存在")
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail="角色素材清单不可读") from exc
+    if not isinstance(manifest, dict):
+        raise HTTPException(status_code=500, detail="角色素材清单格式异常")
+    return manifest
+
+
 @router.put("/personas/{persona_id}/avatar")
 async def upload_persona_avatar(persona_id: str, request: Request) -> dict[str, Any]:
     persona_path = _persona_dir(request) / f"{persona_id}.yaml"

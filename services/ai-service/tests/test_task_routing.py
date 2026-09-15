@@ -105,7 +105,7 @@ def test_backend_work_routes_to_delegate_backend(tmp_path: Path, monkeypatch) ->
         assert resp.status_code == 200
         body = resp.json()
         assert body["task"]["category"] == "delegate_backend"
-        assert body["task"]["preferred_executor"] == "codex"
+        assert body["task"]["preferred_executor"] is None
         assert body["task"]["risk_level"] in {"low", "medium"}
 
 
@@ -116,7 +116,7 @@ def test_file_organization_routes_to_delegate_backend(tmp_path: Path, monkeypatc
         assert resp.status_code == 200
         body = resp.json()
         assert body["task"]["category"] == "delegate_backend"
-        assert body["task"]["preferred_executor"] == "codex"
+        assert body["task"]["preferred_executor"] is None
 
 
 def test_route_endpoint_and_task_listing(tmp_path: Path, monkeypatch) -> None:
@@ -125,7 +125,7 @@ def test_route_endpoint_and_task_listing(tmp_path: Path, monkeypatch) -> None:
         assert resp.status_code == 200
         body = resp.json()
         assert body["task"]["category"] == "delegate_backend"
-        assert body["task"]["preferred_executor"] == "codex"
+        assert body["task"]["preferred_executor"] is None
 
         items = client.get("/api/tasks").json()["items"]
         assert items and items[0]["task_id"] == body["task"]["task_id"]

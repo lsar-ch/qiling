@@ -403,6 +403,9 @@ html, body, #root {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
   padding: 4px 0;
   min-width: 184px;
+  /* 挂件窗口只有 480px 高：菜单再长也必须在窗口内滚动，否则底部按钮会被裁掉。 */
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
   animation: ctx-fade-in 0.12s ease-out;
 }
 

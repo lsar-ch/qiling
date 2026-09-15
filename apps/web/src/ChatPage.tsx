@@ -27,6 +27,15 @@ import ModelProfileSelect from "./ModelProfileSelect";
 // 语音模式：off（未监听）/ listening（聆听中）/ sleeping（静默，仅唤醒词可打断）
 type VoiceMode = "off" | "listening" | "sleeping";
 
+// WI-07：提示条按语义分级配色，失败/降级不再复用成功绿。
+type NoticeKind = "ok" | "warn" | "error";
+
+const NOTICE_STYLE: Record<NoticeKind, string> = {
+  ok: "text-ok bg-ok-50",
+  warn: "text-warn bg-warn-50",
+  error: "text-bad bg-bad-50",
+};
+
 function normText(text: string): string {
   return text.replace(/[\s，。！？、,.!?'"“”]/g, "").toLowerCase();
 }
@@ -60,7 +69,8 @@ export default function ChatPage({
   const [personaName, setPersonaName] = useState("千问");
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNoticeText] = useState("");
+  const [noticeKind, setNoticeKind] = useState<NoticeKind>("ok");
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
   const recorderRef = useRef<MicRecorder | null>(null);
@@ -76,6 +86,12 @@ export default function ChatPage({
   const lastSpokenAtRef = useRef(0);
   const voiceModeRef = useRef<VoiceMode>("off");
   voiceModeRef.current = voiceMode;
+
+  // 统一提示入口：省略 kind 即普通提示（沿用原有绿色），失败类显式传 "error"/"warn"。
+  const setNotice = (text: string, kind: NoticeKind = "ok"): void => {
+    setNoticeText(text);
+    setNoticeKind(kind);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -191,7 +207,7 @@ export default function ChatPage({
     if (!voiceLeaseOwned || !voiceStatus?.enabled || speakingRef.current) return;
     const ctx = await ensureAudioContext();
     if (!ctx) {
-      setNotice("语音播放不可用：浏览器不支持音频");
+      setNotice("语音播放不可用：浏览器不支持音频", "warn");
       return;
     }
     lastSpokenRef.current = text;
@@ -221,7 +237,7 @@ export default function ChatPage({
       speakingRef.current = false;
       speakEndAtRef.current = Date.now();
       setSpeaking(false);
-      setNotice(e instanceof Error ? `语音播报失败：${e.message}` : "语音播报失败");
+      setNotice(e instanceof Error ? `语音播报失败：${e.message}` : "语音播报失败", "error");
     }
   };
 
@@ -259,7 +275,7 @@ export default function ChatPage({
         setNotice("");
       }
     } catch (e) {
-      setNotice(e instanceof Error ? `回复失败：${e.message}` : "回复失败");
+      setNotice(e instanceof Error ? `回复失败：${e.message}` : "回复失败", "error");
     } finally {
       setBusy(false);
     }
@@ -282,19 +298,19 @@ export default function ChatPage({
       setNotice("识别中…");
       const wav = await recorder.stop();
       if (!wav) {
-        setNotice("未录到有效音频（或解码失败），请重试");
+        setNotice("未录到有效音频（或解码失败），请重试", "warn");
         return;
       }
       try {
         const { text } = await recognizeSpeech(wav);
         if (!text.trim()) {
-          setNotice("没听清，再说一次？");
+          setNotice("没听清，再说一次？", "warn");
           return;
         }
         setInput("");
         void submitMessage(text.trim(), true);
       } catch (e) {
-        setNotice(e instanceof Error ? `语音识别失败：${e.message}` : "语音识别失败");
+        setNotice(e instanceof Error ? `语音识别失败：${e.message}` : "语音识别失败", "error");
       }
       return;
     }
@@ -302,12 +318,12 @@ export default function ChatPage({
     // 播报中开始录音 = 打断当前播报（barge-in 基础形态）
     stopSpeaking();
     if (!voiceStatus?.enabled) {
-      setNotice("语音未配置：请在 config/settings.yaml 或 .env 配置 DASHSCOPE_API_KEY");
+      setNotice("语音未配置：请在 config/settings.yaml 或 .env 配置 DASHSCOPE_API_KEY", "warn");
       return;
     }
     const recorder = await startRecording();
     if (!recorder) {
-      setNotice("无法访问麦克风，请在浏览器 / 系统设置中授权后重试");
+      setNotice("无法访问麦克风，请在浏览器 / 系统设置中授权后重试", "error");
       return;
     }
     recorderRef.current = recorder;
@@ -318,17 +334,17 @@ export default function ChatPage({
   async function enableAlwaysListen(): Promise<void> {
     if (alwaysRef.current) return;
     if (!voiceLeaseOwned) {
-      setNotice("当前语音由挂件占用");
+      setNotice("当前语音由挂件占用", "warn");
       return;
     }
     if (!voiceStatus?.enabled) {
-      setNotice("语音未配置，无法开启常开监听");
+      setNotice("语音未配置，无法开启常开监听", "warn");
       return;
     }
     setNotice("正在开启常开监听…");
     const ctx = await ensureAudioContext();
     if (!ctx) {
-      setNotice("无法启用音频：浏览器不支持 AudioContext");
+      setNotice("无法启用音频：浏览器不支持 AudioContext", "error");
       setVoiceMode("off");
       return;
     }
@@ -337,7 +353,7 @@ export default function ChatPage({
       // V1 抢话用界面「⏹ 停止」按钮；全双工引擎接入后再做真正的语音抢话。
       onSegment: (segment) => segmentHandlerRef.current(segment),
       onError: (message) => {
-        setNotice(message);
+        setNotice(message, "error");
         setVoiceMode("off");
       },
       onStop: () => {
@@ -375,7 +391,7 @@ export default function ChatPage({
       const r = await recognizeSpeech(segment.wav);
       text = (r.text || "").trim();
     } catch (e) {
-      setNotice(e instanceof Error ? `语音识别失败：${e.message}` : "语音识别失败");
+      setNotice(e instanceof Error ? `语音识别失败：${e.message}` : "语音识别失败", "error");
       return;
     }
     if (!text) return;
@@ -578,7 +594,14 @@ export default function ChatPage({
         <div ref={bottomRef} />
       </div>
 
-      {notice && <div className="px-4 py-2 text-xs text-ok bg-ok-50">{notice}</div>}
+      {notice && (
+        <div
+          className={`px-4 py-2 text-xs ${NOTICE_STYLE[noticeKind]}`}
+          role={noticeKind === "error" ? "alert" : "status"}
+        >
+          {notice}
+        </div>
+      )}
 
       {/* Input row */}
       <div className="flex items-end gap-2.5 p-3 border-t border-line">

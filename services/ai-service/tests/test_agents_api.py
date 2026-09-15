@@ -116,7 +116,7 @@ def test_agents_api_lists_all_default_agents(tmp_path, monkeypatch) -> None:
         resp = client.get("/api/agents")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["default_executor"] == "codex"
+        assert body["default_executor"] == "workbuddy"
         items = {item["name"]: item for item in body["items"]}
         assert len(items) == 6
         assert set(items) == {
@@ -148,7 +148,7 @@ def test_agents_api_config_returns_catalog(tmp_path, monkeypatch) -> None:
         resp = client.get("/api/agents/config")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["default_executor"] == "codex"
+        assert body["default_executor"] == "workbuddy"
         assert len(body["items"]) == 6
         assert {item["name"] for item in body["items"]} == {
             "codex",

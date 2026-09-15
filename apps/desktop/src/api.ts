@@ -76,10 +76,19 @@ export async function pollHealth(url: string): Promise<boolean> {
   }
 }
 
+export interface PersonaAssetMetrics {
+  personaId: string;
+  /** 归一化画布尺寸（contentBbox 以此为坐标系） */
+  canvasWidth: number;
+  canvasHeight: number;
+  /** [x0, y0, x1, y1]，画布像素；拿不到时为 null */
+  contentBbox: [number, number, number, number] | null;
+}
+
 export async function fetchActivePersonaAsset(): Promise<{
   avatar: string;
   style: "human" | "animal";
-}> {
+} & PersonaAssetMetrics> {
   const settingsResp = await fetch(`${SERVICE_BASE}/api/settings`);
   if (!settingsResp.ok) throw new Error(await readDetail(settingsResp));
   const settings = await settingsResp.json() as { active_persona_id: string };
@@ -93,7 +102,45 @@ export async function fetchActivePersonaAsset(): Promise<{
   return {
     avatar: persona?.avatar ?? "",
     style: animalKinds.has(persona?.kind?.toLowerCase() ?? "") ? "animal" : "human",
+    ...(await fetchPersonaAssetMetrics(settings.active_persona_id)),
   };
+}
+
+/**
+ * 读取角色素材清单里的内容包围盒。挂件靠它推算贴边隐藏的保留量，
+ * 免得把某一版立绘的透明边距写死成常量；任何一步失败都退回 null，
+ * 由 Rust 侧的默认值兜底。
+ */
+export async function fetchPersonaAssetMetrics(personaId: string): Promise<PersonaAssetMetrics> {
+  const fallback: PersonaAssetMetrics = {
+    personaId,
+    canvasWidth: 0,
+    canvasHeight: 0,
+    contentBbox: null,
+  };
+  if (!personaId) return fallback;
+  try {
+    const resp = await fetch(
+      `${SERVICE_BASE}/api/personas/${encodeURIComponent(personaId)}/asset-manifest`,
+    );
+    if (!resp.ok) return fallback;
+    const manifest = await resp.json() as { width?: number; height?: number; content_bbox?: unknown };
+    const raw = manifest.content_bbox;
+    const bbox =
+      Array.isArray(raw) &&
+      raw.length === 4 &&
+      raw.every((value) => typeof value === "number" && Number.isFinite(value))
+        ? ([raw[0], raw[1], raw[2], raw[3]] as [number, number, number, number])
+        : null;
+    return {
+      personaId,
+      canvasWidth: typeof manifest.width === "number" ? manifest.width : 0,
+      canvasHeight: typeof manifest.height === "number" ? manifest.height : 0,
+      contentBbox: bbox,
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 export function eventToState(eventType: string): WidgetState | null {

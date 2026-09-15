@@ -159,7 +159,9 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         risk_level = "medium" if _matches_any(normalized, _BACKEND_HINTS) else "low"
         complexity = "complex" if _matches_any(normalized, (r"批量", r"多步", r"多阶段", r"项目", r"代码", r"测试", r"分析")) else "medium"
         estimated_duration = "long" if complexity == "complex" else "medium"
-        preferred_executor = "codex"
+        # 分流器不指定具体执行器：由 config/agents.yaml 的 default_executor 决定，
+        # 避免把某个后端工具硬编码进路由逻辑（旧值 "codex" 会让默认执行器配置失效）。
+        preferred_executor = None
 
     required_approval = _guess_permission_gate(permission_level, category, risk_level)
     if required_approval:
