@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 import time
 from contextlib import contextmanager
@@ -243,6 +244,57 @@ def _route(
     return task
 
 
+def test_echo_of_own_reply_is_not_treated_as_new_task() -> None:
+    """常开监听回采自己播报的内容（含识别偏差）时不应再起后台任务。"""
+    from app.api.chat import _is_echo_of_reply
+    from deskmate_contracts.conversation import Conversation, ConversationMessage
+
+    reply = "收到，已交给后台执行；进度、报错和结果都会回到这条对话里。"
+
+    def conversation_with(spoken: str) -> Conversation:
+        # 末条是本轮刚写入的用户消息，与真实链路一致
+        return Conversation(
+            conversation_id="conv_echo",
+            messages=[
+                ConversationMessage(role="user", content="帮我整理这个项目的 docs 目录结构"),
+                ConversationMessage(role="assistant", content=reply),
+                ConversationMessage(role="user", content=spoken),
+            ],
+        )
+
+    spoken_echo = "收到已交给后台执行进度报错和结果都会回到这条对话里。"
+    assert _is_echo_of_reply(spoken_echo, conversation_with(spoken_echo))
+    spoken_variant = "收到你交给后台执行进度报错和结果都会回到这条对话里。"
+    assert _is_echo_of_reply(spoken_variant, conversation_with(spoken_variant))
+    new_task = "帮我整理这个项目的 docs 目录结构，只列清单"
+    assert not _is_echo_of_reply(new_task, conversation_with(new_task))
+
+
+def test_chat_task_reports_back_into_conversation(tmp_path, monkeypatch) -> None:
+    """对话页发起后台任务：自动起跑，进展与结果写回同一条会话（role=tool）。"""
+    adapter = FakeReadyAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "帮我重构 README 里的代码结构"},
+        )
+        assert resp.status_code == 200
+        events = [
+            json.loads(line[6:])
+            for line in resp.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        done = next(event for event in events if event["type"] == "done")
+        assert done["task_id"], "后台任务应自动起跑"
+        _wait_for(client, done["task_id"], ("completed",))
+
+        conv = client.get(f"/api/conversations/{done['conversation_id']}").json()
+        notes = [item["content"] for item in conv["messages"] if item["role"] == "tool"]
+        assert any("已交给" in text and adapter.name in text for text in notes)
+        assert any(text.startswith("✓ 任务完成") and "fake result" in text for text in notes)
+
+
 def test_execute_completed_updates_task_run_and_events(tmp_path, monkeypatch) -> None:
     adapter = FakeReadyAdapter()
     with make_client(tmp_path, monkeypatch, adapter) as client:
@@ -364,6 +416,43 @@ def test_cancel_run_sets_task_and_run_cancelled(tmp_path, monkeypatch) -> None:
         assert cancel.status_code == 200
         assert cancel.json()["run"]["status"] == "cancelled"
         assert client.get(f"/api/tasks/{task['task_id']}").json()["status"] == "cancelled"
+
+
+def test_approval_and_result_write_back_to_conversation(tmp_path, monkeypatch) -> None:
+    """任务授权请求与最终结果都写回来源会话（对话页可见）。"""
+    adapter = BlockingAgentAdapter(await_permission=True)
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        chat = client.post("/api/chat/stream", json={"message": "你好"})
+        conv_id = next(
+            json.loads(line[6:])["conversation_id"]
+            for line in chat.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        task = _route(client, preferred_executor=adapter.name)
+        task["conversation_id"] = conv_id
+        client.app.state.task_store.put(Task(**task))
+
+        resp = client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name},
+        )
+        run_id = resp.json()["run"]["run_id"]
+        _wait_for(client, task["task_id"], ("awaiting_approval",))
+
+        def notes() -> list[str]:
+            conv = client.get(f"/api/conversations/{conv_id}").json()
+            return [item["content"] for item in conv["messages"] if item["role"] == "tool"]
+
+        assert any("已交给" in text for text in notes())
+        assert any("需要你确认" in text for text in notes())
+
+        approval = client.post(
+            f"/api/agent-runs/{run_id}/approval",
+            json={"decision": "approved"},
+        )
+        assert approval.status_code == 200
+        _wait_for(client, task["task_id"], ("completed",))
+        assert any(text.startswith("✓ 任务完成") for text in notes())
 
 
 def test_approval_route_resolves_pending_permission(tmp_path, monkeypatch) -> None:

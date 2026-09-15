@@ -25,7 +25,9 @@ def build_llm_messages(
         size = len(msg.content) + 16
         if used + size > budget:
             break
-        tail.append({"role": msg.role, "content": msg.content})
+        # tool（任务进展/结果）不是模型协议的 tool 消息，按助理口吻并入上下文
+        role = msg.role if msg.role in ("system", "user", "assistant") else "assistant"
+        tail.append({"role": role, "content": msg.content})
         used += size
     messages.extend(reversed(tail))
     return messages

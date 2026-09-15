@@ -111,6 +111,7 @@ def create_app(
         hub=hub,
         memory=app.state.memory,
         data_dir=settings.data_dir,
+        conversations=app.state.conversation_store,
     )
     app.state.llm_provider = provider
     app.state.speech = speech

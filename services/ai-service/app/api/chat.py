@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from difflib import SequenceMatcher
 from typing import Literal
 from typing import AsyncIterator
 
@@ -19,6 +21,32 @@ from app.model_profiles import find_model_profile, load_model_profiles, profile_
 from app.routing import classify_task_input
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+_ECHO_STRIP = re.compile(r"[\s，。！？、,.!?'\"“”‘’；：:;…—\-()（）【】《》~～·]+")
+
+
+def _is_echo_of_reply(message: str, conversation) -> bool:
+    """识别文本与刚说过的回复高度重合时视为扬声器回采，不据此派后台任务。
+
+    常开监听下扬声器声音会被麦克风回采，若不拦住，任务回执会被再当成新任务提交，
+    形成「起任务 → 播报 → 回采 → 再起任务」的自激循环。
+    """
+    needle = _ECHO_STRIP.sub("", message).lower()
+    if len(needle) < 6:
+        return False
+    recent = conversation.messages[-10:]  # 末条是本轮用户消息
+    for prev in reversed(recent):
+        if prev.role == "user" or prev.content is None:
+            continue
+        hay = _ECHO_STRIP.sub("", prev.content).lower()
+        if not hay:
+            continue
+        if needle in hay or hay in needle:
+            return True
+        # 识别结果常有少量错字（如「你/已」），用相似度兜住
+        if SequenceMatcher(None, needle, hay).ratio() >= 0.8:
+            return True
+    return False
 
 
 class ChatTurnRequest(BaseModel):
@@ -133,6 +161,15 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
                 payload={"reason": "risk_gate", "task": task.model_dump(mode="json")},
             )
         )
+    # 后台任务直接起跑（read-only）：进度、报错、授权、结果都会写回本会话，
+    # 不让用户再去「我的智能体」手动运行、翻找状态。
+    auto_run = None
+    auto_start_error = ""
+    if task.category == "delegate_backend" and not _is_echo_of_reply(body.message, conversation):
+        try:
+            auto_run = await request.app.state.agent_run_manager.execute(task, mode="read-only")
+        except Exception as exc:
+            auto_start_error = str(exc)
     try:
         user_trace_id = memory.record_event(
             "conversation",
@@ -150,6 +187,15 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             yield _sse({"type": "delta", "content": answer})
         elif task.category == "execute_frontend":
             answer = "我先把这个记为前台任务，任务台里会显示。"
+            yield _sse({"type": "delta", "content": answer})
+        elif auto_run is not None:
+            answer = "收到，已交给后台执行；进度、报错和结果都会回到这条对话里。"
+            yield _sse({"type": "delta", "content": answer})
+        elif auto_start_error:
+            answer = (
+                f"这条任务暂时起不来执行器（{auto_start_error}）；"
+                "已记在任务台，配置好后可以手动运行。"
+            )
             yield _sse({"type": "delta", "content": answer})
         else:
             compiled = memory.recall_context(

@@ -102,6 +102,7 @@ class AgentRunManager:
         hub,
         memory,
         data_dir: Path,
+        conversations=None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -109,6 +110,8 @@ class AgentRunManager:
         self.hub = hub
         self.memory = memory
         self.data_dir = data_dir
+        # 任务进展回流到来源会话（对话页可见）；未注入时静默跳过
+        self.conversations = conversations
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_timers: dict[str, asyncio.Task[None]] = {}  # task_id -> reminder timer
 
@@ -134,6 +137,15 @@ class AgentRunManager:
             return None
         latest = max(hits, key=lambda run: run.created_at)
         return latest.session_id
+
+    async def _notify_conversation(self, task: Task, text: str) -> None:
+        """把任务进展写回来源会话；没有会话或没有存储时跳过。"""
+        if self.conversations is None or not task.conversation_id or not text:
+            return
+        try:
+            await self.conversations.append_message(task.conversation_id, "tool", text)
+        except Exception:
+            pass  # 回写失败不影响任务本身
 
     async def execute(
         self,
@@ -179,6 +191,10 @@ class AgentRunManager:
             task,
             run,
             payload={"executor": executor_name, "mode": run.mode},
+        )
+        await self._notify_conversation(
+            task,
+            f"▶ 已交给 {executor_name}（{run.mode}）执行。",
         )
         background = asyncio.create_task(self._run_task(run, task, adapter, previous_session_id))
         self._tasks[task.task_id] = background
@@ -286,6 +302,7 @@ class AgentRunManager:
                     "bubble": f"需要确认：{run.progress[:40]}",
                 },
             )
+            await self._notify_conversation(task, f"⚠ 需要你确认：{run.progress}")
             self._start_approval_timer(run, task)
 
 
@@ -341,6 +358,7 @@ class AgentRunManager:
         task.status = "cancelled"
         task = self.task_store.put(task)
         await self._publish("task.cancelled", task, run)
+        await self._notify_conversation(task, "任务已取消。")
         self._record_memory("task.cancelled", task, run)
         return run
 
@@ -399,12 +417,19 @@ class AgentRunManager:
             bubble = f"✗ {summary}"
         else:
             bubble = "已取消"
+        if status == "completed":
+            notify = f"✓ 任务完成\n\n{(message or run.progress or '任务完成').strip()[:2000]}"
+        elif status == "failed":
+            notify = f"✗ 任务失败\n\n{(error or '未知错误')[:2000]}"
+        else:
+            notify = "任务已取消。"
         await self._publish(
             event_type,
             task,
             run,
             payload={"result": message or None, "error": error, "bubble": bubble},
         )
+        await self._notify_conversation(task, notify)
         self._record_memory(event_type, task, run)
 
     async def _publish(

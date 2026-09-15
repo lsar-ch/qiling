@@ -78,7 +78,7 @@ type InteractiveBox = {
 };
 
 function normText(text: string): string {
-  return text.replace(/[\s，。！？、,.!?'"“”]/g, "").toLowerCase();
+  return text.replace(/[\s，。！？、,.!?'"“”‘’；：:;…—\-()（）【】《》~～·]/g, "").toLowerCase();
 }
 
 // 气泡显示时长随文字长度变化：短提示至少约 6s，长文本最多 20s

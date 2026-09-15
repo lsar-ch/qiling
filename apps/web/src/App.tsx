@@ -2062,7 +2062,11 @@ export default function App() {
         )}
 
         {page === "chat" && (
-          <ChatPage voiceLeaseOwned={voiceLeaseOwned} onOpenSettings={() => setPage("settings")} />
+          <ChatPage
+            voiceLeaseOwned={voiceLeaseOwned}
+            onOpenSettings={() => setPage("settings")}
+            events={events}
+          />
         )}
 
         {page === "character" && <CharacterPage />}

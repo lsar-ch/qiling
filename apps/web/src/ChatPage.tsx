@@ -8,6 +8,7 @@ import {
   fetchSettings,
   fetchVoiceStatus,
   apiVoiceIntent,
+  decideRun,
   publishEvent,
   recognizeSpeech,
   streamChat,
@@ -16,6 +17,7 @@ import {
   type ModelProfile,
   type VoiceEndpointStatus,
 } from "./api";
+import type { EventEnvelope } from "@deskmate/contracts";
 import { startRecording, type MicRecorder } from "./recorder";
 import {
   startAlwaysListener,
@@ -30,6 +32,24 @@ type VoiceMode = "off" | "listening" | "sleeping";
 // WI-07：提示条按语义分级配色，失败/降级不再复用成功绿。
 type NoticeKind = "ok" | "warn" | "error";
 
+// 后台任务在对话页的实时状态（任务进展/结果另有消息落库）
+type LiveTask = {
+  taskId: string;
+  runId: string | null;
+  text: string;
+  status: "running" | "awaiting_approval";
+};
+
+const TASK_EVENT_TYPES = [
+  "task.started",
+  "task.progress",
+  "task.approval_required",
+  "task.approval_reminder",
+  "task.completed",
+  "task.failed",
+  "task.cancelled",
+];
+
 const NOTICE_STYLE: Record<NoticeKind, string> = {
   ok: "text-ok bg-ok-50",
   warn: "text-warn bg-warn-50",
@@ -37,7 +57,7 @@ const NOTICE_STYLE: Record<NoticeKind, string> = {
 };
 
 function normText(text: string): string {
-  return text.replace(/[\s，。！？、,.!?'"“”]/g, "").toLowerCase();
+  return text.replace(/[\s，。！？、,.!?'"“”‘’；：:;…—\-()（）【】《》~～·]/g, "").toLowerCase();
 }
 
 function fmtChatTime(iso: string): string {
@@ -53,14 +73,17 @@ function fmtChatTime(iso: string): string {
 export default function ChatPage({
   voiceLeaseOwned,
   onOpenSettings,
+  events = [],
 }: {
   voiceLeaseOwned: boolean;
   onOpenSettings?: () => void;
+  events?: EventEnvelope[];
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [liveTask, setLiveTask] = useState<LiveTask | null>(null);
   const [echoMode, setEchoMode] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceEndpointStatus | null>(null);
   const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([]);
@@ -73,6 +96,14 @@ export default function ChatPage({
   const [noticeKind, setNoticeKind] = useState<NoticeKind>("ok");
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
+  const busyRef = useRef(false);
+  const conversationIdRef = useRef<string | null>(null);
+  const pendingRefreshRef = useRef(false);
+  // 进入页面时已有的事件视为「历史」，只处理本次挂载之后到达的任务事件
+  const seenEventsRef = useRef<Set<string> | null>(null);
+  if (seenEventsRef.current === null) {
+    seenEventsRef.current = new Set(events.map((event) => event.event_id));
+  }
   const recorderRef = useRef<MicRecorder | null>(null);
   const alwaysRef = useRef<AlwaysListener | null>(null);
   const segmentHandlerRef = useRef<(segment: AlwaysListenSegment) => void>(() => {});
@@ -86,6 +117,8 @@ export default function ChatPage({
   const lastSpokenAtRef = useRef(0);
   const voiceModeRef = useRef<VoiceMode>("off");
   voiceModeRef.current = voiceMode;
+  busyRef.current = busy;
+  conversationIdRef.current = conversationId;
 
   // 统一提示入口：省略 kind 即普通提示（沿用原有绿色），失败类显式传 "error"/"warn"。
   const setNotice = (text: string, kind: NoticeKind = "ok"): void => {
@@ -264,6 +297,7 @@ export default function ChatPage({
         });
       }, selectedProfileId || null);
       setConversationId(done.conversation_id);
+      conversationIdRef.current = done.conversation_id;
       if (speakReply && voiceStatus?.enabled && voiceStatus.auto_speak) {
         // 短回复朗读全文；长回复朗读摘要（全文保留在消息里，可点 🔊 听全文）
         stopSpeaking();
@@ -278,6 +312,79 @@ export default function ChatPage({
       setNotice(e instanceof Error ? `回复失败：${e.message}` : "回复失败", "error");
     } finally {
       setBusy(false);
+      busyRef.current = false;
+      // 流式期间到达的任务事件：等这一轮结束再补刷，避免覆盖正在输出的回复
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        void refreshConversation();
+      }
+    }
+  };
+
+  // 任务进展写回会话后刷新一次，让「已开始 / 需要授权 / 结果」出现在对话里
+  const refreshConversation = async (): Promise<void> => {
+    const cid = conversationIdRef.current;
+    if (!cid) return;
+    if (busyRef.current) {
+      pendingRefreshRef.current = true;
+      return;
+    }
+    try {
+      const conv = await fetchConversation(cid);
+      setMessages(conv.messages);
+    } catch {
+      /* 刷新失败不影响当前展示 */
+    }
+  };
+
+  useEffect(() => {
+    const seen = seenEventsRef.current ?? new Set<string>();
+    seenEventsRef.current = seen;
+    let needRefresh = false;
+    for (const env of events) {
+      if (seen.has(env.event_id)) continue;
+      seen.add(env.event_id);
+      if (env.source !== "task" || !TASK_EVENT_TYPES.includes(env.event_type)) continue;
+      if (env.conversation_id !== conversationId) continue;
+      const payload = env.payload as { bubble?: unknown; run?: { run_id?: unknown } } | undefined;
+      const runId = typeof payload?.run?.run_id === "string" ? payload.run.run_id : null;
+      const bubble = typeof payload?.bubble === "string" ? payload.bubble : "";
+      const taskId = env.task_id ?? "";
+      if (env.event_type === "task.progress") {
+        setLiveTask((prev) =>
+          prev && prev.taskId === taskId
+            ? { ...prev, runId, text: bubble || "执行中…", status: "running" }
+            : prev,
+        );
+        continue;
+      }
+      if (env.event_type === "task.approval_reminder") {
+        setLiveTask((prev) =>
+          prev && prev.taskId === taskId ? { ...prev, runId, status: "awaiting_approval" } : prev,
+        );
+        continue;
+      }
+      if (env.event_type === "task.started") {
+        setLiveTask({ taskId, runId, text: "已开始执行", status: "running" });
+      } else if (env.event_type === "task.approval_required") {
+        setLiveTask({ taskId, runId, text: bubble || "等待你的授权", status: "awaiting_approval" });
+      } else {
+        setLiveTask((prev) => (prev && prev.taskId === taskId ? null : prev));
+      }
+      needRefresh = true;
+    }
+    if (needRefresh) void refreshConversation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, conversationId]);
+
+  const decideTask = async (decision: "approved" | "rejected"): Promise<void> => {
+    const runId = liveTask?.runId;
+    if (!runId) return;
+    try {
+      await decideRun(runId, decision);
+      setNotice(decision === "approved" ? "已批准当前操作" : "已拒绝当前操作");
+    } catch (e) {
+      setNotice(e instanceof Error ? `授权操作失败：${e.message}` : "授权操作失败", "error");
     }
   };
 
@@ -563,13 +670,15 @@ export default function ChatPage({
         {messages.map((m, i) => (
           <div key={`${m.role}-${i}`} className={`flex flex-col max-w-[78%] min-w-0 ${m.role === "user" ? "self-end items-end" : "self-start"}`}>
             <span className="text-[11px] text-muted mb-1 select-none" title={m.created_at}>
-              {m.role === "user" ? "你" : "DeskMate"}
+              {m.role === "user" ? "你" : m.role === "tool" ? "任务" : "DeskMate"}
               {m.created_at ? ` · ${fmtChatTime(m.created_at)}` : ""}
             </span>
             <div className={`whitespace-pre-wrap break-words break-anywhere min-w-0 px-3.5 py-2.5 text-sm leading-relaxed ${
               m.role === "user"
                 ? "bg-brand text-white rounded-xl rounded-br-sm"
-                : "bg-surface-chat text-ink rounded-xl rounded-bl-sm"
+                : m.role === "tool"
+                  ? "bg-surface-secondary border border-line text-ink rounded-xl rounded-bl-sm"
+                  : "bg-surface-chat text-ink rounded-xl rounded-bl-sm"
             }`}>
               {m.content ? (
                 m.content
@@ -600,6 +709,42 @@ export default function ChatPage({
           role={noticeKind === "error" ? "alert" : "status"}
         >
           {notice}
+        </div>
+      )}
+
+      {/* 后台任务实时状态：进展、报错、待授权都在对话页可见 */}
+      {liveTask && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-t border-line-subtle text-xs">
+          <span
+            className={`inline-flex items-center gap-1.5 font-medium ${
+              liveTask.status === "awaiting_approval" ? "text-warn" : "text-brand"
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                liveTask.status === "awaiting_approval" ? "bg-warn" : "bg-brand animate-breathe"
+              }`}
+            />
+            {liveTask.status === "awaiting_approval" ? "等待你授权" : "后台执行中"}：{liveTask.text}
+          </span>
+          {liveTask.status === "awaiting_approval" && liveTask.runId && (
+            <>
+              <button
+                className="rounded-md border border-ok-50 bg-ok-50 px-2.5 py-1 text-ok transition-opacity hover:opacity-80"
+                onClick={() => void decideTask("approved")}
+                type="button"
+              >
+                批准
+              </button>
+              <button
+                className="rounded-md border border-bad-50 bg-bad-50 px-2.5 py-1 text-bad transition-opacity hover:opacity-80"
+                onClick={() => void decideTask("rejected")}
+                type="button"
+              >
+                拒绝
+              </button>
+            </>
+          )}
         </div>
       )}
 
