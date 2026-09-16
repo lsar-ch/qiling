@@ -422,3 +422,123 @@ def test_agents_api_command_update_keeps_other_overrides(tmp_path, monkeypatch) 
         codex = next(item for item in config["items"] if item["name"] == "codex")
         assert codex["config"]["codex_command"] == "/tmp/deskmate-codex-test"
         assert codex["enabled"] is False
+
+# --- WorkBuddy 授权链路（2026-09-16 实测报文：kind 与 optionId 不同名）---
+
+# session/request_permission 真实下发的 options（探针 /tmp/wb-probe-traffic.jsonl）
+WB_PERMISSION_OPTIONS = [
+    {"kind": "allow_always", "name": "Always Allow", "optionId": "allow_always"},
+    {"kind": "allow_once", "name": "Allow", "optionId": "allow"},
+    {"kind": "reject_once", "name": "Reject", "optionId": "reject"},
+]
+
+
+def test_workbuddy_mode_map_uses_real_cli_values() -> None:
+    """映射值必须是 CLI session/new 真实下发的 value，否则 set_config_option 会被拒。"""
+    assert workbuddy_module.WorkBuddyAdapter._MODE_TO_WB == {
+        "read-only": "plan",
+        "agent": "default",
+        "agent-full-access": "bypassPermissions",
+    }
+
+
+def test_workbuddy_apply_permission_mode_value() -> None:
+    sent: list[dict] = []
+
+    class FakeClient:
+        async def request(self, method, params, timeout_s=None):
+            sent.append(params)
+
+    adapter = workbuddy_module.WorkBuddyAdapter()
+    asyncio.run(adapter._apply_permission_mode(FakeClient(), "sess_x", "read-only"))
+    asyncio.run(adapter._apply_permission_mode(FakeClient(), "sess_x", "agent"))
+    asyncio.run(adapter._apply_permission_mode(FakeClient(), "sess_x", "agent-full-access"))
+    assert [item["value"] for item in sent] == ["plan", "default", "bypassPermissions"]
+
+
+def test_workbuddy_unknown_mode_falls_back_to_always_ask() -> None:
+    """未知模式兜底 default：宁可转 UI 授权，也不静默放行。"""
+    sent: list[dict] = []
+
+    class FakeClient:
+        async def request(self, method, params, timeout_s=None):
+            sent.append(params)
+
+    adapter = workbuddy_module.WorkBuddyAdapter()
+    asyncio.run(adapter._apply_permission_mode(FakeClient(), "sess_x", "not-a-mode"))
+    assert sent[0]["value"] == "default"
+
+
+def test_workbuddy_option_id_matches_by_kind() -> None:
+    """kind=allow_once 的真实 optionId 是 "allow"；按 optionId 猜会静默升级成永久放行。"""
+    find = workbuddy_module._option_id_for_kind
+    assert find(WB_PERMISSION_OPTIONS, "allow_once", "allow_always") == "allow"
+    assert find(WB_PERMISSION_OPTIONS, "reject_once", "reject_always") == "reject"
+    assert find(WB_PERMISSION_OPTIONS, "reject_always", "reject_once") == "reject"
+    # Codex 惯例：optionId 与 kind 同名，共用同一套逻辑不能回归
+    codex_style = [{"optionId": "allow_once"}, {"optionId": "reject_once"}]
+    assert find(codex_style, "allow_once", "allow_always") == "allow_once"
+    assert find(codex_style, "reject_once", "reject_always") == "reject_once"
+    assert find([], "allow_once") is None
+
+
+def test_workbuddy_approve_resolves_kind_option_id() -> None:
+    adapter = workbuddy_module.WorkBuddyAdapter()
+
+    async def decide(decision: str, options: list[dict]) -> dict:
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict] = loop.create_future()
+        adapter._permission_futures["task_wb"] = future
+        adapter._pending_permissions["task_wb"] = {"options": options}
+        await adapter.approve("task_wb", decision)
+        return future.result()
+
+    assert asyncio.run(decide("approved", WB_PERMISSION_OPTIONS)) == {
+        "outcome": "selected",
+        "optionId": "allow",
+    }
+    assert asyncio.run(decide("rejected", WB_PERMISSION_OPTIONS)) == {
+        "outcome": "selected",
+        "optionId": "reject",
+    }
+    # 无可选项时按 cancelled 收口（ACP 没有 "rejected" 这种 outcome）
+    assert asyncio.run(decide("rejected", [])) == {"outcome": "cancelled"}
+
+
+def test_workbuddy_full_access_auto_approves_without_ui() -> None:
+    """全权限模式无人值守：直接按 kind 放行，不进 awaiting_approval。"""
+    adapter = workbuddy_module.WorkBuddyAdapter()
+    updates: list[tuple] = []
+
+    async def on_update(kind, payload):
+        updates.append((kind, payload))
+
+    handler = adapter._make_permission_handler("task_wb_full", "agent-full-access", on_update)
+    outcome = asyncio.run(
+        handler({"options": WB_PERMISSION_OPTIONS, "toolCall": {"rawInput": {"command": "ls"}}})
+    )
+    assert outcome == {"outcome": "selected", "optionId": "allow"}
+    assert updates == []
+    assert "task_wb_full" not in adapter._pending_permissions
+
+
+def test_workbuddy_agent_mode_forwards_permission_to_ui() -> None:
+    """agent(default) 模式必须把授权转给界面，而不是自己决定。"""
+    adapter = workbuddy_module.WorkBuddyAdapter()
+    updates: list[tuple] = []
+
+    async def on_update(kind, payload):
+        updates.append((kind, payload))
+
+    handler = adapter._make_permission_handler("task_wb_agent", "agent", on_update)
+
+    async def scenario() -> dict:
+        pending = asyncio.create_task(
+            handler({"options": WB_PERMISSION_OPTIONS, "toolCall": {"rawInput": {"command": "ls"}}})
+        )
+        await asyncio.sleep(0.01)
+        await adapter.approve("task_wb_agent", "approved")
+        return await pending
+
+    assert asyncio.run(scenario()) == {"outcome": "selected", "optionId": "allow"}
+    assert [kind for kind, _ in updates] == ["permission_request"]

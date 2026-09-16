@@ -256,16 +256,19 @@ class WorkBuddyAdapter(AgentAdapter):
     # DeskMate 的执行模式 → WorkBuddy 的 Permission Mode（session/new 下发的
     # config_option_update 里可选项，经 session/set_config_option 设置）。
     #
-    # 必须设置：实测默认 "Always Ask" 时，只要任务碰到 Bash 类工具，CLI **不会**
-    # 发 session/request_permission，而是直接退出（表现为「ACP process exited」，
-    # 约 10~30 秒后）。DeskMate 是无人值守场景，必须让它从一开始就不弹窗：
-    #   - dontAsk：不弹窗，安全的只读操作放行，其余会被拒绝（读-only 正合适）
-    #   - acceptEdits：自动放行文件编辑
-    #   - auto：由分类器裁决，安全放行、有风险拒绝
+    # 2026-09-16 实测修正（探针报文见 /tmp/wb-probe-traffic.jsonl）：
+    # 旧注释里「Always Ask 下 WorkBuddy 不发 session/request_permission、
+    # 10~30 秒直接退出」是误诊。真实行为是 default(Always Ask) 下遇到 Bash 类
+    # 工具**会**发 session/request_permission（T+8~15s），应答后任务正常
+    # end_turn；不应答则一直阻塞、不会自己退出。所以授权照常转给 UI 即可。
+    #   - plan：只能分析，不能改文件也不能执行命令（read-only 的真实语义；
+    #     旧值 dontAsk 只是「不弹窗」，写文件/跑 Bash 仍会被放行，等于没隔离）
+    #   - default：Always Ask，逐个操作发授权请求（agent）
+    #   - bypassPermissions：跳过所有授权弹窗（agent-full-access，无人值守）
     _MODE_TO_WB = {
-        "read-only": "dontAsk",
-        "agent": "acceptEdits",
-        "agent-full-access": "auto",
+        "read-only": "plan",
+        "agent": "default",
+        "agent-full-access": "bypassPermissions",
     }
 
     _PROBE_TTL_S = 300.0
@@ -494,8 +497,10 @@ class WorkBuddyAdapter(AgentAdapter):
         self._outputs[request.task_id] = []
         self._tool_calls[request.task_id] = []
         self._cancel_events[request.task_id] = asyncio.Event()
-        raw_logs_dir = request.config.get("logs_dir")
-        logs_dir = Path(str(raw_logs_dir)).expanduser() if raw_logs_dir else None
+        # 与 codex.py 一致默认落 /tmp/deskmate-acp-logs；按 task 分目录，
+        # 否则多次运行的 stderr 日志会互相覆盖，出问题时没有证据可查。
+        raw_logs_dir = request.config.get("logs_dir") or "/tmp/deskmate-acp-logs"
+        logs_dir = Path(str(raw_logs_dir)).expanduser() / request.task_id
         client = await self._spawn(
             runtime,
             cwd=request.cwd,
@@ -618,25 +623,14 @@ class WorkBuddyAdapter(AgentAdapter):
             return
         pending = self._pending_permissions.get(task_id) or {}
         options = pending.get("options") or []
-        option_ids = {
-            str(item.get("optionId"))
-            for item in options
-            if isinstance(item, dict) and item.get("optionId")
-        }
         if decision == "approved":
-            option = "allow_once" if "allow_once" in option_ids else (
-                "allow_always" if "allow_always" in option_ids else None
-            )
-            if option is None:
-                future.set_result({"outcome": "cancelled"})
-                return
+            option = _option_id_for_kind(options, "allow_once", "allow_always")
         else:
-            option = "reject_always" if "reject_always" in option_ids else (
-                "reject_once" if "reject_once" in option_ids else None
-            )
-            if option is None:
-                future.set_result({"outcome": "rejected"})
-                return
+            option = _option_id_for_kind(options, "reject_once", "reject_always")
+        if option is None:
+            # ACP 只有 selected / cancelled 两种合法 outcome，没有 "rejected"
+            future.set_result({"outcome": "cancelled"})
+            return
         future.set_result({"outcome": "selected", "optionId": option})
 
     async def _apply_permission_mode(
@@ -647,8 +641,9 @@ class WorkBuddyAdapter(AgentAdapter):
         失败只记日志不中断：老版本 CLI 没有这个方法（-32601），
         那就退回「授权请求转发给 UI」的老路径。
         """
-        # 未知模式也兜底成 dontAsk：绝不留在 "Always Ask"（会把进程拖死）。
-        value = self._MODE_TO_WB.get(mode, "dontAsk")
+        # 未知模式兜底成 default(Always Ask)：宁可转 UI 授权，也不静默放行；
+        # 卡住的风险由 runtime 的授权超时（自动拒绝）兜底。
+        value = self._MODE_TO_WB.get(mode, "default")
         try:
             await client.request(
                 "session/set_config_option",
@@ -696,17 +691,11 @@ class WorkBuddyAdapter(AgentAdapter):
     def _make_permission_handler(self, task_id: str, mode: str, on_update):
         async def handle(params: dict[str, Any]) -> dict[str, Any]:
             options = params.get("options") or []
-            option_ids = {
-                str(item.get("optionId"))
-                for item in options
-                if isinstance(item, dict) and item.get("optionId")
-            }
             # 全权限模式下无人值守，直接放行，避免卡在授权等待
             if mode == "agent-full-access":
-                if "allow_once" in option_ids:
-                    return {"outcome": "selected", "optionId": "allow_once"}
-                if "allow_always" in option_ids:
-                    return {"outcome": "selected", "optionId": "allow_always"}
+                option = _option_id_for_kind(options, "allow_once", "allow_always")
+                if option is not None:
+                    return {"outcome": "selected", "optionId": option}
             self._pending_permissions[task_id] = params
             await on_update(
                 "permission_request",
@@ -718,6 +707,34 @@ class WorkBuddyAdapter(AgentAdapter):
             return await future
 
         return handle
+
+
+def _option_id_for_kind(options: object, *kinds: str) -> str | None:
+    """按 ACP PermissionOption.kind 找出真正的 optionId。
+
+    WorkBuddy 的 kind 与 optionId 不同名（实测：kind="allow_once" 对应
+    optionId="allow"，kind="reject_once" 对应 optionId="reject"）。只按
+    optionId 猜会命中不到 allow_once、静默升级成 allow_always（永久放行），
+    因此必须以 kind 为准；kind 缺失时才退回「optionId 与 kind 同名」的惯例
+    （Codex ACP 就是同名），保证两种执行器共用同一套逻辑不出错。
+    """
+    items = [item for item in (options or []) if isinstance(item, dict)]
+    by_kind: dict[str, str] = {}
+    by_id: set[str] = set()
+    for item in items:
+        option_id = str(item.get("optionId") or "").strip()
+        if not option_id:
+            continue
+        by_id.add(option_id)
+        kind = str(item.get("kind") or "").strip()
+        if kind:
+            by_kind.setdefault(kind, option_id)
+    for kind in kinds:
+        if kind in by_kind:
+            return by_kind[kind]
+        if kind in by_id:
+            return kind
+    return None
 
 
 def _content_text(value: object) -> str:

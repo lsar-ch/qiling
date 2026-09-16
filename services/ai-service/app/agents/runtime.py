@@ -28,6 +28,33 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _permission_summary(tool_call: object) -> str:
+    """从 ACP session/request_permission 的 toolCall 里提取人类可读摘要。
+
+    Codex 的 toolCall 带 title/name；WorkBuddy 两者都没有，只有
+    rawInput.command / rawInput.description / _meta["codebuddy.ai/toolName"]
+    （实测报文见 /tmp/wb-probe-traffic.jsonl）。按此顺序兜底，否则授权卡片
+    只能显示「等待授权」，用户看不到自己要批准的是什么。
+    """
+    if not isinstance(tool_call, dict):
+        return "等待授权"
+    title = str(tool_call.get("title") or tool_call.get("name") or "").strip()
+    if title:
+        return title[:300]
+    raw_input = tool_call.get("rawInput")
+    if isinstance(raw_input, dict):
+        for key in ("command", "description", "path", "url", "query", "pattern"):
+            value = str(raw_input.get(key) or "").strip()
+            if value:
+                return value[:300]
+    meta = tool_call.get("_meta")
+    if isinstance(meta, dict):
+        tool_name = str(meta.get("codebuddy.ai/toolName") or "").strip()
+        if tool_name:
+            return f"{tool_name} 操作"[:300]
+    return "等待授权"
+
+
 class AgentRun(BaseModel):
     """一次外部 Agent 执行。只放在 ai-service，不属于共享 contracts。"""
 
@@ -114,6 +141,7 @@ class AgentRunManager:
         self.conversations = conversations
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_timers: dict[str, asyncio.Task[None]] = {}  # task_id -> reminder timer
+        self._approval_deadlines: dict[str, asyncio.Task[None]] = {}  # task_id -> 超时自动拒绝
 
     def _find_previous_session(self, conversation_id: str | None, exclude_task_id: str) -> str | None:
         """找到同一 conversation 下最近一次已完成的 run 的 session_id。"""
@@ -333,11 +361,7 @@ class AgentRunManager:
             return
         if kind == "permission_request":
             run.status = "awaiting_approval"
-            run.progress = str(
-                (payload.get("tool_call") or {}).get("title")
-                or (payload.get("tool_call") or {}).get("name")
-                or "等待授权"
-            )[:300]
+            run.progress = _permission_summary(payload.get("tool_call"))
             self.store.put(run)
             task = self.task_store.get(run.task_id)
             if task is None:
@@ -362,12 +386,18 @@ class AgentRunManager:
 
 
     _APPROVAL_REMINDER_SECONDS = 30
+    # 无人值守场景不能让 run 永远挂在 awaiting_approval：超时按拒绝收口，
+    # 复用人工拒绝同一条路径（状态机 / 事件 / 会话回流都一致）。
+    _APPROVAL_TIMEOUT_SECONDS = 300
 
     def _start_approval_timer(self, run: AgentRun, task: Task) -> None:
-        """等待授权超过 N 秒未响应时，广播提醒事件。"""
+        """等待授权超过 N 秒未响应时广播提醒；超过 M 秒自动按拒绝收口。"""
         old = self._approval_timers.pop(run.task_id, None)
         if old is not None and not old.done():
             old.cancel()
+        old_deadline = self._approval_deadlines.pop(run.task_id, None)
+        if old_deadline is not None and not old_deadline.done():
+            old_deadline.cancel()
 
         async def _fire() -> None:
             try:
@@ -387,10 +417,34 @@ class AgentRunManager:
 
         self._approval_timers[run.task_id] = asyncio.create_task(_fire())
 
+        async def _expire() -> None:
+            try:
+                await asyncio.sleep(self._APPROVAL_TIMEOUT_SECONDS)
+            except asyncio.CancelledError:
+                return
+            # 先摘掉自己，避免 approve_run 里的 _cancel_approval_timer 反手
+            # 取消当前任务，导致后面的会话回流被 CancelledError 打断
+            self._approval_deadlines.pop(run.task_id, None)
+            current_run = self.store.get(run.run_id)
+            if current_run is None or current_run.status != "awaiting_approval":
+                return
+            try:
+                await self.approve_run(run.run_id, "rejected")
+            except (KeyError, ValueError):
+                return
+            await self._notify_conversation(
+                task,
+                f"⏱ 等待授权超过 {self._APPROVAL_TIMEOUT_SECONDS // 60} 分钟，"
+                "已自动拒绝该操作。",
+            )
+
+        self._approval_deadlines[run.task_id] = asyncio.create_task(_expire())
+
     def _cancel_approval_timer(self, task_id: str) -> None:
-        timer = self._approval_timers.pop(task_id, None)
-        if timer is not None and not timer.done():
-            timer.cancel()
+        for registry in (self._approval_timers, self._approval_deadlines):
+            timer = registry.pop(task_id, None)
+            if timer is not None and not timer.done():
+                timer.cancel()
 
     async def cancel_run(self, run_id: str) -> AgentRun:
         run = self.store.get(run_id)

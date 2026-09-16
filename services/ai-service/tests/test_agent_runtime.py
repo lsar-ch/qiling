@@ -679,3 +679,69 @@ def test_execute_rejects_disabled_executor(tmp_path, monkeypatch) -> None:
         assert resp.status_code == 400
         assert "已停用" in resp.json()["detail"]
         assert adapter.request is None
+
+
+def test_permission_summary_prefers_real_command() -> None:
+    """WorkBuddy 的 toolCall 没有 title/name，摘要必须落到真实命令上。"""
+    from app.agents.runtime import _permission_summary
+
+    assert _permission_summary({"title": "执行命令", "name": "shell"}) == "执行命令"
+    workbuddy_call = {
+        "toolCallId": "call_79cc0eb968c648b29fe164d0",
+        "rawInput": {
+            "command": "printf 'hello' > probe.txt",
+            "description": "Create probe.txt with content hello",
+        },
+        "_meta": {"codebuddy.ai/toolName": "Bash"},
+    }
+    assert _permission_summary(workbuddy_call) == "printf 'hello' > probe.txt"
+    assert _permission_summary(
+        {"rawInput": {"description": "读取配置"}, "_meta": {"codebuddy.ai/toolName": "Read"}}
+    ) == "读取配置"
+    assert _permission_summary({"_meta": {"codebuddy.ai/toolName": "Bash"}}) == "Bash 操作"
+    assert _permission_summary(None) == "等待授权"
+    assert _permission_summary({}) == "等待授权"
+
+
+def test_approval_timeout_auto_rejects(tmp_path, monkeypatch) -> None:
+    """授权长时间无人响应时自动按拒绝收口，run 不会永远挂在 awaiting_approval。"""
+    adapter = BlockingAgentAdapter(await_permission=True)
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        manager = client.app.state.agent_run_manager
+        monkeypatch.setattr(manager, "_APPROVAL_TIMEOUT_SECONDS", 1)
+        task = _route(client, preferred_executor=adapter.name)
+        resp = client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name},
+        )
+        run_id = resp.json()["run"]["run_id"]
+        _wait_for(client, task["task_id"], ("awaiting_approval",))
+
+        run = _wait_for(client, task["task_id"], ("completed",))
+        assert run["run_id"] == run_id
+        assert adapter.approved_at == f"{task['task_id']}:rejected"
+        assert manager._approval_deadlines == {}
+        assert manager._approval_timers == {}
+
+
+def test_manual_approval_cancels_timeout(tmp_path, monkeypatch) -> None:
+    """用户先决定时，超时兜底任务必须被撤掉，不能事后再拒绝一次。"""
+    adapter = BlockingAgentAdapter(await_permission=True)
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        manager = client.app.state.agent_run_manager
+        monkeypatch.setattr(manager, "_APPROVAL_TIMEOUT_SECONDS", 1)
+        task = _route(client, preferred_executor=adapter.name)
+        resp = client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name},
+        )
+        run_id = resp.json()["run"]["run_id"]
+        _wait_for(client, task["task_id"], ("awaiting_approval",))
+        assert client.post(
+            f"/api/agent-runs/{run_id}/approval", json={"decision": "approved"}
+        ).status_code == 200
+        assert adapter.approved_at == f"{task['task_id']}:approved"
+        _wait_for(client, task["task_id"], ("completed",))
+        time.sleep(1.2)
+        assert client.get(f"/api/tasks/{task['task_id']}").json()["status"] == "completed"
+        assert adapter.approved_at == f"{task['task_id']}:approved"
