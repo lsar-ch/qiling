@@ -19,7 +19,7 @@ mod widget;
 
 const SERVICE_PORT: u16 = 8736;
 const SERVICE_START_TIMEOUT: Duration = Duration::from_secs(15);
-const SERVICE_PROBE_TIMEOUT: Duration = Duration::from_millis(350);
+const SERVICE_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const SERVICE_PORT_GRACE: Duration = Duration::from_millis(1500);
 const LOG_TAIL_CHARS: usize = 4000;
 
@@ -350,16 +350,19 @@ fn open_main_ui(state: State<'_, ChildState>, page: Option<String>) -> Result<()
             .as_ref()
             .map(|path| path.display().to_string())
     };
+    eprintln!("[open_main_ui] health check start");
     if !service_health_ok() {
+        eprintln!("[open_main_ui] health check FAILED");
         return Err(match log_path {
             Some(path) => format!("AI 服务尚未就绪，请查看日志：{path}"),
             None => "AI 服务尚未就绪".to_string(),
         });
     }
-    open_url_in_browser(&format!(
-        "http://127.0.0.1:{SERVICE_PORT}/{}",
-        page_fragment(page)
-    ))
+    let url = format!("http://127.0.0.1:{SERVICE_PORT}/{}", page_fragment(page));
+    eprintln!("[open_main_ui] opening {url}");
+    let result = open_url_in_browser(&url);
+    eprintln!("[open_main_ui] open result: {:?}", result);
+    result
 }
 
 /// 页面名 → URL 片段（`chat` → `#/chat`）；只放行纯字母，其余一律回到主页。

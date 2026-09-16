@@ -268,8 +268,15 @@ export default function Widget() {
   const openMainUi = async (page?: string): Promise<void> => {
     try {
       await invoke("open_main_ui", { page: page ?? null });
-    } catch {
-      /* 桌面调用失败时静默，保留当前挂件 */
+      showBrief("已打开主界面", 2000);
+    } catch (err) {
+      const detail =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "未知错误";
+      showBrief(`打开主界面失败：${detail}`, 4000);
     }
   };
 
@@ -314,6 +321,23 @@ export default function Widget() {
     speakingRef.current = false;
     speakEndAtRef.current = Date.now();
     setSpeaking(false);
+  };
+
+  /** 任务事件短播报：不占语音租约、不打断正在朗读的回复，尊重 auto_speak 开关。 */
+  const playTts = async (text: string): Promise<void> => {
+    if (!voiceStatusRef.current?.auto_speak || speakingRef.current) return;
+    try {
+      const blob = await synthesizeSpeech(text);
+      const ctx = await ensureAudioContext();
+      if (!ctx || !blob.size) return;
+      const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start();
+    } catch {
+      /* TTS 不可用时静默，保留视觉提醒 */
+    }
   };
 
   /** 通知服务端「用户打断」：挂件徽标与主界面状态同步回落（V1 按钮打断）。 */
@@ -600,25 +624,16 @@ export default function Widget() {
           showBrief(reminderText, 8000);
           setAlert(true);
           window.setTimeout(() => setAlert(false), 3200);
-          if (!voiceStatusRef.current?.auto_speak) break;
-          void synthesizeSpeech(reminderText)
-            .then(async (blob) => {
-              const ctx = await ensureAudioContext();
-              if (!ctx || !blob.size) return;
-              const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
-              const src = ctx.createBufferSource();
-              src.buffer = buf;
-              src.connect(ctx.destination);
-              src.start();
-            })
-            .catch(() => { /* TTS 不可用时静默，保留视觉提醒 */ });
+          void playTts(reminderText);
           break;
         }
         case "task.completed":
           showBrief(bubble || "✓ 任务完成", 4000);
+          void playTts(bubble || "任务完成");
           break;
         case "task.failed":
           showBrief(bubble || "✗ 任务失败", 4000);
+          void playTts(bubble || "任务执行失败，请到对话页查看原因");
           break;
         case "task.cancelled":
           showBrief(bubble || "已取消", 3000);
