@@ -101,7 +101,7 @@ desktop-assistant-project/
 | 项 | 决策 |
 |---|---|
 | 运行时组合 | Tauri 2（桌面运行时壳）+ React/TS 浏览器主界面（`apps/web`）+ Python FastAPI 本地 AI 服务（`services/ai-service`） |
-| 主界面打开方式 | 生产模式由 ai-service 托管 `apps/web` 静态资源；桌面运行时用系统默认浏览器打开 `http://127.0.0.1:<port>/` |
+| 主界面打开方式 | 生产模式由 ai-service 托管 `apps/web` 静态资源；桌面运行时用 Tauri 主窗口加载 `http://127.0.0.1:<port>/` |
 | 端口规范 | ai-service `8736` / web dev `5173` / desktop dev `1420`，默认只绑定 `127.0.0.1` |
 | 契约策略 | `packages/contracts/py`（pydantic）为单一事实源；`packages/contracts/ts` 为镜像类型；一致性测试兜底，暂不引入代码生成工具链 |
 | 事件格式 | `EventEnvelope` v0.1：event_id / event_type / timestamp / conversation_id / task_id / source / payload；广播经 WS `/api/events` |
@@ -113,7 +113,7 @@ Step 1 完成标准：
 
 - 桌面运行时能拉起 ai-service 并轮询健康状态
 - `/api/health`、`/api/session` 可用
-- 桌面「在浏览器打开」能打开主界面（ai-service 托管 `apps/web` 静态页）
+- 桌面「打开主界面」能打开 Tauri 主窗口（ai-service 托管 `apps/web` 静态页）
 - contracts 一致性测试通过
 
 > 状态（2026-09-04）：**Step 1 已完成并验收通过** —— 桌面运行时自动拉起 ai-service、健康检查 200、主界面由 ai-service 托管、契约一致性测试通过、退出桌面应用时服务随之停止。

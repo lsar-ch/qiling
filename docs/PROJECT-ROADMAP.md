@@ -17,7 +17,7 @@ DeskMate 当前收敛为：
 
 ## 当前进度
 
-**截至 2026-09-11：Step 1-3、Step 4、Step 4.5、Step 5、Step 6、Step 7、Step 8 自动化回归与 Codex 真实任务已完成；Step 9 页面视觉与挂件交互已完成；Step 9.5 表现事件流已完成。项目进入 V1 收口：角色基础形象规范化/挂件接入、macOS 真机人工验收、Windows 回归。**
+**截至 2026-09-16：V1 已收口。P1 浏览器执行器已完成；P1 轻量主动性 T2/T3/T4 已完成、T1（TTS 分块）部分完成；P2 发布加固 T1/T2/T3/T4 已完成、T5/T6 部分完成，详见 `docs/P1-P2-TASK-CARDS.md`。本轮验证（2026-09-16 晚）：`./scripts/check.sh` 全绿 —— pytest 194 passed、`apps/web` 与 `apps/desktop` typecheck 均 RC=0、`apps/web/dist` 已重建（`assets/index-BSF5HwH8.js`）；独立 smoke 实测 ai-service 冷启动后 `/api/health` 首次 3.25~4.30s 返回 200，`diagnostics` 四项（llm/voice/memory/agents）全 ok。**
 
 已完成：
 
@@ -32,7 +32,7 @@ DeskMate 当前收敛为：
 - 任务分流四类结果、任务 JSON 持久化、任务 API、聊天自动分流、本地任务台（Step 6）
 - 统一 Agent Adapter/Registry 契约、基于 `config/agents.yaml` 的执行器目录与配置接口（6 个默认）；Codex 与 WorkBuddy ACP 真实接入，其余执行器保留扩展位
 - Codex ACP/stdio 真实执行：AgentRun 持久化、任务提交、进度回流、取消/授权、`/api/agent-runs` 与主界面真实运行控件（Step 7 Phase 2）
-- Step 8 发布回归：`/api/health` 能力汇总、LLM/语音/Codex 降级自动化覆盖、前端“执行器不可用”提示、运行时隐私目录忽略；Codex ACP 真实任务已成功验收（真机启动/麦克风/Windows 待人工）
+- Step 8 发布回归：`/api/health` 能力汇总、LLM/语音/Codex 降级自动化覆盖、前端“执行器不可用”提示、运行时隐私目录忽略；Codex ACP 真实任务已成功验收（真机启动/麦克风/Windows 人工验收已于 2026-09-15 V1 收口完成）
 
 ## 近期路线
 
@@ -85,13 +85,13 @@ DeskMate 当前收敛为：
 
 ### Step 8：V1 回归与发布
 
-状态：自动化与 Codex 真实任务已完成；macOS/Windows 人工验收待收口。验收范围见 `docs/STEP8-RELEASE-DEGRADATION.md`。
+状态：已完成。自动化、Codex 真实任务与 macOS/Windows 人工验收均已于 2026-09-15 V1 收口完成。验收范围见 `docs/STEP8-RELEASE-DEGRADATION.md`。
 
 **借鉴 here（2026-09-10）**：打包脚本参考 here 的 `build_bundle.py`——smoke test、按需安装（--with-*）、模型外置、CI 双平台。
 
 已完成的自动化/工程收尾：
 
-- 健康接口返回 text/voice/memory 与执行器可用性汇总，不暴露密钥
+- 健康接口返回 text/voice/memory 与执行器可用性汇总，不暴露密钥；本轮 `/api/health` 新增 `diagnostics`（llm/voice/memory/agents 四项，中文 detail + `fix_hint`/`fix_action`，`services/ai-service/app/api/health.py:103`），主页据此渲染能力诊断卡与「去修复」跳转（`apps/web/src/App.tsx:1569`）
 - LLM 调用失败、语音供应商禁用/异常、Codex 未安装或不可执行均有明确降级与回归测试
 - 前端任务台对不可用执行器显示可见提示，任务仍可保留在本地任务台
 - `.gitignore` 覆盖会话、任务、Agent Run、日志、音频、本地记忆等运行时数据
@@ -99,12 +99,7 @@ DeskMate 当前收敛为：
 已完成：
 
 - Codex 真实成功任务：2026-09-07 通过 DeskMate `read-only` ACP 运行完成并返回有效结论
-
-待人工验收：
-
-- macOS 启动器和退出进程回收
-- 麦克风授权、无麦克风/拒绝授权降级
-- Windows 启动与权限回归
+- 人工验收：macOS 启动器和退出进程回收、麦克风授权与无麦克风/拒绝授权降级、Windows 启动与权限回归，已于 2026-09-15 V1 收口完成（见 `docs/WINDOWS-MIGRATION-2026-09.md`）
 
 ### Step 9：V1 视觉与体验打磨
 
@@ -200,13 +195,14 @@ V1 验证成功后再考虑：
 3. ✅ 平台修改均先确认方案后实施。
 4. ✅ 每项修改完成了当前 macOS 环境可执行的验证。
 5. ✅ 合并 WorkBuddy 执行器，并完成 macOS 真实只读任务、取消和错误路径复验。
-6. ⏸ 暂不进入浏览器执行器和通用 CUA 开发。
+6. ✅ 浏览器执行器 P1 完成（2026-09-16）：搜索/打开/翻页/读页面/附件上传端到端验证通过。
+7. ⏸ 通用 CUA 暂不进入。
 7. 后续：WorkBuddy 适配器允许注入 `mcpServers`，并把「日常/工作/项目」映射为 prompt 能力说明。
 8. 后续：先评估 Qwen Code CLI 的 ACP 接入，再决定是否新增 qwen 执行器；不接千问桌面端内部协议。
 
 ## N.E.K.O. 对比后的推进计划（2026-09-12）
 
-### P0：完成 V1 收口
+### P0：完成 V1 收口 ✅ 已完成（2026-09-15）
 
 - ✅ 角色基础形象规范化和挂件真机验收（2026-09-13）
 - ✅ macOS 启动器、麦克风权限、退出回收人工验收（麦克风两项按日常使用确认，不再单列）
@@ -215,18 +211,18 @@ V1 验证成功后再考虑：
   在 macOS 复验通过，见 `docs/WINDOWS-MIGRATION-2026-09.md`
 - 保持当前产品边界：角色化、本地优先、项目记忆、可控 Agent 执行
 
-### P1：V1.1 浏览器窄场景执行
+### P1：V1.1 浏览器窄场景执行 ✅ 完成（2026-09-16）
 
 目标是先获得稳定的网页工作能力，不直接建设通用 Computer Use。
 
 实施顺序：
 
 1. 在现有 `AgentAdapter` / `AgentRegistry` 上增加浏览器执行器，不在前端增加浏览器特例。
-2. 先实现打开 URL、搜索、读取页面、提取结果、翻页和滚动。
-3. 执行器优先采用页面级 DOM/CDP；可见浏览器作为用户可观察的执行面。
+2. 先实现打开 URL、搜索、读取页面、提取结果、翻页和滚动。滚动因无状态适配器限制交 WorkBuddy agent 处理。
+3. 执行器优先采用页面级 DOM/CDP。
 4. 复用 `AgentRun`、进度事件、取消、授权和结果归档。
 5. 登录、验证码、提交、发送、删除和支付统一暂停并请求用户确认。
-6. 先用一个代表性任务做端到端验收，再决定是否增加表单填写。
+6. 先用一个代表性任务做端到端验收（真实搜索/打开/读页面已通过，表单填写不实施）。
 
 验收信号：
 
@@ -235,17 +231,41 @@ V1 验证成功后再考虑：
 - 用户取消后浏览器和任务状态都能正确收口
 - 任务结果可进入 Chat、挂件反馈和项目记忆
 
-### P1：轻量主动性与对话模式
+### P1：轻量主动性与语音优化（任务卡已落定）
 
-- 闲聊/工作模式按上下文选择记忆加载和响应深度
-- 项目任务长时间等待、失败、完成时主动短播报
-- 记忆更新和项目进度回顾采用低频、可关闭策略
+> 详见 `docs/P1-P2-TASK-CARDS.md`
 
-### P2：发布加固
+| 编号 | 任务 | 来源 | 状态 |
+|------|------|------|------|
+| P1-T1 | TTS 增量分块播报（首响 <1s） | VC-Bundle 建议3 + P1 短播报需求 | ⚠️ 部分完成：Web 端已走分块播放（`app/speech/base.py:66` / `app/api/voice.py:319` / `apps/web/src/api.ts:934` / `ChatPage.tsx:317`）；挂件仍全量合成（`apps/desktop/src/components/Widget.tsx:330`、`:375`），且无自动化测试与首响延迟度量 |
+| P1-T2 | 任务完成/失败主动短播报 | 原 P1 范围 | ✅ 已完成（`app/agents/runtime.py:467` 发 bubble + speak_text，`ChatPage.tsx:469` 自动播报）；遗留挂件侧无「多条播报合并队列」（`Widget.tsx:328` 忙则丢弃） |
+| P1-T3 | 记忆更新气泡提示（低频 5min） | 原 P1 范围 | ✅ 已完成（2026-09-16 修复）：原 `ChatPage.tsx` 把 `memory.updated` 挡在 `TASK_EVENT_TYPES` 白名单外是死代码，现已把 `env.source !== "task"` 与事件类型过滤拆开（`ChatPage.tsx:428`、`:429`、`:443`），后端 `app/agents/runtime.py:544` 的事件可被消费；5min 限频 + 5s 自动清除保留；新增回归测试 `tests/test_agent_runtime.py::test_completed_task_publishes_memory_updated_event` |
+| P1-T4 | 工作模式自适应记忆深度 | 原 P1 范围 | ✅ 已完成（`app/api/chat.py:77` mode 字段、`:337` casual 压到 800 字/空 surfaces、work 全量，测试 `tests/test_chat.py:231`）；本轮补上手动切换分段控件（`ChatPage.tsx:63`、`:1179`）；遗留 `mode` 尚未进 `packages/contracts`，桌面端无法传 |
 
-- 一键安装/首次启动检查
-- 服务、模型、语音、执行器能力汇总
-- 失败原因和修复入口
+执行顺序：P1-T1 → P1-T2（依赖分块），P1-T3/T4 可并行。
+
+### P2：发布加固（任务卡已落定）
+
+> 详见 `docs/P1-P2-TASK-CARDS.md`
+
+| 编号 | 任务 | 来源 | 状态 |
+|------|------|------|------|
+| P2-T1 | 一键安装脚本（smoke test + 按需安装） | 原 P2 + here 打包借鉴 | ✅ 已完成（`scripts/setup.sh`：工具链检测 / .venv 复用 / `npm ci` / `--with-voice` / `--with-browser` / smoke test / 修复入口 / Windows 指向迁移文档；本轮修掉 `fetch_health` 超时 2s→8s（`:83`）与语音 key 检测漏读项目根 `.env`（`:224`））；遗留未在干净 macOS 上跑完整 `setup.sh`（会清 node_modules 并重建 dist，需单独授权） |
+| P2-T2 | 首次启动配置引导 | 原 P2 范围 | ✅ 已完成（`app/api/settings.py:288` `GET /api/setup/status`、`apps/web/src/App.tsx:1756` SetupWizard、测试 `tests/test_settings_api.py:255`）；范围偏差：只有 2 步（LLM 必填 → 语音可选可跳过），无「角色选择」步；完成标记写入 `data/settings.local.json`（`app/config.py:163`）而非 `config/settings.yaml`，刻意让密钥不进仓库配置 |
+| P2-T3 | 能力汇总与故障诊断 Dashboard | 原 P2 范围 | ✅ 已完成（`app/api/health.py:103` `_diagnostics` 带中文 detail + `fix_hint`/`fix_action`、`App.tsx:1569` 卡片与「去修复」跳转、测试 `tests/test_health.py:46`）；偏差：诊断项合并为 4 类（llm/voice/memory/agents）而非任务卡列的 6 项，且仅在有诊断项时渲染 |
+| P2-T4 | Persona 预设模板（work/companion/service） | VC-Bundle 建议1 | ✅ 已完成（2026-09-16 修复）：原 `app/core/persona_prompt.py` 只在 profile 完全为空时才用预设，而 `config/personas/default.yaml:35` 有完整 profile → `preset: work` 是死字段；现改为「预设作底座 + profile 非空字段覆盖」（`persona_prompt.py:105`），并补 3 个测试（`tests/test_persona_prompt.py:88`、`:99`、`:106`），实测默认角色提示词零变化；遗留无切换预设的 API/UI（`PersonaPayload` 无 preset 字段） |
+| P2-T5 | 音色/形象后台任务状态机 | VC-Bundle 建议4 | ⚠️ 部分完成：`scripts/persona_asset_import.py` 已有状态机 + 合法流转表（`:32`）、JSON 落盘 `data/persona-tasks/`、CLI（`:249`，含 `--self-test` 实测通过）；未复用 AgentRun、未接 API/前端，进度只能在命令行看 |
+| P2-T6 | AvatarDriver 字段预留（procedural_2d） | VC-Bundle 建议2 | ⚠️ 部分完成：仅 `config/personas/default.yaml:13` 一行 `avatar_driver: procedural_2d`，contracts 双端都没有该字段（`packages/contracts/py/deskmate_contracts/character.py:13` 及 ts 对应文件），目前无读取方；符合「V1 零依赖预留」意图，但 contracts 那半句未做 |
+
+执行顺序：P2-T1 → P2-T2，P2-T3/T4 并行，P2-T5/T6 并行。
+
+### V2 待办（本轮遗留）
+
+1. 挂件接 TTS 分块链路（P1-T1 收尾）：`apps/desktop/src/components/Widget.tsx:330`、`:375` 仍走全量 `synthesizeSpeech`。
+2. 挂件播报合并队列（P1-T2 收尾）：`Widget.tsx:328` 忙则丢弃，缺多条短播报合并。
+3. `mode` 进 `packages/contracts`（P1-T4 收尾）：桌面端目前无法传 `auto/casual/work`。
+4. persona 预设切换 API/UI（P2-T4 收尾）：`PersonaPayload` 无 `preset` 字段，运行时无法切换。
+5. P2-T5 接 AgentRun + 前端：`scripts/persona_asset_import.py` 复用 AgentRun 状态模型并把进度暴露到界面。
 
 ### P3：仅在真实需求出现后评估通用 CUA
 
@@ -280,3 +300,20 @@ V1 验证成功后再考虑：
 - 触发方式：异常自动弹出（按严重级别路由到对应入口）+ 用户主动「检测」入口并存。
 
 候选安排：V1 收口（Step 9 视觉/Step 8 人工验收）后，随发布加固或 Step 10 维护能力再做，不提前排期。
+
+## Voice-Companion-Bundle 调研（2026-09-16）
+
+> 项目：[github.com/JunWan666/voice-companion-bundle](https://github.com/JunWan666/voice-companion-bundle)
+> 定位：Windows + WSL2 本地数字人语音交互整合包（Faster-Whisper → LLM → Qwen3-TTS → LiveTalking/Wav2Lip）
+
+5 条建议已合并入 P1/P2 任务卡：
+
+| 建议 | 内容 | 落点 |
+|------|------|------|
+| 1 | persona 预设模板（work/companion/service） | P2-T4 |
+| 2 | AvatarDriver 字段预留（procedural_2d/video_stream） | P2-T6 |
+| 3 | TTS 增量分块 + 打断队列 | P1-T1 |
+| 4 | 音色/形象后台任务状态机 | P2-T5 |
+| 5 | 不改变 V1 定位（轻量桌面伙伴 ≠ 赛博女友） | 已有共识 |
+
+不做的：Wav2Lip/LiveTalking（Windows CUDA 依赖重，放 V2 可选驱动）。

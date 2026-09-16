@@ -16,8 +16,8 @@
 ## 架构（Step 1 冻结决策）
 
 ```text
-apps/desktop      Tauri 2 桌面运行时：拉起 AI 服务、托盘/挂件壳、打开浏览器主界面
-apps/web          React + Vite 浏览器主界面（中文默认），生产由 ai-service 托管
+apps/desktop      Tauri 2 桌面运行时：拉起 AI 服务、托盘/挂件壳、打开 Tauri 主界面
+apps/web          React + Vite 主界面（中文默认），由 ai-service 托管并由 Tauri 主窗口加载
 services/ai-service  Python FastAPI 本地服务：health/事件总线/文字对话/语音/记忆/任务与 Agent 执行
 packages/contracts 共享契约：pydantic 单一事实源 + TS 镜像 + 一致性测试
 docs/             需求、技术方案、V1 接口与实施顺序
@@ -45,7 +45,7 @@ cd apps/desktop && npm run tauri dev
 ## 目录速览
 
 ```text
-apps/desktop/src-tauri/   Rust 运行时（服务进程管理、打开浏览器）
+apps/desktop/src-tauri/   Rust 运行时（服务进程管理、打开 Tauri 主窗口）
 services/ai-service/app/  FastAPI 路由与事件总线
 packages/contracts/py/    pydantic 契约（真相源）
 packages/contracts/ts/    TS 类型镜像
