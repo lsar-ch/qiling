@@ -1,0 +1,31 @@
+"""浏览器执行器：搜索请求解析与敏感动作拒绝（不依赖网络）。"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.agents.base import AgentExecutionError
+from app.agents.browser import BrowserAdapter, _parse_search_request
+
+
+def test_parse_search_request_extracts_query_and_limit() -> None:
+    assert _parse_search_request("搜索 石家庄中考招生政策 并返回前几条摘要") == ("石家庄中考招生政策", 5)
+    assert _parse_search_request("查一下 2026 苹果发布会时间") == ("2026 苹果发布会时间", 5)
+    assert _parse_search_request("搜索 量子纠缠 前 3 条") == ("量子纠缠", 3)
+    assert _parse_search_request("帮我搜索 python 异步编程 返回前 2 条摘要") == ("python 异步编程", 2)
+
+
+def test_sensitive_prompts_are_rejected_before_browser() -> None:
+    entry = type("E", (), {"enabled": True, "capabilities": [], "tags": [], "source_url": None, "detail": ""})()
+    adapter = BrowserAdapter(catalog_entry=entry)
+
+    async def probe(text: str) -> None:
+        with pytest.raises(AgentExecutionError, match="敏感"):
+            await adapter.run(
+                type("R", (), {"task_id": "t", "prompt": text, "cwd": "/"})(),
+                on_update=lambda _k, _p: None,
+            )
+
+    import asyncio
+    for text in ("帮我登录一下网站", "把这个页面内容发送给我", "删除搜索结果页"):
+        asyncio.run(probe(text))

@@ -118,7 +118,7 @@ def test_agents_api_lists_all_default_agents(tmp_path, monkeypatch) -> None:
         body = resp.json()
         assert body["default_executor"] == "workbuddy"
         items = {item["name"]: item for item in body["items"]}
-        assert len(items) == 6
+        assert len(items) == 7
         assert set(items) == {
             "codex",
             "claude-code",
@@ -126,6 +126,7 @@ def test_agents_api_lists_all_default_agents(tmp_path, monkeypatch) -> None:
             "kimi-cli",
             "reasonix",
             "workbuddy",
+            "browser",
         }
         claude_status, claude_available = _expected_pending_status(["claude"])
         assert items["claude-code"]["integration_status"] == claude_status
@@ -149,7 +150,7 @@ def test_agents_api_config_returns_catalog(tmp_path, monkeypatch) -> None:
         assert resp.status_code == 200
         body = resp.json()
         assert body["default_executor"] == "workbuddy"
-        assert len(body["items"]) == 6
+        assert len(body["items"]) == 7
         assert {item["name"] for item in body["items"]} == {
             "codex",
             "claude-code",
@@ -157,6 +158,7 @@ def test_agents_api_config_returns_catalog(tmp_path, monkeypatch) -> None:
             "kimi-cli",
             "reasonix",
             "workbuddy",
+            "browser",
         }
         assert all(item["enabled"] is True for item in body["items"])
 

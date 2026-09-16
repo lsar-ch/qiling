@@ -76,3 +76,14 @@ executors:
     source_url: null
     tags: ["custom", "acp"]
     detail: "WorkBuddy 自带 CLI，通过 ACP/stdio 提交真实任务"
+
+  - name: browser
+    label: 浏览器
+    adapter: browser
+    enabled: true
+    commands: ["playwright"]
+    protocol: playwright
+    capabilities: ["web", "search", "read"]
+    source_url: null
+    tags: ["builtin", "playwright"]
+    detail: "Playwright 只读浏览器：搜索主题并返回前几条摘要（V1.1 窄场景）"

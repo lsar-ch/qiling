@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.agents.catalog import AgentCatalog, load_agent_catalog
+from app.agents.browser import BrowserAdapter
 from app.agents.codex import CodexAdapter
 from app.agents.registry import AgentRegistry
 from app.agents.reserved import PendingAgentAdapter
@@ -27,5 +28,7 @@ def rebuild_agent_registry(registry: AgentRegistry, catalog: AgentCatalog) -> No
             registry.register(CodexAdapter(catalog_entry=entry))
         elif entry.adapter == "workbuddy":
             registry.register(WorkBuddyAdapter(catalog_entry=entry))
+        elif entry.adapter == "browser":
+            registry.register(BrowserAdapter(catalog_entry=entry))
         else:
             registry.register(PendingAgentAdapter(entry))
