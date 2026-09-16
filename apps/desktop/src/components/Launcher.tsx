@@ -122,7 +122,7 @@ export default function Launcher() {
           {busy ? "启动中…" : "启动本地服务"}
         </button>
         <button onClick={() => void openUi()} disabled={!healthy}>
-          在浏览器打开主界面
+          打开主界面
         </button>
         <button onClick={() => void toggleWidget()}>
           {widgetHidden ? "显示挂件" : "隐藏挂件"}

@@ -21,6 +21,19 @@
         "visible": false
       },
       {
+        "title": "DeskMate 主界面",
+        "label": "main_ui",
+        "url": "http://127.0.0.1:8736/",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 640,
+        "resizable": true,
+        "center": true,
+        "maximized": true,
+        "visible": false
+      },
+      {
         "title": "DeskMate",
         "label": "widget",
         "url": "index.html",

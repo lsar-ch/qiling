@@ -13,7 +13,7 @@ use serde::Serialize;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 mod widget;
 
@@ -314,16 +314,24 @@ fn start_service(shared: &mut Shared) {
     }
 }
 
-fn open_url_in_browser(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let result = Command::new("open").arg(url).spawn();
-    #[cfg(target_os = "windows")]
-    let result = Command::new("cmd").args(["/C", "start", "", url]).spawn();
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let result = Command::new("xdg-open").arg(url).spawn();
-    result
+fn open_main_ui_window(app: &AppHandle, page: Option<String>) -> Result<(), String> {
+    let url = format!("http://127.0.0.1:{SERVICE_PORT}/{}", page_fragment(page));
+    if let Some(window) = app.get_webview_window("main_ui") {
+        window
+            .navigate(url.parse().map_err(|e| format!("主界面地址无效: {e}"))?)
+            .map_err(|e| format!("切换主界面页面失败: {e}"))?;
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(app, "main_ui", WebviewUrl::External(url.parse().map_err(|e| format!("主界面地址无效: {e}"))?))
+        .title("DeskMate 主界面")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(900.0, 640.0)
+        .center()
+        .build()
         .map(|_| ())
-        .map_err(|e| format!("打开浏览器失败: {e}"))
+        .map_err(|e| format!("创建主界面窗口失败: {e}"))
 }
 
 #[tauri::command]
@@ -341,7 +349,7 @@ fn service_status(state: State<'_, ChildState>) -> Result<ServiceStatus, String>
 }
 
 #[tauri::command]
-fn open_main_ui(state: State<'_, ChildState>, page: Option<String>) -> Result<(), String> {
+fn open_main_ui(app: AppHandle, state: State<'_, ChildState>, page: Option<String>) -> Result<(), String> {
     let log_path = {
         let mut shared = state.0.lock().map_err(|_| "服务状态锁不可用".to_string())?;
         start_service(&mut shared);
@@ -358,11 +366,7 @@ fn open_main_ui(state: State<'_, ChildState>, page: Option<String>) -> Result<()
             None => "AI 服务尚未就绪".to_string(),
         });
     }
-    let url = format!("http://127.0.0.1:{SERVICE_PORT}/{}", page_fragment(page));
-    eprintln!("[open_main_ui] opening {url}");
-    let result = open_url_in_browser(&url);
-    eprintln!("[open_main_ui] open result: {:?}", result);
-    result
+    open_main_ui_window(&app, page)
 }
 
 /// 页面名 → URL 片段（`chat` → `#/chat`）；只放行纯字母，其余一律回到主页。
@@ -427,6 +431,7 @@ fn find_tray_icon() -> Option<PathBuf> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(ChildState::new());
             let launcher_needed = !ensure_service_for_app(app.handle());
@@ -455,8 +460,7 @@ pub fn run() {
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => {
                         if ensure_service_for_app(app) {
-                            let _ =
-                                open_url_in_browser(&format!("http://127.0.0.1:{SERVICE_PORT}/"));
+                            let _ = open_main_ui_window(app, None);
                         } else if let Some(win) = app.get_webview_window("main") {
                             let _ = win.show();
                         }
@@ -487,9 +491,14 @@ pub fn run() {
             quit_app
         ])
         .on_window_event(|window, event| match event {
-            WindowEvent::CloseRequested { .. } => {
-                let app = window.app_handle().clone();
-                kill_child(&app);
+            WindowEvent::CloseRequested { api, .. } => {
+                if window.label() == "main_ui" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    let app = window.app_handle().clone();
+                    kill_child(&app);
+                }
             }
             WindowEvent::Moved(_) if window.label() == "widget" => {
                 if let Some(state) = window
