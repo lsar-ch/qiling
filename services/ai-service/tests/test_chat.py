@@ -145,3 +145,22 @@ def test_conversation_listing() -> None:
         assert len(items) >= 1
         assert items[0]["message_count"] >= 2
         assert "第一条问题" in items[0]["title"]
+
+
+def test_chitchat_uses_light_memory_context() -> None:
+    """闲聊（answer）：记忆只带角色与近期会话，预算压缩且不加载项目记忆。"""
+    calls: list[dict] = []
+    with make_client(FakeProvider("好呀")) as client:
+        memory_service = client.app.state.memory
+        original = memory_service.recall_context
+
+        def spy(**kwargs):
+            calls.append(kwargs)
+            return original(**kwargs)
+
+        client.app.state.memory.recall_context = spy  # type: ignore[method-assign]
+        resp = client.post("/api/chat/stream", json={"message": "在吗"})
+        assert resp.status_code == 200
+    assert calls, "闲聊应走 LLM 回复（触发 recall_context）"
+    assert calls[0]["budget_chars"] <= 800
+    assert calls[0]["surfaces"] == []

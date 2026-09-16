@@ -173,9 +173,9 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
         and not _is_echo_of_reply(body.message, conversation)
     ):
         try:
-            from app.agents.browser import is_browser_search
+            from app.agents.browser import is_browser_task
 
-            executor = "browser" if is_browser_search(body.message) else None
+            executor = "browser" if is_browser_task(body.message) else None
             auto_run = await request.app.state.agent_run_manager.execute(
                 task, mode="read-only", executor=executor
             )
@@ -209,12 +209,22 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             )
             yield _sse({"type": "delta", "content": answer})
         else:
-            compiled = memory.recall_context(
-                query=body.message,
-                budget_chars=settings.memory_budget_chars,
-                surfaces=["conversation", "project"],
-                persona_id=settings.active_persona_id,
-            )
+            # 闲聊（answer）只带角色与近期会话，压缩预算、不加载项目记忆；
+            # 工作任务才带完整项目记忆（L2 + 记忆搜索）。
+            if task.category == "answer":
+                compiled = memory.recall_context(
+                    query="",
+                    budget_chars=min(settings.memory_budget_chars, 800),
+                    surfaces=[],
+                    persona_id=settings.active_persona_id,
+                )
+            else:
+                compiled = memory.recall_context(
+                    query=body.message,
+                    budget_chars=settings.memory_budget_chars,
+                    surfaces=["conversation", "project"],
+                    persona_id=settings.active_persona_id,
+                )
             llm_messages = build_llm_messages(
                 _system_prompt(request), conversation, memory_context=compiled.text
             )

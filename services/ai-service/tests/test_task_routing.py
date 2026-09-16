@@ -131,7 +131,7 @@ def test_short_chitchat_is_not_a_task(tmp_path: Path, monkeypatch) -> None:
 def test_plain_command_is_medium_risk_so_it_auto_runs(tmp_path: Path, monkeypatch) -> None:
     """真指令即使不含「代码/项目」等词，也要落到 medium 才会自动起跑。"""
     with make_client(tmp_path, monkeypatch) as client:
-        for text in ("帮我改一下 README 的错别字", "查一下石家庄中考招生政策"):
+        for text in ("帮我改一下 README 的错别字", "查一下石家庄中考招生政策", "打开闲鱼主页"):
             resp = client.post("/api/tasks", json={"input": text})
             assert resp.status_code == 200
             body = resp.json()
