@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deskmate_contracts.conversation import Conversation, ConversationMessage
+from deskmate_contracts.conversation import ChatAttachment, Conversation, ConversationMessage
 
 
 class ConversationStore:
@@ -68,6 +68,23 @@ class ConversationStore:
         items.sort(key=lambda c: c.updated_at, reverse=True)
         return items[:limit]
 
+    async def set_project(
+        self,
+        conversation_id: str,
+        project: str | None,
+        project_name: str | None = None,
+    ) -> Conversation | None:
+        """改绑会话的项目目录；会话不存在时返回 None。"""
+        async with self._lock_for(conversation_id):
+            conversation = await self._read(conversation_id)
+            if conversation is None:
+                return None
+            conversation.project = (project or "").strip() or None
+            conversation.project_name = (project_name or "").strip() or None
+            conversation.updated_at = datetime.now(timezone.utc).isoformat()
+            await self._atomic_write(conversation)
+            return conversation
+
     async def append_message(
         self,
         conversation_id: str | None,
@@ -76,6 +93,7 @@ class ConversationStore:
         *,
         modality: str = "text",
         model_profile_id: str | None = None,
+        attachments: list[ChatAttachment] | None = None,
     ) -> Conversation:
         conversation_id = conversation_id or ""
         async with self._lock_for(conversation_id):
@@ -99,6 +117,7 @@ class ConversationStore:
                     role=role,  # type: ignore[arg-type]
                     content=content,
                     modality=modality,
+                    attachments=attachments or [],
                     created_at=now,
                 )
             )

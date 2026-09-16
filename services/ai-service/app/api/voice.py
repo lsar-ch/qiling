@@ -10,7 +10,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
+import asyncio
+import json
 from pydantic import BaseModel, Field
 
 from deskmate_contracts.events import EventEnvelope
@@ -313,6 +315,56 @@ async def voice_intent(request: Request, body: IntentRequest) -> dict:
         "reply": reply,
         "wake_texts": build_wake_texts(persona_name, settings.activation_wake_prefixes),
     }
+
+@router.post("/synthesize/stream")
+async def synthesize_stream(request: Request, body: SynthesizeRequest):
+    """流式合成：SSE 逐句推送音频 chunk（每行一个完整块 JSON+base64）。
+
+    barge-in 时前端关闭 fetch 即中断后续推送。
+    """
+    await _require_lease(request)
+    settings = request.app.state.settings
+    if is_lite_mode(settings):
+        raise HTTPException(status_code=503, detail="轻量模式已禁用语音合成")
+    stack = _stack(request)
+    if not stack.synthesizer.available:
+        raise HTTPException(status_code=503, detail="语音合成未配置：请先配置语音供应商")
+
+    await _publish(request, "conversation.response", {"message": body.text})
+
+    import base64 as _b64
+
+    async def _chunks():
+        idx = 0
+        try:
+            async for audio in stack.synthesizer.synthesize_stream(body.text, body.params):
+                yield (
+                    "data: "
+                    + json.dumps({
+                        "index": idx,
+                        "format": audio.format,
+                        "sample_rate": audio.sample_rate,
+                        "audio": _b64.b64encode(audio.data).decode("ascii"),
+                    })
+                    + "\n\n"
+                )
+                idx += 1
+            yield "data: " + json.dumps({"done": True, "total_chunks": idx}) + "\n\n"
+        except SpeechUnavailable as exc:
+            yield "data: " + json.dumps({"error": str(exc), "status": 503}) + "\n\n"
+        except SpeechProviderError as exc:
+            yield "data: " + json.dumps({"error": str(exc), "status": 502}) + "\n\n"
+        except Exception as exc:
+            yield "data: " + json.dumps({"error": str(exc), "status": 500}) + "\n\n"
+
+    return StreamingResponse(
+        _chunks(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 @router.post("/recognize")
 async def recognize(request: Request, language: str = "zh") -> dict:

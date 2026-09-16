@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   fetchConversation,
   fetchConversations,
+  fetchAwaitingRuns,
   fetchModelProfiles,
   fetchPersonas,
   fetchSession,
@@ -13,10 +14,18 @@ import {
   recognizeSpeech,
   streamChat,
   synthesizeSpeech,
+  synthesizeSpeechStream,
+  uploadChatAttachments,
+  type AgentRun,
+  type ChatAttachmentView,
   type ChatMessageView,
+  type ConversationSummary,
   type ModelProfile,
   type VoiceEndpointStatus,
 } from "./api";
+import MarkdownLite from "./MarkdownLite";
+import { isTauri } from "@tauri-apps/api/core";
+import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import type { EventEnvelope } from "@deskmate/contracts";
 import { startRecording, type MicRecorder } from "./recorder";
 import {
@@ -50,6 +59,13 @@ const TASK_EVENT_TYPES = [
   "task.cancelled",
 ];
 
+// 记忆深度三态：auto 交给分流，casual 轻量记忆，work 完整项目记忆
+const CHAT_MODES = [
+  { mode: "auto", label: "自动", hint: "按任务分流自动选择记忆深度" },
+  { mode: "casual", label: "闲聊", hint: "轻量记忆" },
+  { mode: "work", label: "工作", hint: "完整项目记忆" },
+] as const;
+
 const NOTICE_STYLE: Record<NoticeKind, string> = {
   ok: "text-ok bg-ok-50",
   warn: "text-warn bg-warn-50",
@@ -80,7 +96,16 @@ export default function ChatPage({
   events?: EventEnvelope[];
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showProjects, setShowProjects] = useState(false);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
+  const [projectInput, setProjectInput] = useState("");
+  const [projectNameInput, setProjectNameInput] = useState("");
+  const [projectDraftOpen, setProjectDraftOpen] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachmentView[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [awaitingRuns, setAwaitingRuns] = useState<AgentRun[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [liveTask, setLiveTask] = useState<LiveTask | null>(null);
@@ -92,9 +117,12 @@ export default function ChatPage({
   const [personaName, setPersonaName] = useState("千问");
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [memoryBubble, setMemoryBubble] = useState("");
+  const [chatMode, setChatMode] = useState<"auto" | "casual" | "work">("auto");
   const [notice, setNoticeText] = useState("");
   const [noticeKind, setNoticeKind] = useState<NoticeKind>("ok");
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingRef = useRef(false);
   const busyRef = useRef(false);
   const conversationIdRef = useRef<string | null>(null);
@@ -109,6 +137,9 @@ export default function ChatPage({
   const segmentHandlerRef = useRef<(segment: AlwaysListenSegment) => void>(() => {});
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playbackRef = useRef<AudioBufferSourceNode | null>(null);
+  const playbackAbortRef = useRef<AbortController | null>(null);
+  const lastMemoryBubbleAtRef = useRef(0);
+  const memoryBubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speakPendingRef = useRef(false);
   const speakingRef = useRef(false);
   const speakStartAtRef = useRef(0);
@@ -124,6 +155,23 @@ export default function ChatPage({
   const setNotice = (text: string, kind: NoticeKind = "ok"): void => {
     setNoticeText(text);
     setNoticeKind(kind);
+  };
+
+  const reloadAwaitingRuns = async (cid: string | null = conversationIdRef.current): Promise<void> => {
+    try {
+      const items = await fetchAwaitingRuns(cid);
+      setAwaitingRuns(items);
+    } catch {
+      /* 服务离线或会话暂无待授权任务时忽略 */
+    }
+  };
+
+  const reloadConversations = async (): Promise<void> => {
+    try {
+      setConversations(await fetchConversations());
+    } catch {
+      /* 服务离线时保留当前列表 */
+    }
   };
 
   useEffect(() => {
@@ -166,6 +214,7 @@ export default function ChatPage({
       try {
         const list = await fetchConversations();
         if (!alive) return;
+        setConversations(list);
         if (list.length === 0) {
           setSelectedProfileId(
             personaProfileId || loadedProfiles.find((profile) => profile.is_default)?.id || "",
@@ -175,13 +224,17 @@ export default function ChatPage({
         const conv = await fetchConversation(list[0].conversation_id);
         if (!alive) return;
         setConversationId(conv.conversation_id);
+        conversationIdRef.current = conv.conversation_id;
         setMessages(conv.messages);
+        setProjectInput(conv.project || "");
+        setProjectNameInput(conv.project_name || "");
         setSelectedProfileId(
           conv.model_profile_id ||
             personaProfileId ||
             loadedProfiles.find((profile) => profile.is_default)?.id ||
             "",
         );
+        await reloadAwaitingRuns(conv.conversation_id);
       } catch {
         /* 首次进入无历史属正常 */
       }
@@ -231,6 +284,8 @@ export default function ChatPage({
   const stopSpeaking = (): void => {
     playbackRef.current?.stop();
     playbackRef.current = null;
+    playbackAbortRef.current?.abort();
+    playbackAbortRef.current = null;
     speakingRef.current = false;
     speakEndAtRef.current = Date.now();
     setSpeaking(false);
@@ -249,29 +304,52 @@ export default function ChatPage({
     speakStartAtRef.current = Date.now();
     speakEndAtRef.current = 0;
     setSpeaking(true);
-    let source: AudioBufferSourceNode | null = null;
+
+    // ponytail: 短文本（<=1句）走全量合成，长文本走流式
+    const shortText = text.length < 80 && !text.includes("。") && !text.includes("！") && !text.includes("？");
     try {
-      const blob = await synthesizeSpeech(text);
-      const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-      source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      playbackRef.current = source;
-      source.onended = () => {
-        if (playbackRef.current === source) playbackRef.current = null;
-        speakingRef.current = false;
-        speakEndAtRef.current = Date.now();
-        setSpeaking(false);
-        void publishEvent({ event_type: "speech.stopped", source: "speech", payload: {} });
-      };
-      source.start();
+      if (shortText) {
+        const blob = await synthesizeSpeech(text);
+        await _playBlob(ctx, blob);
+      } else {
+        const abort = new AbortController();
+        playbackAbortRef.current = abort;
+        const stream = await synthesizeSpeechStream(text, "web", abort.signal);
+        for await (const chunk of stream) {
+          if (!speakingRef.current) break;
+          await _playBlob(ctx, chunk.audio);
+        }
+        playbackAbortRef.current = null;
+      }
     } catch (e) {
-      if (playbackRef.current === source) playbackRef.current = null;
+      if (e instanceof DOMException && e.name === "AbortError") {
+        // barge-in 取消，正常
+      } else {
+        setNotice(e instanceof Error ? `语音播报失败：${e.message}` : "语音播报失败", "error");
+      }
+    } finally {
+      playbackRef.current = null;
       speakingRef.current = false;
       speakEndAtRef.current = Date.now();
       setSpeaking(false);
-      setNotice(e instanceof Error ? `语音播报失败：${e.message}` : "语音播报失败", "error");
+      void publishEvent({ event_type: "speech.stopped", source: "speech", payload: {} });
     }
+  };
+
+  /** 播放单个 Blob，返回 Promise 在播放完成后 resolve。barge-in 通过 playbackRef 停止。 */
+  const _playBlob = async (ctx: AudioContext, blob: Blob): Promise<void> => {
+    const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    playbackRef.current = source;
+    return new Promise<void>((resolve, reject) => {
+      source.onended = () => {
+        if (playbackRef.current === source) playbackRef.current = null;
+        resolve();
+      };
+      source.start();
+    });
   };
 
   const submitMessage = async (text: string, speakReply: boolean): Promise<void> => {
@@ -286,6 +364,7 @@ export default function ChatPage({
     ]);
 
     try {
+      const files = attachments;
       const done = await streamChat(conversationId, text, (delta) => {
         setMessages((prev) => {
           const next = [...prev];
@@ -295,9 +374,10 @@ export default function ChatPage({
           }
           return next;
         });
-      }, selectedProfileId || null);
+      }, selectedProfileId || null, projectInput.trim() || null, projectNameInput.trim() || null, files, chatMode);
       setConversationId(done.conversation_id);
       conversationIdRef.current = done.conversation_id;
+      setAttachments([]);
       if (speakReply && voiceStatus?.enabled && voiceStatus.auto_speak) {
         // 短回复朗读全文；长回复朗读摘要（全文保留在消息里，可点 🔊 听全文）
         stopSpeaking();
@@ -313,6 +393,7 @@ export default function ChatPage({
     } finally {
       setBusy(false);
       busyRef.current = false;
+      void reloadConversations();
       // 流式期间到达的任务事件：等这一轮结束再补刷，避免覆盖正在输出的回复
       if (pendingRefreshRef.current) {
         pendingRefreshRef.current = false;
@@ -344,7 +425,22 @@ export default function ChatPage({
     for (const env of events) {
       if (seen.has(env.event_id)) continue;
       seen.add(env.event_id);
-      if (env.source !== "task" || !TASK_EVENT_TYPES.includes(env.event_type)) continue;
+      if (env.source !== "task") continue;
+      if (env.event_type === "memory.updated") {
+        const memBubble = typeof env.payload?.bubble === "string" ? env.payload.bubble : "";
+        if (memBubble && env.conversation_id === conversationId) {
+          // ponytail: 5min rate limit
+          const now = Date.now();
+          if (now - lastMemoryBubbleAtRef.current > 300_000) {
+            lastMemoryBubbleAtRef.current = now;
+            setMemoryBubble(memBubble);
+            if (memoryBubbleTimerRef.current) clearTimeout(memoryBubbleTimerRef.current);
+            memoryBubbleTimerRef.current = window.setTimeout(() => setMemoryBubble(""), 5000);
+          }
+        }
+        continue;
+      }
+      if (!TASK_EVENT_TYPES.includes(env.event_type)) continue;
       if (env.conversation_id !== conversationId) continue;
       const payload = env.payload as { bubble?: unknown; run?: { run_id?: unknown } } | undefined;
       const runId = typeof payload?.run?.run_id === "string" ? payload.run.run_id : null;
@@ -370,21 +466,148 @@ export default function ChatPage({
         setLiveTask({ taskId, runId, text: bubble || "等待你的授权", status: "awaiting_approval" });
       } else {
         setLiveTask((prev) => (prev && prev.taskId === taskId ? null : prev));
+        // auto-speak on task completion/failure
+        const speakPayload = env.payload as { speak_text?: string } | undefined;
+        if (speakPayload?.speak_text && voiceStatus?.enabled && voiceStatus.auto_speak) {
+          void (async () => {
+            try {
+              await speak(speakPayload.speak_text!);
+            } catch { /* silent */ }
+          })();
+        }
       }
       needRefresh = true;
     }
-    if (needRefresh) void refreshConversation();
+    if (needRefresh) {
+      void refreshConversation();
+      void reloadAwaitingRuns();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, conversationId]);
 
-  const decideTask = async (decision: "approved" | "rejected"): Promise<void> => {
-    const runId = liveTask?.runId;
+  const decideRunById = async (runId: string | null, decision: "approved" | "rejected"): Promise<void> => {
     if (!runId) return;
     try {
       await decideRun(runId, decision);
+      setAwaitingRuns((prev) => prev.filter((run) => run.run_id !== runId));
+      setLiveTask((prev) => (prev?.runId === runId ? null : prev));
       setNotice(decision === "approved" ? "已批准当前操作" : "已拒绝当前操作");
+      void refreshConversation();
     } catch (e) {
       setNotice(e instanceof Error ? `授权操作失败：${e.message}` : "授权操作失败", "error");
+    }
+  };
+
+  const newConversation = (): void => {
+    if (busy) return;
+    setConversationId(null);
+    conversationIdRef.current = null;
+    setMessages([]);
+    setLiveTask(null);
+    setAwaitingRuns([]);
+    setProjectInput("");
+    setProjectNameInput("");
+    setAttachments([]);
+    setInput("");
+    setShowHistory(false);
+    setShowProjects(false);
+    setProjectDraftOpen(false);
+    setNotice("已新建对话");
+  };
+
+  const openConversation = async (id: string): Promise<void> => {
+    if (busy || id === conversationIdRef.current) {
+      setShowHistory(false);
+      return;
+    }
+    try {
+      const conv = await fetchConversation(id);
+      setConversationId(conv.conversation_id);
+      conversationIdRef.current = conv.conversation_id;
+      setMessages(conv.messages);
+      setProjectInput(conv.project || "");
+      setProjectNameInput(conv.project_name || "");
+      setAttachments([]);
+      setLiveTask(null);
+      setShowHistory(false);
+      setShowProjects(false);
+      await reloadAwaitingRuns(conv.conversation_id);
+    } catch (e) {
+      setNotice(e instanceof Error ? `历史对话加载失败：${e.message}` : "历史对话加载失败", "error");
+    }
+  };
+
+  const chooseProjectFolder = async (): Promise<void> => {
+    if (!isTauri()) {
+      setNotice("请在 DeskMate 桌面应用中使用原生文件夹选择", "warn");
+      return;
+    }
+    try {
+      const selected = await openFolderDialog({
+        directory: true,
+        multiple: false,
+        title: "选择项目文件夹",
+      });
+      if (typeof selected === "string") {
+        setProjectInput(selected);
+        if (!projectNameInput.trim()) {
+          setProjectNameInput(selected.split(/[\\/]/).filter(Boolean).pop() || "");
+        }
+      }
+    } catch (e) {
+      setNotice(e instanceof Error ? `选择文件夹失败：${e.message}` : "选择文件夹失败", "error");
+    }
+  };
+
+  const createProjectConversation = (): void => {
+    if (!projectInput.trim() || !projectNameInput.trim()) {
+      setNotice("请填写项目名称并选择项目文件夹", "warn");
+      return;
+    }
+    if (busy) return;
+    newConversation();
+    setProjectInput(projectInput.trim());
+    setProjectNameInput(projectNameInput.trim());
+    setNotice(`已创建项目「${projectNameInput.trim()}」，输入第一条消息即可开始对话`);
+  };
+
+  const handleFilesPicked = async (fileList: FileList | null): Promise<void> => {
+    if (!fileList || fileList.length === 0) return;
+    setUploadingFiles(true);
+    try {
+      const items = await uploadChatAttachments(Array.from(fileList));
+      setAttachments((prev) => [...prev, ...items]);
+    } catch (e) {
+      setNotice(e instanceof Error ? `附件上传失败：${e.message}` : "附件上传失败", "error");
+    } finally {
+      setUploadingFiles(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachment = (path: string): void => {
+    setAttachments((prev) => prev.filter((item) => item.path !== path));
+  };
+
+  const projectName = (path: string): string =>
+    path.split(/[\\/]/).filter(Boolean).pop() || path;
+
+  const projectConversations = Array.from(
+    new Map(
+      conversations
+        .filter((item) => item.project)
+        .map((item) => [item.project as string, item]),
+    ).values(),
+  ).map((item) => ({
+    path: item.project as string,
+    name: item.project_name || projectName(item.project as string),
+  }));
+
+  const openProject = async (path: string): Promise<void> => {
+    const latest = conversations.find((item) => item.project === path);
+    if (latest) {
+      setProjectDraftOpen(false);
+      await openConversation(latest.conversation_id);
     }
   };
 
@@ -583,7 +806,38 @@ export default function ChatPage({
     <section className="bg-white border border-line rounded-xl flex flex-col h-[calc(100vh-180px)] overflow-hidden shadow-card">
       {/* Toolbar */}
       <div className="relative z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-3 border-b border-line text-xs text-muted">
-        <span>对话历史保存在本地（data/conversations）</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors disabled:opacity-50"
+            onClick={newConversation}
+            disabled={busy}
+          >
+            新对话
+          </button>
+          <button
+            className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
+              showProjects ? "border-brand bg-brand-50 text-brand" : "border-line bg-white text-ink hover:border-brand hover:text-brand"
+            }`}
+            onClick={() => {
+              setShowProjects((prev) => !prev);
+              setShowHistory(false);
+            }}
+          >
+            项目工程
+          </button>
+          <button
+            className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
+              showHistory ? "border-brand bg-brand-50 text-brand" : "border-line bg-white text-ink hover:border-brand hover:text-brand"
+            }`}
+            onClick={() => {
+              setShowHistory((prev) => !prev);
+              setShowProjects(false);
+            }}
+          >
+            对话历史
+          </button>
+          <span className="whitespace-nowrap">本地保存 · {conversationId ? "当前会话" : "未开始会话"}</span>
+        </div>
         <div className="flex items-center gap-2 min-w-0">
           <span className="shrink-0">当前模型</span>
           {modelProfiles.length > 0 ? (
@@ -617,6 +871,109 @@ export default function ChatPage({
           </span>
         )}
       </div>
+
+      {showProjects && (
+        <div className="border-b border-line bg-surface-secondary/60 px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-ink">项目工程</span>
+            <button
+              className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
+              onClick={() => setProjectDraftOpen((prev) => !prev)}
+            >
+              {projectDraftOpen ? "取消新建" : "新建"}
+            </button>
+          </div>
+          {projectDraftOpen && (
+            <div className="flex flex-wrap items-end gap-2 mb-2 rounded-lg border border-line bg-white p-2.5">
+              <label className="flex min-w-[160px] flex-1 flex-col gap-1 text-[11px] text-muted">
+                项目名称
+                <input
+                  className="w-full rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-brand"
+                  value={projectNameInput}
+                  onChange={(e) => setProjectNameInput(e.target.value)}
+                  placeholder="例如：DeskMate"
+                />
+              </label>
+              <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-[11px] text-muted">
+                项目文件夹
+                <input
+                  className="w-full rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-brand"
+                  value={projectInput}
+                  readOnly
+                  placeholder="点击右侧选择文件夹"
+                />
+              </label>
+              <button
+                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
+                onClick={() => void chooseProjectFolder()}
+              >
+                选择文件夹
+              </button>
+              <button
+                className="rounded-lg bg-brand px-2.5 py-1.5 text-xs font-medium text-white hover:bg-brand-600 transition-colors disabled:opacity-50"
+                onClick={createProjectConversation}
+                disabled={busy}
+              >
+                创建并开新对话
+              </button>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {projectConversations.length === 0 && !projectDraftOpen ? (
+              <p className="text-xs text-muted">暂无项目；点「新建」创建第一个项目。</p>
+            ) : null}
+            {projectConversations.map((project) => (
+              <button
+                key={project.path}
+                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
+                onClick={() => void openProject(project.path)}
+              >
+                {project.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showHistory && (
+        <div className="border-b border-line bg-surface-secondary/60 px-4 py-3 max-h-80 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-ink">历史对话</span>
+            <button className="text-xs text-muted hover:text-ink transition-colors" onClick={() => setShowHistory(false)}>关闭</button>
+          </div>
+          {conversations.length === 0 && (
+            <p className="text-xs text-muted">暂无历史对话</p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {[
+              { title: "项目对话", items: conversations.filter((item) => item.project) },
+              { title: "普通对话", items: conversations.filter((item) => !item.project) },
+            ].map((group) => (
+              <div key={group.title}>
+                <p className="text-[11px] font-medium text-muted mb-1">{group.title} · {group.items.length}</p>
+                <div className="flex flex-col gap-1">
+                  {group.items.map((item) => (
+                    <button
+                      key={item.conversation_id}
+                      className={`text-left rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
+                        item.conversation_id === conversationId
+                          ? "border-brand bg-brand-50 text-brand"
+                          : "border-line bg-white text-ink hover:border-brand"
+                      }`}
+                      onClick={() => void openConversation(item.conversation_id)}
+                    >
+                      <span className="block truncate">{item.title || "新对话"}</span>
+                      <span className="block text-[10px] text-muted mt-0.5">
+                        {item.message_count} 条 · {fmtChatTime(item.updated_at)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Voice mode bar */}
       {voiceStatus?.enabled && voiceStatus.activation?.enabled && (
@@ -667,13 +1024,43 @@ export default function ChatPage({
             )}
           </div>
         )}
+        {awaitingRuns.filter((run) => run.status === "awaiting_approval").map((run) => (
+          <div
+            key={run.run_id}
+            className="self-start flex flex-col gap-2 max-w-[78%] min-w-0 rounded-xl rounded-bl-sm border border-warn/40 bg-warn-50 px-3.5 py-2.5"
+          >
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-warn">
+              <span className="w-1.5 h-1.5 rounded-full bg-warn animate-pulse" />
+              等待授权
+            </span>
+            <p className="text-sm text-ink break-anywhere">
+              {run.progress || `${run.executor} · ${run.mode}`}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="rounded-md border border-ok-50 bg-ok-50 px-2.5 py-1 text-xs text-ok transition-opacity hover:opacity-80"
+                onClick={() => void decideRunById(run.run_id, "approved")}
+                type="button"
+              >
+                批准
+              </button>
+              <button
+                className="rounded-md border border-bad-50 bg-bad-50 px-2.5 py-1 text-xs text-bad transition-opacity hover:opacity-80"
+                onClick={() => void decideRunById(run.run_id, "rejected")}
+                type="button"
+              >
+                拒绝
+              </button>
+            </div>
+          </div>
+        ))}
         {messages.map((m, i) => (
           <div key={`${m.role}-${i}`} className={`flex flex-col max-w-[78%] min-w-0 ${m.role === "user" ? "self-end items-end" : "self-start"}`}>
             <span className="text-[11px] text-muted mb-1 select-none" title={m.created_at}>
               {m.role === "user" ? "你" : m.role === "tool" ? "任务" : "DeskMate"}
               {m.created_at ? ` · ${fmtChatTime(m.created_at)}` : ""}
             </span>
-            <div className={`whitespace-pre-wrap break-words break-anywhere min-w-0 px-3.5 py-2.5 text-sm leading-relaxed ${
+            <div className={`break-words break-anywhere min-w-0 px-3.5 py-2.5 text-sm leading-relaxed ${
               m.role === "user"
                 ? "bg-brand text-white rounded-xl rounded-br-sm"
                 : m.role === "tool"
@@ -681,7 +1068,11 @@ export default function ChatPage({
                   : "bg-surface-chat text-ink rounded-xl rounded-bl-sm"
             }`}>
               {m.content ? (
-                m.content
+                m.role === "user" ? (
+                  m.content
+                ) : (
+                  <MarkdownLite text={m.content} collapsible={m.content.length > 1400} />
+                )
               ) : (
                 <span className="text-muted animate-typing">思考中…</span>
               )}
@@ -712,39 +1103,24 @@ export default function ChatPage({
         </div>
       )}
 
-      {/* 后台任务实时状态：进展、报错、待授权都在对话页可见 */}
-      {liveTask && (
+      {/* 记忆写入气泡（ponytail：简单 toast，5s 自动消失） */}
+      {memoryBubble && (
+        <div className="px-4 py-2 text-xs bg-blue-50 text-blue-700 border-t border-blue-200 transition-opacity">
+          💾 {memoryBubble}
+        </div>
+      )}
+
+      {/* 后台任务实时状态：仅进行中；待授权已升级为消息流卡片 */}
+      {liveTask && liveTask.status === "running" && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-t border-line-subtle text-xs">
           <span
-            className={`inline-flex items-center gap-1.5 font-medium ${
-              liveTask.status === "awaiting_approval" ? "text-warn" : "text-brand"
-            }`}
+            className="inline-flex items-center gap-1.5 font-medium text-brand"
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                liveTask.status === "awaiting_approval" ? "bg-warn" : "bg-brand animate-breathe"
-              }`}
+              className="w-1.5 h-1.5 rounded-full bg-brand animate-breathe"
             />
-            {liveTask.status === "awaiting_approval" ? "等待你授权" : "后台执行中"}：{liveTask.text}
+            后台执行中：{liveTask.text}
           </span>
-          {liveTask.status === "awaiting_approval" && liveTask.runId && (
-            <>
-              <button
-                className="rounded-md border border-ok-50 bg-ok-50 px-2.5 py-1 text-ok transition-opacity hover:opacity-80"
-                onClick={() => void decideTask("approved")}
-                type="button"
-              >
-                批准
-              </button>
-              <button
-                className="rounded-md border border-bad-50 bg-bad-50 px-2.5 py-1 text-bad transition-opacity hover:opacity-80"
-                onClick={() => void decideTask("rejected")}
-                type="button"
-              >
-                拒绝
-              </button>
-            </>
-          )}
         </div>
       )}
 
@@ -773,18 +1149,73 @@ export default function ChatPage({
             ⏹ 停止
           </button>
         )}
-        <textarea
-          className="flex-1 min-w-0 min-h-[52px] max-h-[140px] resize-none rounded-xl border border-line px-3.5 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20 disabled:opacity-60"
-          value={input}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          disabled={busy}
+        <button
+          type="button"
+          className="h-[46px] min-w-[46px] px-2.5 rounded-xl border border-line bg-white hover:border-brand transition-colors disabled:opacity-50 disabled:cursor-default"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy || uploadingFiles}
+          title="添加附件（Excel / Word / PPT / PDF / 图片）"
+        >
+          {uploadingFiles ? "⏳" : "📎"}
+        </button>
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {attachments.map((attachment) => (
+                <span key={attachment.path} className="inline-flex items-center gap-1 rounded-lg bg-surface-secondary px-2 py-1 text-xs text-ink max-w-[220px]">
+                  <span className="truncate">{attachment.name}</span>
+                  <button
+                    type="button"
+                    className="text-muted hover:text-bad"
+                    onClick={() => removeAttachment(attachment.path)}
+                    title="移除附件"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-1 text-xs text-muted">
+            <span className="whitespace-nowrap">记忆</span>
+            {CHAT_MODES.map((item) => (
+              <button
+                key={item.mode}
+                type="button"
+                title={`记忆深度：${item.hint}`}
+                aria-label={`记忆深度：${item.hint}`}
+                onClick={() => setChatMode(item.mode)}
+                className={`rounded-md border px-1.5 py-0.5 transition-colors ${
+                  chatMode === item.mode
+                    ? "border-brand bg-brand-50 text-brand"
+                    : "border-line bg-white text-muted hover:border-brand hover:text-brand"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <textarea
+            className="w-full flex-1 min-h-[52px] max-h-[140px] resize-none rounded-xl border border-line px-3.5 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20 disabled:opacity-60"
+            value={input}
+            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            disabled={busy}
+          />
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf,.txt,.csv,.md,.png,.jpg,.jpeg"
+          className="hidden"
+          onChange={(e) => void handleFilesPicked(e.target.files)}
         />
         <button className="h-[46px] px-5 rounded-xl bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-default" onClick={send} disabled={busy || !input.trim()}>
           发送

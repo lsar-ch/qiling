@@ -336,6 +336,67 @@ def test_chat_auto_runs_browser_search_on_browser_executor(tmp_path, monkeypatch
         assert any("摘要" in text for text in notes)
 
 
+def test_chat_web_fetch_task_runs_workbuddy_in_agent_mode(tmp_path, monkeypatch) -> None:
+    """带链接的抓取/提炼任务不走浏览器执行器，交给 workbuddy 以 agent 模式执行。"""
+    adapter = FakeReadyAdapter(result_message="已抓取文章并完成提炼")
+    adapter.name = "workbuddy"
+    adapter.adapter_id = "workbuddy"
+    adapter.display_name = "WorkBuddy"
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "https://mp.weixin.qq.com/s/LsCjMbsbKXvBgKVspOlczw我想让你整理和提炼这个公众号的内容"},
+        )
+        assert resp.status_code == 200
+        done = next(
+            json.loads(line[6:])
+            for line in resp.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        assert done["task_category"] == "delegate_backend"
+        run = client.get(f"/api/tasks/{done['task_id']}/run").json()["run"]
+        assert run["executor"] == "workbuddy"
+        assert run["mode"] == "agent"
+        _wait_for(client, done["task_id"], ("completed",))
+        assert adapter.request.mode == "agent"
+
+
+def test_multi_turn_context_is_carried_into_backend_prompt(tmp_path, monkeypatch) -> None:
+    """同一对话里第二轮任务要带上前几轮内容，后台 agent 不能刚交代完就忘。"""
+    adapter = FakeReadyAdapter()
+    adapter.name = "workbuddy"
+    adapter.adapter_id = "workbuddy"
+    adapter.display_name = "WorkBuddy"
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        first = client.post(
+            "/api/chat/stream",
+            json={"message": "帮我整理这个项目的 docs 目录结构"},
+        )
+        done1 = next(
+            json.loads(line[6:])
+            for line in first.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        _wait_for(client, done1["task_id"], ("completed",))
+
+        conv_id = done1["conversation_id"]
+        second = client.post(
+            "/api/chat/stream",
+            json={"conversation_id": conv_id, "message": "把上一步的结果整理成清单写进文档"},
+        )
+        done2 = next(
+            json.loads(line[6:])
+            for line in second.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        _wait_for(client, done2["task_id"], ("completed",))
+        prompt = adapter.request.prompt
+        assert "帮我整理这个项目的 docs 目录结构" in prompt
+        assert "当前任务：把上一步的结果整理成清单写进文档" in prompt
+
+
 def test_execute_completed_updates_task_run_and_events(tmp_path, monkeypatch) -> None:
     adapter = FakeReadyAdapter()
     with make_client(tmp_path, monkeypatch, adapter) as client:
@@ -357,6 +418,40 @@ def test_execute_completed_updates_task_run_and_events(tmp_path, monkeypatch) ->
 
         task_body = client.get(f"/api/tasks/{task_id}").json()
         assert task_body["status"] == "completed"
+
+
+def test_completed_task_publishes_memory_updated_event(tmp_path, monkeypatch) -> None:
+    """P1-T3 回归：任务完成必须发 memory.updated，前端记忆气泡依赖这条事件。"""
+    adapter = FakeReadyAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        task = _route(client, preferred_executor=adapter.name)
+        task_id = task["task_id"]
+        resp = client.post(
+            f"/api/tasks/{task_id}/execute",
+            json={"executor": adapter.name, "mode": "read-only"},
+        )
+        assert resp.status_code == 200
+        _wait_for(client, task_id, ("completed",))
+
+        # memory.updated 由 ensure_future 异步发布，轮询等它进 hub 历史
+        hub = client.app.state.event_hub
+        memory_events: list[dict] = []
+        for _ in range(100):
+            memory_events = [
+                item
+                for item in hub.recent(50)
+                if item.get("event_type") == "memory.updated"
+            ]
+            if memory_events:
+                break
+            time.sleep(0.05)
+
+        assert memory_events, "任务完成后未发布 memory.updated 事件"
+        # recent() 从新到旧，取最新一条
+        latest = memory_events[0]
+        assert latest["source"] == "task"
+        assert latest["task_id"] == task_id
+        assert str(latest.get("payload", {}).get("bubble", "")).startswith("已记住：")
 
 
 def test_execute_falls_back_to_default_executor_when_task_has_none(tmp_path, monkeypatch) -> None:
@@ -485,7 +580,7 @@ def test_approval_and_result_write_back_to_conversation(tmp_path, monkeypatch) -
             return [item["content"] for item in conv["messages"] if item["role"] == "tool"]
 
         assert any("已交给" in text for text in notes())
-        assert any("需要你确认" in text for text in notes())
+        assert any("请求授权" in text for text in notes())
 
         approval = client.post(
             f"/api/agent-runs/{run_id}/approval",
@@ -557,3 +652,30 @@ def test_agent_run_list_is_newest_first(tmp_path, monkeypatch) -> None:
         items = client.get("/api/agent-runs").json()["items"]
         assert items and items[0]["task_id"] == task["task_id"]
         assert items[0]["status"] == "completed"
+
+
+class DisabledReadyAdapter(FakeReadyAdapter):
+    """页面停用后的执行器：条目仍可探测，但 enabled=False。"""
+
+    name = "fake-disabled"
+    adapter_id = "fake-disabled"
+    display_name = "Fake Disabled"
+
+    async def detect(self) -> AgentInfo:
+        info = await super().detect()
+        return info.model_copy(update={"enabled": False})
+
+
+def test_execute_rejects_disabled_executor(tmp_path, monkeypatch) -> None:
+    """停用中的执行器保留展示，但不能再接任务。"""
+    adapter = DisabledReadyAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        task = _route(client, preferred_executor=adapter.name)
+        resp = client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"mode": "read-only"},
+        )
+        assert resp.status_code == 400
+        assert "已停用" in resp.json()["detail"]
+        assert adapter.request is None

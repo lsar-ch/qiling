@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -27,6 +28,7 @@ class TaskStore:
             self._items[task.task_id] = task
 
     def put(self, task: Task) -> Task:
+        task.updated_at = datetime.now(timezone.utc).isoformat()
         self._items[task.task_id] = task
         self._items.move_to_end(task.task_id)
         while len(self._items) > self._max_items:
@@ -65,8 +67,9 @@ class TaskStore:
                     items.append(Task.model_validate(json.loads(path.read_text(encoding="utf-8"))))
                 except Exception:
                     continue
-        items.sort(key=lambda item: item.updated_at)
-        return items[-limit:]
+        # 最近任务台要「新的在上」，与 AgentRunStore.list_recent 一致。
+        items.sort(key=lambda item: item.updated_at, reverse=True)
+        return items[:limit]
 
     def values(self) -> Iterable[Task]:
         return self._items.values()

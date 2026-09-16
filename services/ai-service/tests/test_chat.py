@@ -147,6 +147,87 @@ def test_conversation_listing() -> None:
         assert "第一条问题" in items[0]["title"]
 
 
+def test_project_conversation_saves_name_and_folder() -> None:
+    with make_client(FakeProvider("好")) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={
+                "message": "在吗",
+                "project": str(PROJECT_ROOT),
+                "project_name": "DeskMate",
+            },
+        )
+        events = parse_sse(resp.text)
+        done = next(e for e in events if e["type"] == "done")
+        conv = client.get(f"/api/conversations/{done['conversation_id']}").json()
+        assert conv["project"] == str(PROJECT_ROOT)
+        assert conv["project_name"] == "DeskMate"
+
+        items = client.get("/api/conversations").json()["items"]
+        item = next(item for item in items if item["conversation_id"] == done["conversation_id"])
+        assert item["project_name"] == "DeskMate"
+
+
+def test_chat_attachment_uploads_and_persists() -> None:
+    with make_client(FakeProvider("好")) as client:
+        uploaded = client.post(
+            "/api/chat/attachments",
+            files={
+                "files": (
+                    "data.xlsx",
+                    b"not-a-real-xlsx-but-valid-metadata",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        assert uploaded.status_code == 200
+        items = uploaded.json()["items"]
+        assert len(items) == 1 and items[0]["name"].endswith(".xlsx")
+
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "在吗", "attachments": items},
+        )
+        events = parse_sse(resp.text)
+        done = next(e for e in events if e["type"] == "done")
+        conv = client.get(f"/api/conversations/{done['conversation_id']}").json()
+        user_message = next(m for m in conv["messages"] if m["role"] == "user")
+        assert user_message["attachments"][0]["name"] == items[0]["name"]
+        assert user_message["attachments"][0]["path"] == items[0]["path"]
+
+
+def test_project_attachment_is_copied_into_project(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    with make_client(FakeProvider("好")) as client:
+        uploaded = client.post(
+            "/api/chat/attachments",
+            files={
+                "files": (
+                    "data.xlsx",
+                    b"project-file",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        items = uploaded.json()["items"]
+        resp = client.post(
+            "/api/chat/stream",
+            json={
+                "message": "在吗",
+                "project": str(project),
+                "project_name": "Proj",
+                "attachments": items,
+            },
+        )
+        done = next(e for e in parse_sse(resp.text) if e["type"] == "done")
+        conv = client.get(f"/api/conversations/{done['conversation_id']}").json()
+        user_message = next(m for m in conv["messages"] if m["role"] == "user")
+        attachment = user_message["attachments"][0]
+        assert Path(attachment["path"]).parent == project
+        assert Path(attachment["path"]).is_file()
+
+
 def test_chitchat_uses_light_memory_context() -> None:
     """闲聊（answer）：记忆只带角色与近期会话，预算压缩且不加载项目记忆。"""
     calls: list[dict] = []

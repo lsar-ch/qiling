@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Literal
 from typing import AsyncIterator
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from deskmate_contracts import new_event_id
+from deskmate_contracts.conversation import ChatAttachment
 from deskmate_contracts.events import EventEnvelope
 from app.chat.context import build_llm_messages
+from app.config import repo_root
 from app.core.persona_prompt import compose_system_prompt, load_persona
 from app.llm import create_provider
 from app.model_profiles import find_model_profile, load_model_profiles, profile_settings
@@ -23,6 +28,12 @@ from app.routing import classify_task_input
 router = APIRouter(prefix="/api", tags=["chat"])
 
 _ECHO_STRIP = re.compile(r"[\s，。！？、,.!?'\"“”‘’；：:;…—\-()（）【】《》~～·]+")
+
+_ALLOWED_ATTACHMENT_SUFFIXES = {
+    ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ppt",
+    ".pdf", ".txt", ".csv", ".md", ".png", ".jpg", ".jpeg",
+}
+_MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 
 
 def _is_echo_of_reply(message: str, conversation) -> bool:
@@ -49,10 +60,21 @@ def _is_echo_of_reply(message: str, conversation) -> bool:
     return False
 
 
+class ProjectBinding(BaseModel):
+    """会话与项目目录的绑定；project 为空字符串/null 即解绑，回到普通对话。"""
+
+    project: str | None = None
+    name: str | None = None
+
+
 class ChatTurnRequest(BaseModel):
     conversation_id: str | None = None
+    project: str | None = None  # 本轮要绑定的项目目录（绝对路径）
+    project_name: str | None = None  # 新建项目时填写的用户可见名称
     message: str = Field(min_length=1, max_length=8000)
+    attachments: list[ChatAttachment] = Field(default_factory=list)
     modality: Literal["text", "voice"] = "text"
+    mode: Literal["auto", "casual", "work"] = "auto"
     model_profile_id: str | None = None
 
     model_config = {"extra": "forbid"}
@@ -101,6 +123,91 @@ def build_speak_text(answer: str, max_chars: int) -> str:
     return speak
 
 
+def _uploads_root(request: Request) -> Path:
+    return request.app.state.settings.data_dir / "uploads"
+
+
+def _safe_attachment_name(filename: str) -> str:
+    """生成唯一且安全的上传文件名；扩展名不在白名单时直接拒绝。"""
+    path = Path(filename or "")
+    suffix = path.suffix.lower()
+    if suffix not in _ALLOWED_ATTACHMENT_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型：{suffix or '无扩展名'}",
+        )
+    stem = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]", "_", path.stem)[:80].strip("_") or "file"
+    return f"{uuid4().hex[:8]}_{stem}{suffix}"
+
+
+async def _prepare_attachments(
+    request: Request, body: ChatTurnRequest
+) -> tuple[list[ChatAttachment], str | None]:
+    """校验附件并把项目对话的附件复制进项目目录。
+
+    返回 (最终附件列表, 普通对话附件执行目录)；项目对话的执行目录仍由项目绑定决定。
+    """
+    if not body.attachments:
+        return [], None
+    uploads = _uploads_root(request)
+    uploads.mkdir(parents=True, exist_ok=True)
+    project = resolve_project_dir(body.project) if body.project else None
+    prepared: list[ChatAttachment] = []
+    for attachment in body.attachments:
+        source = Path(attachment.path).expanduser()
+        try:
+            source.resolve().relative_to(uploads.resolve())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="附件路径无效") from None
+        if not source.is_file():
+            raise HTTPException(status_code=404, detail=f"附件不存在：{attachment.name}")
+        if project is None:
+            prepared.append(attachment)
+            continue
+        destination = project / _safe_attachment_name(attachment.name or source.name)
+        shutil.copy2(source, destination)
+        prepared.append(
+            ChatAttachment(
+                name=destination.name,
+                path=str(destination),
+                size=destination.stat().st_size,
+                mime=attachment.mime,
+            )
+        )
+    return prepared, (str(uploads) if project is None else None)
+
+
+@router.post("/chat/attachments")
+async def upload_chat_attachments(
+    request: Request,
+    files: list[UploadFile] = File(...),
+) -> dict:
+    """把对话附件暂存到 DeskMate 数据目录，返回可随消息提交的附件元数据。"""
+    uploads = _uploads_root(request)
+    uploads.mkdir(parents=True, exist_ok=True)
+    items: list[ChatAttachment] = []
+    for file in files:
+        name = _safe_attachment_name(file.filename or "")
+        destination = uploads / name
+        total = 0
+        with destination.open("wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                total += len(chunk)
+                if total > _MAX_ATTACHMENT_BYTES:
+                    destination.unlink(missing_ok=True)
+                    raise HTTPException(status_code=413, detail="附件不能超过 50MB")
+                out.write(chunk)
+        items.append(
+            ChatAttachment(
+                name=name,
+                path=str(destination),
+                size=total,
+                mime=file.content_type or "application/octet-stream",
+            )
+        )
+    return {"items": [item.model_dump(mode="json") for item in items]}
+
+
 async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[str]:
     store = request.app.state.conversation_store
     hub = request.app.state.event_hub
@@ -113,14 +220,26 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
     else:
         conversation_profile_id = existing.model_profile_id if existing else None
 
+    attachments, attachment_cwd = await _prepare_attachments(request, body)
     conversation = await store.append_message(
         body.conversation_id,
         "user",
         body.message,
         modality=body.modality,
         model_profile_id=conversation_profile_id,
+        attachments=attachments,
     )
     conversation_id = conversation.conversation_id
+    if body.project:
+        # 目录存在性已在 chat_stream 校验过，这里只负责改绑会话。
+        resolved = resolve_project_dir(body.project)
+        updated = await store.set_project(
+            conversation_id,
+            str(resolved) if resolved else None,
+            project_name=body.project_name,
+        )
+        if updated is not None:
+            conversation = updated
     profiles = load_model_profiles(settings.repo_root)
     active_profile = find_model_profile(
         profiles,
@@ -161,7 +280,7 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
                 payload={"reason": "risk_gate", "task": task.model_dump(mode="json")},
             )
         )
-    # 后台任务直接起跑（read-only）：进度、报错、授权、结果都会写回本会话，
+    # 后台任务直接起跑：进度、报错、授权、结果都会写回本会话，
     # 不让用户再去「我的智能体」手动运行、翻找状态。
     # 只在分流器识别出后台特征（risk_level != low）时自动起跑：随口一句闲聊
     # 不该拉起真实 agent（这类任务仍会记进任务台，需要时手动运行）。
@@ -173,11 +292,17 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
         and not _is_echo_of_reply(body.message, conversation)
     ):
         try:
-            from app.agents.browser import is_browser_task
+            from app.agents.browser import is_browser_task, is_web_fetch_task
 
-            executor = "browser" if is_browser_task(body.message) else None
+            # 带链接的抓取/提炼任务交给后台 workbuddy 以 agent 模式执行（WebFetch
+            # 需授权时在对话里确认后同一次运行继续）；纯搜索/打开仍走只读浏览器执行器。
+            web_fetch = is_web_fetch_task(body.message)
+            executor = (
+                "browser" if is_browser_task(body.message) and not web_fetch else None
+            )
+            mode = "agent" if web_fetch else "read-only"
             auto_run = await request.app.state.agent_run_manager.execute(
-                task, mode="read-only", executor=executor
+                task, mode=mode, executor=executor, cwd=attachment_cwd
             )
         except Exception as exc:
             auto_start_error = str(exc)
@@ -209,9 +334,12 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             )
             yield _sse({"type": "delta", "content": answer})
         else:
-            # 闲聊（answer）只带角色与近期会话，压缩预算、不加载项目记忆；
-            # 工作任务才带完整项目记忆（L2 + 记忆搜索）。
-            if task.category == "answer":
+            # 工作模式记忆深度：casual 轻量 / work 完整 / auto 按分流结果
+            is_casual = (
+                body.mode == "casual"
+                or (body.mode == "auto" and task.category == "answer")
+            )
+            if is_casual:
                 compiled = memory.recall_context(
                     query="",
                     budget_chars=min(settings.memory_budget_chars, 800),
@@ -296,6 +424,8 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
 async def chat_stream(request: Request, body: ChatTurnRequest) -> StreamingResponse:
     if not body.message.strip():
         raise HTTPException(status_code=422, detail="消息不能为空")
+    if body.project and resolve_project_dir(body.project) is None:
+        raise HTTPException(status_code=400, detail=f"项目目录不存在或不是目录：{body.project}")
     return StreamingResponse(
         _run_turn(request, body),
         media_type="text/event-stream",
@@ -312,12 +442,45 @@ async def list_conversations(request: Request) -> dict:
             {
                 "conversation_id": c.conversation_id,
                 "title": c.title,
+                "project": c.project,
+                "project_name": c.project_name or (Path(c.project).name if c.project else None),
                 "message_count": len(c.messages),
                 "updated_at": c.updated_at,
             }
             for c in conversations
         ]
     }
+
+
+@router.put("/conversations/{conversation_id}/project")
+async def update_conversation_project(
+    request: Request,
+    conversation_id: str,
+    body: ProjectBinding,
+) -> dict:
+    """给会话绑定或解绑项目目录；解绑后回到「普通对话」分组。"""
+    store = request.app.state.conversation_store
+    project = body.project.strip() if body.project else ""
+    if project:
+        resolved = resolve_project_dir(project)
+        if resolved is None:
+            raise HTTPException(status_code=400, detail=f"项目目录不存在或不是目录：{project}")
+        project = str(resolved)
+    conversation = await store.set_project(conversation_id, project or None, project_name=body.name)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return conversation.model_dump(mode="json")
+
+
+def resolve_project_dir(value: str) -> Path | None:
+    """把用户填的项目路径解析成真实存在的目录；不允许相对路径或越权猜测。"""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (repo_root() / path).resolve()
+    return path if path.is_dir() else None
 
 
 @router.get("/conversations/{conversation_id}")

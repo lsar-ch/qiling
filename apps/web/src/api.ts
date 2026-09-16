@@ -39,6 +39,16 @@ export interface HealthResponse {
     obsidian_linked: boolean;
     last_compile: string | null;
   };
+  diagnostics?: DiagnosticItem[];
+}
+
+export interface DiagnosticItem {
+  name: string;
+  label: string;
+  status: "ok" | "degraded" | "error";
+  detail: string;
+  fix_hint: string | null;
+  fix_action: string | null;
 }
 
 export interface SessionResponse {
@@ -101,7 +111,12 @@ export async function fetchAgentConfig(): Promise<{
 
 export async function updateAgentConfig(
   name: string,
-  body: { command: string | null; internet_environment?: string | null },
+  body: {
+    command?: string | null;
+    internet_environment?: string | null;
+    enabled?: boolean;
+    set_default?: boolean;
+  },
 ): Promise<AgentInfo> {
   const resp = await fetch(`/api/agents/${encodeURIComponent(name)}/config`, {
     method: "PUT",
@@ -236,6 +251,7 @@ export async function testModelProfile(id: string): Promise<{ ok: boolean; messa
 }
 
 export interface AppSettings {
+  setup_completed: boolean;
   active_persona_id: string;
   ui: { language: string; theme: string };
   permission_level: string;
@@ -286,6 +302,17 @@ export async function updateSettings(body: Record<string, unknown>): Promise<App
   });
   if (!resp.ok) throw new Error(await readDetail(resp));
   return (await resp.json()) as AppSettings;
+}
+
+export interface SetupStatus {
+  completed: boolean;
+  missing: string[];
+  llm_configured: boolean;
+  voice_configured: boolean;
+}
+
+export async function fetchSetupStatus(): Promise<SetupStatus> {
+  return fetchJson<SetupStatus>("/api/setup/status");
 }
 
 export async function fetchPersonas(): Promise<PersonaCard[]> {
@@ -448,12 +475,22 @@ export interface ChatMessageView {
   role: string;
   content: string;
   created_at: string;
+  attachments?: ChatAttachmentView[];
+}
+
+export interface ChatAttachmentView {
+  name: string;
+  path: string;
+  size?: number;
+  mime?: string;
 }
 
 export interface ConversationDetail {
   conversation_id: string;
   title: string;
   model_profile_id: string | null;
+  project: string | null;
+  project_name: string | null;
   messages: ChatMessageView[];
 }
 
@@ -462,6 +499,8 @@ export interface ConversationSummary {
   title: string;
   message_count: number;
   updated_at: string;
+  project: string | null;
+  project_name: string | null;
 }
 
 export async function fetchConversations(): Promise<ConversationSummary[]> {
@@ -471,6 +510,40 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
 
 export async function fetchConversation(id: string): Promise<ConversationDetail> {
   return fetchJson<ConversationDetail>(`/api/conversations/${id}`);
+}
+
+export async function uploadChatAttachments(
+  files: File[],
+): Promise<ChatAttachmentView[]> {
+  const form = new FormData();
+  for (const file of files) form.append("files", file);
+  const resp = await fetch("/api/chat/attachments", {
+    method: "POST",
+    body: form,
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  const data = (await resp.json()) as { items: ChatAttachmentView[] };
+  return data.items;
+}
+
+export async function bindConversationProject(
+  id: string,
+  project: string | null,
+  name?: string | null,
+): Promise<ConversationDetail> {
+  const resp = await fetch(`/api/conversations/${encodeURIComponent(id)}/project`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project, name: name ?? null }),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return (await resp.json()) as ConversationDetail;
+}
+
+export async function fetchAwaitingRuns(conversationId?: string | null): Promise<AgentRun[]> {
+  const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : "";
+  const data = await fetchJson<{ items: AgentRun[] }>(`/api/agent-runs/awaiting${query}`);
+  return data.items;
 }
 
 export interface TaskRouteResponse {
@@ -576,6 +649,10 @@ export async function streamChat(
   message: string,
   onDelta: (content: string) => void,
   modelProfileId?: string | null,
+  project?: string | null,
+  projectName?: string | null,
+  attachments?: ChatAttachmentView[],
+  mode?: "auto" | "casual" | "work",
 ): Promise<{
   conversation_id: string;
   short: boolean;
@@ -589,7 +666,11 @@ export async function streamChat(
       conversation_id: conversationId,
       message,
       modality: "text",
+      mode: mode ?? "auto",
       model_profile_id: modelProfileId ?? null,
+      project: project ?? null,
+      project_name: projectName ?? null,
+      attachments: attachments ?? [],
     }),
   });
   if (!resp.ok || !resp.body) {
@@ -840,4 +921,64 @@ export async function synthesizeSpeech(text: string, client: "web" | "widget" = 
     throw new Error(await readDetail(resp));
   }
   return await resp.blob();
+}
+
+export interface AudioChunk {
+  index: number;
+  format: string;
+  sample_rate: number;
+  audio: Blob;
+}
+
+/** 流式合成：返回 AsyncGenerator，逐句产出 AudioChunk。前端边收边播。 */
+export async function synthesizeSpeechStream(
+  text: string,
+  client: "web" | "widget" = "web",
+  signal?: AbortSignal,
+): Promise<AsyncGenerator<AudioChunk>> {
+  const resp = await fetch("/api/voice/synthesize/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Voice-Client": client },
+    body: JSON.stringify({ text }),
+    signal,
+  });
+  if (!resp.ok) {
+    throw new Error(await readDetail(resp));
+  }
+  return _parseAudioSSE(resp.body!);
+}
+
+/** SSE 行格式：data: {"index":0,"format":"wav","sample_rate":24000,"audio":"<base64>"} */
+async function* _parseAudioSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<AudioChunk> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6);
+      if (!payload) continue;
+      try {
+        const obj = JSON.parse(payload);
+        if (obj.error) throw new Error(obj.error);
+        if (obj.done) return;
+        if (obj.audio) {
+          const bytes = Uint8Array.from(atob(obj.audio), (c) => c.charCodeAt(0));
+          yield {
+            index: obj.index,
+            format: obj.format || "wav",
+            sample_rate: obj.sample_rate || 24000,
+            audio: new Blob([bytes], { type: "audio/" + (obj.format || "wav") }),
+          };
+        }
+      } catch (e) {
+        if (!(e instanceof SyntaxError)) throw e;
+      }
+    }
+  }
 }

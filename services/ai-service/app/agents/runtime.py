@@ -147,12 +147,44 @@ class AgentRunManager:
         except Exception:
             pass  # 回写失败不影响任务本身
 
+    async def _compose_prompt(self, task: Task) -> str:
+        """多轮上下文：把对话页此前几轮拼进任务提示词，后台 agent 才不会忘掉前文。
+
+        浏览器执行器（搜索/打开）按自己的语法解析 prompt，不能注入对话历史。
+        """
+        if self.conversations is None or not task.conversation_id:
+            return task.input
+        try:
+            conversation = await self.conversations.get(task.conversation_id)
+        except Exception:
+            return task.input
+        if conversation is None:
+            return task.input
+        # 末条是本轮刚写入的指令，排除后取更早的轮次
+        prior = [m for m in conversation.messages[:-1] if (m.content or "").strip()]
+        lines: list[str] = []
+        for msg in prior[-6:]:
+            label = {"user": "用户", "tool": "工具结果"}.get(msg.role, "助手")
+            lines.append(f"{label}：{msg.content.strip()[:400]}")
+        parts: list[str] = []
+        if lines:
+            parts.append("对话上下文（此前几轮，仅作参考）：\n" + "\n".join(lines))
+        last_user = next(
+            (m for m in reversed(conversation.messages) if m.role == "user"), None
+        )
+        attachments = getattr(last_user, "attachments", None) or []
+        if attachments:
+            names = [f"- {item.name}" for item in attachments]
+            parts.append("本轮附件文件（位于任务工作目录，可用相对路径读取）：\n" + "\n".join(names))
+        parts.append(f"当前任务：{task.input}")
+        return "\n\n".join(parts)
     async def execute(
         self,
         task: Task,
         *,
         executor: str | None = None,
         mode: str = "read-only",
+        cwd: str | None = None,
     ) -> AgentRun:
         if task.category not in ("delegate_backend", "request_approval"):
             raise ValueError("只有后台任务可以交给外部执行器")
@@ -165,6 +197,10 @@ class AgentRunManager:
         if not adapter.executable:
             raise AgentExecutionUnsupported(f"{executor_name} 尚未接入真实执行")
         availability = await adapter.detect()
+        if not availability.enabled:
+            raise AgentExecutionUnsupported(
+                f"{executor_name} 已停用：到「我的智能体」页面重新启用后才能运行任务。"
+            )
         if not availability.available or availability.integration_status != "ready":
             raise AgentExecutionUnsupported(
                 f"{executor_name} 当前不可执行（{availability.integration_status}）："
@@ -196,9 +232,23 @@ class AgentRunManager:
             task,
             f"▶ 已交给 {executor_name}（{run.mode}）执行。",
         )
-        background = asyncio.create_task(self._run_task(run, task, adapter, previous_session_id))
+        background = asyncio.create_task(
+            self._run_task(run, task, adapter, previous_session_id, cwd)
+        )
         self._tasks[task.task_id] = background
         return run
+
+    async def _resolve_cwd(self, task: Task) -> str:
+        """项目对话把执行器工作目录切到项目根；普通对话仍用 DeskMate 数据目录的上一级。"""
+        fallback = str(self.data_dir.parent)
+        if not task.conversation_id or self.conversations is None:
+            return fallback
+        try:
+            conversation = await self.conversations.get(task.conversation_id)
+        except Exception:
+            return fallback
+        project = (conversation.project or "").strip() if conversation else ""
+        return project if project and Path(project).is_dir() else fallback
 
     async def _run_task(
         self,
@@ -206,13 +256,15 @@ class AgentRunManager:
         task: Task,
         adapter: AgentAdapter,
         previous_session_id: str | None = None,
+        cwd_override: str | None = None,
     ) -> None:
         try:
+            prompt = task.input if run.executor == "browser" else await self._compose_prompt(task)
             result = await adapter.run(
                 AgentTaskRequest(
                     task_id=task.task_id,
-                    prompt=task.input,
-                    cwd=str(self.data_dir.parent),
+                    prompt=prompt,
+                    cwd=cwd_override or await self._resolve_cwd(task),
                     conversation_id=task.conversation_id,
                     session_id=previous_session_id,
                     mode=run.mode,
@@ -302,7 +354,10 @@ class AgentRunManager:
                     "bubble": f"需要确认：{run.progress[:40]}",
                 },
             )
-            await self._notify_conversation(task, f"⚠ 需要你确认：{run.progress}")
+            await self._notify_conversation(
+                task,
+                f"⚠ {run.executor}（{run.mode}）请求授权：{run.progress}",
+            )
             self._start_approval_timer(run, task)
 
 
@@ -412,11 +467,14 @@ class AgentRunManager:
         if status == "completed":
             summary = (message or run.progress or "任务完成")[:60]
             bubble = f"✓ {summary}"
+            speak_text = f"任务完成了。{summary}"
         elif status == "failed":
             summary = (error or "未知错误")[:60]
             bubble = f"✗ {summary}"
+            speak_text = f"任务没成功。{summary}"
         else:
             bubble = "已取消"
+            speak_text = None
         if status == "completed":
             notify = f"✓ 任务完成\n\n{(message or run.progress or '任务完成').strip()[:2000]}"
         elif status == "failed":
@@ -427,7 +485,7 @@ class AgentRunManager:
             event_type,
             task,
             run,
-            payload={"result": message or None, "error": error, "bubble": bubble},
+            payload={"result": message or None, "error": error, "bubble": bubble, "speak_text": speak_text},
         )
         await self._notify_conversation(task, notify)
         self._record_memory(event_type, task, run)
@@ -456,6 +514,7 @@ class AgentRunManager:
 
     def _record_memory(self, event_type: str, task: Task, run: AgentRun) -> None:
         try:
+            summary = (run.result or run.error or run.progress or task.input)[:80]
             trace_id = self.memory.record_event(
                 "task",
                 event_type,
@@ -463,7 +522,7 @@ class AgentRunManager:
                     "task_id": task.task_id,
                     "executor": run.executor,
                     "status": run.status,
-                    "summary": run.result or run.error or run.progress,
+                    "summary": summary,
                 },
                 session_id=task.conversation_id,
                 turn_id=task.task_id,
@@ -476,5 +535,21 @@ class AgentRunManager:
                     (run.result or run.error or task.input)[:500],
                     [trace_id],
                 )
+            # 记忆气泡：写入完成后短气泡提示
+            bubble_text = f"已记住：{summary}"
+            try:
+                asyncio.ensure_future(
+                    self.hub.publish(
+                        EventEnvelope(
+                            event_type="memory.updated",
+                            source="task",
+                            conversation_id=task.conversation_id,
+                            task_id=task.task_id,
+                            payload={"bubble": bubble_text},
+                        )
+                    )
+                )
+            except Exception:
+                pass
         except Exception:
             pass

@@ -7,6 +7,7 @@ V1 形态：整句录音 → recognize → 文本走现有对话链路 → 整�
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import re
 from dataclasses import dataclass
 
 from deskmate_contracts.voice import VoiceParams
@@ -62,10 +63,37 @@ class SpeechSynthesizer(ABC):
     async def synthesize(self, text: str, params: VoiceParams | None = None) -> AudioResult:
         """合成文本，返回音频字节。params 为空时使用供应商默认参数。"""
 
+    async def synthesize_stream(self, text: str, params: VoiceParams | None = None):
+        """流式合成：按句子拆分，逐句合成后 yield AudioResult chunk。
+
+        默认实现：按中英文标点分句 → 逐句调用 synthesize()。
+        子类可覆盖为供应商原生流式 API。
+        ponytail: 正则分句，不引入分词库。
+        """
+        sentences = _split_sentences(text)
+        for sentence in sentences:
+            if not sentence.strip():
+                continue
+            yield await self.synthesize(sentence, params)
+
     async def list_voices(self) -> list[VoiceOption]:
         """列出供应商可用音色。默认表示「不支持自动获取」，由前端回退到手填。"""
         return []
 
+
+def _split_sentences(text: str) -> list[str]:
+    """按中英文句子边界切分，保留标点附着在句尾。"""
+    parts = re.split(r'(?<=[。！？；\n.!?;])\s*', text)
+    merged: list[str] = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if merged and len(p) < 4:
+            merged[-1] = merged[-1] + p
+        else:
+            merged.append(p)
+    return merged if merged else [text]
 
 class DisabledRecognizer(SpeechRecognizer):
     name = "disabled"
