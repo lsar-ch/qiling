@@ -17,7 +17,9 @@ DeskMate 当前收敛为：
 
 ## 当前进度
 
-**截至 2026-09-16：V1 已收口。P1 浏览器执行器已完成；P1 轻量主动性 T2/T3/T4 已完成、T1（TTS 分块）部分完成；P2 发布加固 T1/T2/T3/T4 已完成、T5/T6 部分完成，详见 `docs/P1-P2-TASK-CARDS.md`。本轮验证（2026-09-16 晚）：`./scripts/check.sh` 全绿 —— pytest 194 passed、`apps/web` 与 `apps/desktop` typecheck 均 RC=0、`apps/web/dist` 已重建（`assets/index-BSF5HwH8.js`）；独立 smoke 实测 ai-service 冷启动后 `/api/health` 首次 3.25~4.30s 返回 200，`diagnostics` 四项（llm/voice/memory/agents）全 ok。**
+**截至 2026-09-17：V1 已收口。P1 浏览器执行器已完成；P1 轻量主动性 T2/T3/T4 已完成、T1（TTS 分块）部分完成；P2 发布加固 T1/T2/T3/T4 已完成、T5/T6 部分完成，详见 `docs/P1-P2-TASK-CARDS.md`。主线功能已全部落地，剩余 6 项均为 V2 收尾（见下方「V2 待办」）。本轮验证：`./scripts/check.sh` 全绿 —— pytest **204 passed**（基线 194 + WorkBuddy 授权 10 项）、`apps/web` 与 `apps/desktop` typecheck 均 RC=0、`cargo check` 通过、`apps/web/dist` 已重建（`assets/index-BgKr22yJ.js`）。**
+
+**2026-09-17 凌晨两项修复（`60c23c4` / `5a661b4`，均只过自动化、真机待验收）**：① WorkBuddy 授权链路 —— 模式映射改真值（`read-only→plan` 才是真只读，旧值 `dontAsk` 只是不弹窗、不隔离）、授权选项按 `kind` 匹配 `optionId`（修掉「允许一次」静默升级成永久放行）、授权卡片显示真实命令、5 分钟超时自动按拒绝收口；② 主界面隐藏时把语音租约交给挂件 —— 关闭走 `hide()` 不销毁，页面继续心跳持租约，导致挂件语音永远是「关」；现在只在真隐藏/真显示时广播 `main-ui-visibility`（最小化、失焦、遮挡不触发），挂件自动接管「听」。验收清单见 `docs/HANDOVER-2026-09-17.md` 第 2 节。**
 
 已完成：
 
@@ -259,13 +261,14 @@ V1 验证成功后再考虑：
 
 执行顺序：P2-T1 → P2-T2，P2-T3/T4 并行，P2-T5/T6 并行。
 
-### V2 待办（本轮遗留）
+### V2 待办（累计 6 项，均为收尾；推进顺序见 `docs/HANDOVER-2026-09-17.md` 第 4 节）
 
 1. 挂件接 TTS 分块链路（P1-T1 收尾）：`apps/desktop/src/components/Widget.tsx:330`、`:375` 仍走全量 `synthesizeSpeech`。
 2. 挂件播报合并队列（P1-T2 收尾）：`Widget.tsx:328` 忙则丢弃，缺多条短播报合并。
 3. `mode` 进 `packages/contracts`（P1-T4 收尾）：桌面端目前无法传 `auto/casual/work`。
 4. persona 预设切换 API/UI（P2-T4 收尾）：`PersonaPayload` 无 `preset` 字段，运行时无法切换。
 5. P2-T5 接 AgentRun + 前端：`scripts/persona_asset_import.py` 复用 AgentRun 状态模型并把进度暴露到界面。
+6. P2-T6 补 contracts：`avatar_driver` 目前只在 `config/personas/default.yaml:13` 有值，py/ts 双端 schema 都没有该字段、无读取方。
 
 ### P3：仅在真实需求出现后评估通用 CUA
 
