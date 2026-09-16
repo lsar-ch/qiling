@@ -26,10 +26,13 @@ from app.agents.catalog import AgentCatalogEntry
 logger = logging.getLogger(__name__)
 
 _LIMIT_HINTS = re.compile(r"前\s*(\d+)\s*条")
+_PAGE_HINTS = re.compile(r"第\s*([1-9]|十|[一二三四五六七八九十]+)\s*页")
+_READ_HINTS = re.compile(r"读(?:一下|取)?|阅读|查看正文|提取正文|读取内容")
 _SENSITIVE = re.compile(r"登录|验证码|提交|发送|删除|支付|付款|转账|下载|购买|注册|填写.*表单")
 _DEFAULT_LIMIT = 5
 _BACKEND_TOPIC = re.compile(r"代码|项目|仓库|重构|部署|接口|报错|函数|api|sdk")
 _OPEN_VERBS = re.compile(r"打开|访问|进入")
+_WEB_URL = re.compile(r"https?://")
 # 常见站点直连表：分词不可靠的中文站名直接走官方域名，兜底才用搜索。
 # 打开新站时在这里加一行即可。
 _KNOWN_SITES: dict[str, str] = {
@@ -59,6 +62,10 @@ _TRAILING_NOISE = re.compile(
 _ACTION_JOINERS = re.compile(
     r"搜索并打开|打开并搜索|搜索、打开|并打开|然后打开|再打开|顺便打开|然后搜索|再搜索|并搜索"
 )
+_CN_PAGE_NUMBERS = {
+    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+}
 
 
 def is_browser_task(text: str) -> bool:
@@ -68,6 +75,12 @@ def is_browser_task(text: str) -> bool:
         or _OPEN_VERBS.search(text)
     )
     return has_action and not _BACKEND_TOPIC.search(text)
+
+
+def is_web_fetch_task(text: str) -> bool:
+    """带链接的消息是网页抓取/提炼任务：交给后台 workbuddy（agent 模式）执行，
+    由 workbuddy 自己抓取网页并提炼，DeskMate 不做网页正文解析。"""
+    return bool(_WEB_URL.search(text)) and not _BACKEND_TOPIC.search(text)
 
 
 def _parse_search_request(text: str) -> tuple[str, int]:
@@ -95,11 +108,31 @@ def _known_site(query: str) -> tuple[str, str] | None:
     return None
 
 
+def _parse_search_page(text: str) -> int:
+    """从「搜索 xx 第 n 页」中解析页码；默认第 1 页，最多 10 页。"""
+    matched = _PAGE_HINTS.search(text)
+    if matched is None:
+        return 1
+    token = matched.group(1)
+    try:
+        page = int(token)
+    except ValueError:
+        page = _CN_PAGE_NUMBERS.get(token, 1)
+    return max(1, min(page, 10))
+
+
+def _wants_read(text: str) -> bool:
+    """「搜索并读取/查看正文」类输入：找到第一个结果后读取正文。"""
+    return bool(_READ_HINTS.search(text))
+
+
 class BrowserAdapter(AgentAdapter):
     name: str = "browser"
     adapter_id: str = "browser"
     display_name: str = "浏览器"
     executable: bool = True
+    # 只读搜索/读页面，不适合当兜底默认。
+    default_eligible = False
 
     def __init__(self, catalog_entry: AgentCatalogEntry) -> None:
         self._entry = catalog_entry
@@ -132,6 +165,7 @@ class BrowserAdapter(AgentAdapter):
             label=self.display_name,
             adapter=self.adapter_id,
             enabled=self._entry.enabled,
+            default_eligible=bool(self.executable and self.default_eligible),
             integration_status=status,  # type: ignore[arg-type]
             available=available,
             capabilities=self._entry.capabilities,
@@ -159,7 +193,10 @@ class BrowserAdapter(AgentAdapter):
         try:
             if _OPEN_VERBS.search(request.prompt):
                 return await self._open_page(request, on_update, query)
-            return await self._search(request, on_update, query, limit)
+            if _wants_read(request.prompt):
+                return await self._read_first_result(request, on_update, query)
+            page = _parse_search_page(request.prompt)
+            return await self._search(request, on_update, query, limit, page)
         except asyncio.CancelledError:
             raise
         except AgentExecutionError:
@@ -171,18 +208,19 @@ class BrowserAdapter(AgentAdapter):
         finally:
             self._cancel_events.pop(request.task_id, None)
 
-    async def _search_items(self, query: str, limit: int) -> list[dict]:
+    async def _search_items(self, query: str, limit: int, page: int = 1) -> list[dict]:
         """Bing 搜索结果（title/url/snippet），纯只读操作。"""
         from playwright.async_api import async_playwright
 
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
             try:
-                page = await browser.new_page()
-                url = f"https://www.bing.com/search?q={query}&setlang=zh-hans"
-                await page.goto(url, timeout=60000, wait_until="domcontentloaded")
-                await page.wait_for_selector(".b_algo", state="attached", timeout=30000)
-                return await page.eval_on_selector_all(
+                page_obj = await browser.new_page()
+                first = (max(1, page) - 1) * 10 + 1
+                url = f"https://www.bing.com/search?q={query}&setlang=zh-hans&first={first}"
+                await page_obj.goto(url, timeout=60000, wait_until="domcontentloaded")
+                await page_obj.wait_for_selector(".b_algo", state="attached", timeout=30000)
+                return await page_obj.eval_on_selector_all(
                     ".b_algo",
                     """els => els.slice(0, %d).map(el => {
                         const a = el.querySelector("h2 a");
@@ -197,18 +235,65 @@ class BrowserAdapter(AgentAdapter):
             finally:
                 await browser.close()
 
-    async def _search(self, request, on_update, query: str, limit: int) -> AgentTaskResult:
+    async def _search(
+        self, request, on_update, query: str, limit: int, page: int = 1
+    ) -> AgentTaskResult:
         await on_update("progress", {"text": f"正在搜索：{query}", "progress": f"🔍 {query}"})
-        items = await self._search_items(query, limit)
+        items = await self._search_items(query, limit, page)
         await on_update("progress", {"text": "已打开搜索结果页", "progress": "已打开搜索结果页"})
         lines = [f"{i + 1}. {item['title']}（{item['url']}）\n   {item['snippet']}" for i, item in enumerate(items)]
+        page_label = f"，第 {page} 页" if page > 1 else ""
         message = (
-            f"「{query}」搜索结果（前 {len(lines)} 条）：\n\n" + "\n\n".join(lines)
+            f"「{query}」搜索结果（{page_label}前 {len(lines)} 条）：\n\n" + "\n\n".join(lines)
             if lines
             else f"「{query}」没有搜到结果，换个说法试试。"
         )
         await on_update("progress", {"text": "摘要提取完成", "progress": "✅ 摘要提取完成"})
         return AgentTaskResult(status="completed", message=message)
+
+    async def _read_first_result(self, request, on_update, query: str) -> AgentTaskResult:
+        """搜索后读取第一个结果的正文：适用于「搜索 xx 并读取第一个结果」。"""
+        await on_update("progress", {"text": f"正在搜索：{query}", "progress": f"🔍 {query}"})
+        items = await self._search_items(query, 1)
+        if not items or not items[0].get("url"):
+            return AgentTaskResult(
+                status="failed",
+                message="",
+                error=f"没找到「{query}」对应的网页，无法读取正文。",
+            )
+        target = items[0]
+        await on_update("progress", {"text": f"正在读取：{target['title']}", "progress": f"📄 {target['title']}"})
+        title, text = await self._read_url(target["url"])
+        if not text:
+            return AgentTaskResult(
+                status="failed",
+                message="",
+                error=f"已打开「{target['url']}」但没读到可提取的正文。",
+            )
+        await on_update("progress", {"text": "正文提取完成", "progress": "✅ 正文提取完成"})
+        message = (
+            f"「{query}」第一个结果：{title or target['title']}\n"
+            f"{target['url']}\n\n{text}"
+        )
+        return AgentTaskResult(status="completed", message=message)
+
+    async def _read_url(self, url: str) -> tuple[str, str]:
+        """读取网页标题与正文，返回截断后的 (title, text)。"""
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+                await page.goto(url, timeout=60000, wait_until="domcontentloaded")
+                title = (await page.title()).strip()
+                text = await page.evaluate(
+                    "() => document.body ? (document.body.innerText || '') : ''"
+                )
+            finally:
+                await browser.close()
+        text = re.sub(r"\n{3,}", "\n\n", (text or "").strip())
+        return title, text[:4000]
 
     async def _open_page(self, request, on_update, query: str) -> AgentTaskResult:
         """打开目标：搜索第一个结果 URL，用系统默认浏览器打开。"""

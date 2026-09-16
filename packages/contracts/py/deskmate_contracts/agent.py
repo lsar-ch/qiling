@@ -18,6 +18,8 @@ class AgentInfo(BaseModel):
     integration_status: AgentIntegrationStatus
     available: bool
     enabled: bool = True
+    # 是否允许作为兜底默认执行器：需可真实执行且非窄场景。
+    default_eligible: bool = True
     version: str | None = None
     command: str | None = None
     protocol: str | None = None

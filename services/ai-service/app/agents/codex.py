@@ -195,6 +195,7 @@ class CodexAdapter(AgentAdapter):
             integration_status=status,  # type: ignore[arg-type]
             available=available,
             enabled=self.catalog_entry.enabled,
+            default_eligible=bool(self.executable and self.default_eligible),
             version=version,
             command=command,
             protocol=protocol,

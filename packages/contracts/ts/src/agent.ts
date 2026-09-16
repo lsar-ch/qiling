@@ -14,6 +14,7 @@ export interface AgentInfo {
   integration_status: AgentIntegrationStatus;
   available: boolean;
   enabled: boolean;
+  default_eligible: boolean;
   version: string | null;
   command: string | null;
   protocol: string | null;

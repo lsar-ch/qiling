@@ -9,6 +9,8 @@ import re
 
 from deskmate_contracts.task import Task
 
+from app.agents.browser import is_browser_task
+
 _HIGH_RISK_PATTERNS = (
     r"删除",
     r"移除",
@@ -39,6 +41,9 @@ _HIGH_RISK_PATTERNS = (
     r"change settings?",
     r"update config",
 )
+
+# 带链接的消息一律当作网页抓取类后台任务，避免被闲聊/问答口吻吞掉。
+_URL_HINTS = re.compile(r"https?://")
 
 _ANSWER_HINTS = (
     r"是什么",
@@ -160,6 +165,7 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
     """把输入分到 answer / execute_frontend / delegate_backend / request_approval。"""
     normalized = normalize_text(text)
     compact = normalized.replace(" ", "")
+    force_web = bool(_URL_HINTS.search(normalized))
 
     if _matches_any(normalized, _HIGH_RISK_PATTERNS):
         category = "request_approval"
@@ -168,7 +174,17 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         estimated_duration = "long"
         preferred_executor = None
     elif (
-        _matches_any(normalized, _ANSWER_HINTS)
+        not force_web
+        and is_browser_task(text)
+    ):
+        category = "delegate_backend"
+        risk_level = "medium"
+        complexity = "simple"
+        estimated_duration = "short"
+        preferred_executor = "browser"
+    elif (
+        not force_web
+        and _matches_any(normalized, _ANSWER_HINTS)
         or "?" in normalized
         or "？" in normalized
         or (
@@ -185,7 +201,7 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         complexity = "simple"
         estimated_duration = "short"
         preferred_executor = None
-    elif _matches_any(normalized, _FRONTEND_HINTS):
+    elif _matches_any(normalized, _FRONTEND_HINTS) and not force_web:
         category = "execute_frontend"
         risk_level = "low"
         complexity = "simple"
@@ -195,7 +211,9 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         category = "delegate_backend"
         risk_level = (
             "medium"
-            if _matches_any(normalized, _BACKEND_HINTS) or _matches_any(normalized, _ACTION_HINTS)
+            if force_web
+            or _matches_any(normalized, _BACKEND_HINTS)
+            or _matches_any(normalized, _ACTION_HINTS)
             else "low"
         )
         complexity = "complex" if _matches_any(normalized, (r"批量", r"多步", r"多阶段", r"项目", r"代码", r"测试", r"分析")) else "medium"

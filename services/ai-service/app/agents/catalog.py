@@ -69,6 +69,58 @@ def _atomic_write_text(path: Path, text: str) -> None:
         raise
 
 
+_LOCAL_HEADER = (
+    "# DeskMate 用户配置覆盖层：由「我的智能体」页面写入，请勿手改。\n"
+    "# 默认目录见 agents.yaml；覆盖优先级：agents.local.yaml > agents.yaml。\n"
+)
+
+
+def _read_local_overlay(local_path: Path) -> tuple[str | None, list[dict[str, Any]]]:
+    """读取覆盖层，返回 (default_executor, executors)；缺失或损坏按空处理。"""
+    if not local_path.exists():
+        return None, []
+    try:
+        data = _read_yaml_file(local_path)
+    except AgentCatalogError:
+        return None, []
+    raw_default = data.get("default_executor")
+    default_name = str(raw_default).strip() if raw_default else ""
+    raw_executors = data.get("executors")
+    executors = (
+        [entry for entry in raw_executors if isinstance(entry, dict)]
+        if isinstance(raw_executors, list)
+        else []
+    )
+    return (default_name or None), executors
+
+
+def _write_local_overlay(
+    local_path: Path,
+    default_executor: str | None,
+    executors: list[dict[str, Any]],
+) -> None:
+    """整体重写覆盖层：default_executor 为空则不落该键。"""
+    payload: dict[str, Any] = {"version": 1}
+    if default_executor:
+        payload["default_executor"] = default_executor
+    payload["executors"] = executors
+    _atomic_write_text(
+        local_path,
+        _LOCAL_HEADER
+        + yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+    )
+
+
+def _local_entry(executors: list[dict[str, Any]], name: str) -> dict[str, Any]:
+    """取 name 的覆盖层条目，不存在则追加一条。"""
+    for entry in executors:
+        if entry.get("name") == name:
+            return entry
+    entry = {"name": name}
+    executors.append(entry)
+    return entry
+
+
 def update_local_executor_config(
     catalog_path: Path,
     name: str,
@@ -79,45 +131,35 @@ def update_local_executor_config(
     config 中值为 None 的键会被删除；写入后由调用方重载目录生效。
     """
     local_path = local_catalog_path(catalog_path)
-    executors: list[dict[str, Any]] = []
-    if local_path.exists():
-        try:
-            loaded = _read_yaml_file(local_path)
-            raw_executors = loaded.get("executors") if isinstance(loaded, dict) else None
-            if isinstance(raw_executors, list):
-                executors = [entry for entry in raw_executors if isinstance(entry, dict)]
-        except AgentCatalogError:
-            executors = []
-
-    found = False
-    for entry in executors:
-        if entry.get("name") != name:
-            continue
-        found = True
-        merged = dict(entry.get("config") or {})
-        for key, value in config.items():
-            if value is None:
-                merged.pop(key, None)
-            else:
-                merged[key] = value
-        if merged:
-            entry["config"] = merged
+    default_executor, executors = _read_local_overlay(local_path)
+    entry = _local_entry(executors, name)
+    merged = dict(entry.get("config") or {})
+    for key, value in config.items():
+        if value is None:
+            merged.pop(key, None)
         else:
-            entry.pop("config", None)
-        break
-    if not found:
-        new_config = {key: value for key, value in config.items() if value is not None}
-        entry: dict[str, Any] = {"name": name}
-        if new_config:
-            entry["config"] = new_config
-        executors.append(entry)
+            merged[key] = value
+    if merged:
+        entry["config"] = merged
+    else:
+        entry.pop("config", None)
+    _write_local_overlay(local_path, default_executor, executors)
 
-    text = (
-        "# DeskMate 用户配置覆盖层：由「我的智能体」页面写入，请勿手改。\n"
-        "# 默认目录见 agents.yaml；覆盖优先级：agents.local.yaml > agents.yaml。\n"
-        + yaml.safe_dump({"version": 1, "executors": executors}, allow_unicode=True, sort_keys=False)
-    )
-    _atomic_write_text(local_path, text)
+
+def update_local_default_executor(catalog_path: Path, name: str) -> None:
+    """把 name 写成覆盖层默认执行器，压过 agents.yaml 的默认值。"""
+    local_path = local_catalog_path(catalog_path)
+    _, executors = _read_local_overlay(local_path)
+    _write_local_overlay(local_path, name, executors)
+
+
+def update_local_executor_enabled(catalog_path: Path, name: str, enabled: bool) -> None:
+    """写 name 执行器的 enabled 开关；写入后由调用方重载目录生效。"""
+    local_path = local_catalog_path(catalog_path)
+    default_executor, executors = _read_local_overlay(local_path)
+    entry = _local_entry(executors, name)
+    entry["enabled"] = bool(enabled)
+    _write_local_overlay(local_path, default_executor, executors)
 
 
 def load_agent_catalog(path: Path | None = None) -> AgentCatalog:
@@ -128,10 +170,10 @@ def load_agent_catalog(path: Path | None = None) -> AgentCatalog:
     catalog_path = path.expanduser().resolve()
     data = _read_yaml_file(catalog_path)
     entries = _parse_executors(data, catalog_path)
-    entries = _merge_local_executors(catalog_path, entries)
+    entries, local_default = _merge_local_executors(catalog_path, entries)
 
     raw_version = data.get("version", "1")
-    raw_default = data.get("default_executor") or "codex"
+    raw_default = local_default or data.get("default_executor") or "codex"
     return AgentCatalog(
         version=str(raw_version),
         default_executor=str(raw_default),
@@ -178,12 +220,15 @@ def _parse_executors(data: dict[str, Any], source: Path) -> list[AgentCatalogEnt
 def _merge_local_executors(
     catalog_path: Path,
     entries: list[AgentCatalogEntry],
-) -> list[AgentCatalogEntry]:
+) -> tuple[list[AgentCatalogEntry], str | None]:
+    """合并 local 覆盖层，并返回其默认执行器（未设置时为 None）。"""
     local_path = catalog_path.with_name("agents.local.yaml")
     if not local_path.exists():
-        return entries
+        return entries, None
 
     data = _read_yaml_file(local_path)
+    raw_local_default = data.get("default_executor")
+    local_default = str(raw_local_default).strip() if raw_local_default else None
     raw_executors = data.get("executors")
     if not isinstance(raw_executors, list):
         raise AgentCatalogError(
@@ -216,7 +261,7 @@ def _merge_local_executors(
         else:
             order[order_index[name]] = entry
 
-    return order
+    return order, local_default
 
 
 def _entry_from_dict(raw: object, source: Path) -> AgentCatalogEntry:

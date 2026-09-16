@@ -57,6 +57,8 @@ class AgentAdapter(ABC):
     adapter_id: str = ""
     display_name: str = ""
     executable: bool = False
+    # 是否允许成为兜底默认执行器：窄场景执行器（如浏览器）置 False。
+    default_eligible: bool = True
 
     @abstractmethod
     async def detect(self) -> AgentInfo:

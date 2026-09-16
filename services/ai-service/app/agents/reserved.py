@@ -31,6 +31,7 @@ class PendingAgentAdapter(AgentAdapter):
             integration_status="pending" if command else "not_installed",
             available=command is not None,
             enabled=self.entry.enabled,
+            default_eligible=False,
             command=command,
             protocol=self.entry.protocol,
             capabilities=list(self.entry.capabilities),

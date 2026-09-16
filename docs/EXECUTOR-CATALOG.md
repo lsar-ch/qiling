@@ -6,7 +6,7 @@ DeskMate 的任务执行层不绑定单一执行器。外部 AI coding agent 通
 
 注册目录以 `config/agents.yaml` 为事实源。2026-09-07 用户确认默认只保留 6 个执行器：Codex、Claude Code、Qwen Code、Kimi CLI、Reasonix、WorkBuddy；其他执行器不进入默认目录。
 
-> 能力边界：目录存在不等于真实执行。当前只有 `codex` 使用专用 adapter，可通过 codex-acp 提交真实只读/agent/agent-full-access 任务；其他执行器为 `pending` / `not_installed` 探测状态，不伪装成可以执行任务。
+> 能力边界：目录存在不等于真实执行。当前只有 `codex`、`workbuddy` 与内置 `browser` 可提交真实任务；其他执行器为 `pending` / `not_installed` 探测状态，不伪装成可以执行任务。
 
 ## 2. 当前注册状态
 
@@ -14,12 +14,12 @@ DeskMate 的任务执行层不绑定单一执行器。外部 AI coding agent 通
 
 | Registry name | Label | Adapter | 当前说明 |
 | --- | --- | --- | --- |
-| `codex` | Codex CLI | `codex` | 唯一可真实执行条目；通过 codex-acp 支持提交、进度、取消与授权 |
+| `codex` | Codex CLI | `codex` | 通过 codex-acp 支持提交、进度、取消与授权 |
 | `claude-code` | Claude Code | `pending` | 只登记/探测，不执行任务；保留 ACP/stdio 接入位 |
 | `qwen-code` | Qwen Code | `pending` | 阿里 Qwen 官方 CLI，只登记/探测 |
 | `kimi-cli` | Kimi CLI | `pending` | Moonshot Kimi 官方 CLI，只登记/探测 |
 | `reasonix` | Reasonix | `pending` | DeepSeek 原生 CLI，保留 ACP/多端接入位 |
-| `workbuddy` | WorkBuddy | `pending` | 用户指定的预留执行器，只登记/探测 |
+| `workbuddy` | WorkBuddy | `workbuddy` | 通过 WorkBuddy 自带 CLI/ACP 提交真实任务 |
 
 ## 3. 扩展方式
 
@@ -40,5 +40,13 @@ DeskMate 的任务执行层不绑定单一执行器。外部 AI coding agent 通
 3. `config/agents.local.yaml` 可用于本地覆盖或追加。
 
 配置变化只决定目录内容与探测候选；是否能真实执行仍取决于对应 Adapter / ACP / stdio 接入状态。
+
+## 5. 在「我的智能体」页面切换
+
+- 「设为默认」写 `agents.local.yaml` 顶层 `default_executor`，压过 `agents.yaml` 的默认值；后端就地重建注册表，无需重启服务。
+  只有 `adapter.executable` 且 `default_eligible` 的条目可选：`browser` 是只读窄场景执行器，不允许当兜底默认。
+- 「启用」开关写条目 `enabled`。停用后卡片仍保留并显示「已停用」，但 `AgentRunManager.execute` 会拒绝派任；
+  当前默认执行器不允许直接停用，必须先切换默认。
+- 两者都只落 `agents.local.yaml`（用户层），`agents.yaml` 继续作为仓库默认目录，便于回退与 diff。
 
 详细实现目录与示例见 `docs/AGENT-INTEGRATION.md`；实际协议接入进度以 `services/ai-service` 的 Agent Adapter/Registry 与 `/api/agents` 返回状态为准。

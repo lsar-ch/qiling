@@ -8,8 +8,11 @@ from app.agents.base import AgentExecutionError
 from app.agents.browser import (
     BrowserAdapter,
     _known_site,
+    _parse_search_page,
     _parse_search_request,
+    _wants_read,
     is_browser_task,
+    is_web_fetch_task,
 )
 
 
@@ -32,10 +35,32 @@ def test_is_browser_task() -> None:
     assert not is_browser_task("在吗")
 
 
+def test_is_web_fetch_task() -> None:
+    assert is_web_fetch_task(
+        "https://mp.weixin.qq.com/s/LsCjMbsbKXvBgKVspOlczw我想让你整理和提炼这个公众号的内容"
+    )
+    assert is_web_fetch_task("总结一下这篇文章 https://example.com/a")
+    assert is_web_fetch_task("打开这个链接 https://example.com")
+    assert not is_web_fetch_task("帮我重构这个仓库 https://github.com/x/y")
+    assert not is_web_fetch_task("搜索闲鱼主页")
+    assert not is_web_fetch_task("在吗")
+
+
 def test_known_site_direct_open() -> None:
     assert _known_site("闲鱼主页") == ("闲鱼", "https://www.goofish.com")
     assert _known_site("你知道知乎吗") == ("知乎", "https://www.zhihu.com")
     assert _known_site("石家庄中考招生政策") is None
+
+
+def test_parse_search_page_and_read_intent() -> None:
+    assert _parse_search_page("搜索 量子纠缠 第2页") == 2
+    assert _parse_search_page("查一下 苹果发布会 第二页") == 2
+    assert _parse_search_page("搜索 石家庄中考招生政策") == 1
+    assert _parse_search_page("搜索 新闻 第十页") == 10
+
+    assert _wants_read("搜索 DeskMate 并读取第一个结果")
+    assert _wants_read("查一下苹果发布会并读取正文")
+    assert not _wants_read("搜索 DeskMate")
 
 
 def test_sensitive_prompts_are_rejected_before_browser() -> None:

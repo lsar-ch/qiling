@@ -22,6 +22,22 @@ async def list_runs(request: Request, limit: int = 50) -> dict:
     return {"items": [run.model_dump(mode="json") for run in items]}
 
 
+@router.get("/awaiting")
+async def awaiting_runs(request: Request, conversation_id: str | None = None) -> dict:
+    """列出等待授权的 run：对话页刷新或重开会话后，仍能恢复批准/拒绝入口。"""
+    manager = _manager(request)
+    task_store = request.app.state.task_store
+    items = []
+    for run in manager.store.list_recent(limit=200):
+        if run.status != "awaiting_approval":
+            continue
+        task = task_store.get(run.task_id)
+        if conversation_id and (task is None or task.conversation_id != conversation_id):
+            continue
+        items.append(run.model_dump(mode="json"))
+    return {"items": items}
+
+
 @router.post("/{run_id}/cancel")
 async def cancel_run(run_id: str, request: Request) -> dict:
     try:

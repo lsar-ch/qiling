@@ -21,9 +21,8 @@ def rebuild_agent_registry(registry: AgentRegistry, catalog: AgentCatalog) -> No
     """把目录条目就地重建进现有 registry（保留 registry 对象引用）。"""
     registry.clear()
     registry.default_executor = catalog.default_executor or "codex"
+    # 停用条目也注册：页面要显示「已停用」，是否可执行由 runtime 按 enabled 判定。
     for entry in catalog.executors:
-        if not entry.enabled:
-            continue
         if entry.adapter == "codex":
             registry.register(CodexAdapter(catalog_entry=entry))
         elif entry.adapter == "workbuddy":

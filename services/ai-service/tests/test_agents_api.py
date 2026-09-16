@@ -22,6 +22,10 @@ from deskmate_contracts.agent import AgentInfo
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# 默认执行器以仓库 config/agents.yaml 为准，切换默认值时不必改测试。
+DEFAULT_EXECUTOR = yaml.safe_load(
+    (PROJECT_ROOT / "config" / "agents.yaml").read_text(encoding="utf-8")
+)["default_executor"]
 
 
 def prepare_home(tmp_path, monkeypatch) -> None:
@@ -116,7 +120,7 @@ def test_agents_api_lists_all_default_agents(tmp_path, monkeypatch) -> None:
         resp = client.get("/api/agents")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["default_executor"] == "workbuddy"
+        assert body["default_executor"] == DEFAULT_EXECUTOR
         items = {item["name"]: item for item in body["items"]}
         assert len(items) == 7
         assert set(items) == {
@@ -149,7 +153,7 @@ def test_agents_api_config_returns_catalog(tmp_path, monkeypatch) -> None:
         resp = client.get("/api/agents/config")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["default_executor"] == "workbuddy"
+        assert body["default_executor"] == DEFAULT_EXECUTOR
         assert len(body["items"]) == 7
         assert {item["name"] for item in body["items"]} == {
             "codex",
@@ -357,3 +361,64 @@ def test_workbuddy_configured_command_name_uses_path(monkeypatch) -> None:
     result = workbuddy_module.resolve_workbuddy_runtime("workbuddy")
     assert result is runtime
     assert resolved_paths == ["/fake/bin/workbuddy"]
+
+
+def test_agents_api_set_default_writes_local_overlay(tmp_path, monkeypatch) -> None:
+    """页面「设为默认」写入 agents.local.yaml，压过 agents.yaml 的默认值。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        resp = client.put("/api/agents/codex/config", json={"set_default": True})
+        assert resp.status_code == 200
+        assert client.get("/api/agents").json()["default_executor"] == "codex"
+        local = tmp_path / "deskmate-home" / "config" / "agents.local.yaml"
+        assert "default_executor: codex" in local.read_text(encoding="utf-8")
+
+        assert client.put("/api/agents/workbuddy/config", json={"set_default": True}).status_code == 200
+        assert client.get("/api/agents/config").json()["default_executor"] == "workbuddy"
+
+
+def test_agents_api_rejects_unfit_default_executor(tmp_path, monkeypatch) -> None:
+    """未接入真实执行的条目与窄场景浏览器执行器都不能当兜底默认。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        for name in ("claude-code", "browser"):
+            resp = client.put(f"/api/agents/{name}/config", json={"set_default": True})
+            assert resp.status_code == 400
+            assert "不能设为默认执行器" in resp.json()["detail"]
+        assert client.get("/api/agents/config").json()["default_executor"] == DEFAULT_EXECUTOR
+
+
+def test_agents_api_enable_and_disable_executor(tmp_path, monkeypatch) -> None:
+    """停用保留展示但不参与执行；默认执行器必须先切换才能停用。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        assert client.put("/api/agents/workbuddy/config", json={"set_default": True}).status_code == 200
+        resp = client.put("/api/agents/workbuddy/config", json={"enabled": False})
+        assert resp.status_code == 400
+        assert "当前默认执行器" in resp.json()["detail"]
+
+        assert client.put("/api/agents/codex/config", json={"enabled": False}).status_code == 200
+        body = client.get("/api/agents").json()
+        items = {item["name"]: item for item in body["items"]}
+        assert len(items) == 7
+        assert items["codex"]["enabled"] is False
+        assert "codex" not in client.get("/api/health").json()["capabilities"]["agents"]["ready"]
+
+        resp = client.put("/api/agents/codex/config", json={"set_default": True})
+        assert resp.status_code == 400
+        assert "已停用" in resp.json()["detail"]
+
+        assert client.put("/api/agents/codex/config", json={"enabled": True}).status_code == 200
+        items = {item["name"]: item for item in client.get("/api/agents").json()["items"]}
+        assert items["codex"]["enabled"] is True
+        assert client.put("/api/agents/codex/config", json={"set_default": True}).status_code == 200
+        assert client.get("/api/agents/config").json()["default_executor"] == "codex"
+
+
+def test_agents_api_command_update_keeps_other_overrides(tmp_path, monkeypatch) -> None:
+    """只改启停不应顺手清掉已保存的命令路径。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        client.put("/api/agents/codex/config", json={"command": "/tmp/deskmate-codex-test"})
+        assert client.put("/api/agents/workbuddy/config", json={"set_default": True}).status_code == 200
+        assert client.put("/api/agents/codex/config", json={"enabled": False}).status_code == 200
+        config = client.get("/api/agents/config").json()
+        codex = next(item for item in config["items"] if item["name"] == "codex")
+        assert codex["config"]["codex_command"] == "/tmp/deskmate-codex-test"
+        assert codex["enabled"] is False

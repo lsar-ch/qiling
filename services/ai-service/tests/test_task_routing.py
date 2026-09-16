@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.config import load_settings
 from app.main import create_app
+from app.routing import classify_task_input
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -90,13 +91,13 @@ def test_task_without_run_returns_null_not_404(tmp_path: Path, monkeypatch) -> N
         assert body.json() == {"run": None}
 
 
-def test_frontend_action_routes_to_execute_frontend(tmp_path: Path, monkeypatch) -> None:
+def test_search_action_routes_to_browser_executor(tmp_path: Path, monkeypatch) -> None:
     with make_client(tmp_path, monkeypatch) as client:
         resp = client.post("/api/tasks", json={"input": "帮我打开浏览器搜索 Python 文档"})
         assert resp.status_code == 200
         body = resp.json()
-        assert body["task"]["category"] == "execute_frontend"
-        assert body["task"]["preferred_executor"] == "frontend"
+        assert body["task"]["category"] == "delegate_backend"
+        assert body["task"]["preferred_executor"] == "browser"
 
 
 def test_backend_work_routes_to_delegate_backend(tmp_path: Path, monkeypatch) -> None:
@@ -128,14 +129,20 @@ def test_short_chitchat_is_not_a_task(tmp_path: Path, monkeypatch) -> None:
             assert resp.json()["task"]["category"] == "answer", text
 
 
-def test_plain_command_is_medium_risk_so_it_auto_runs(tmp_path: Path, monkeypatch) -> None:
+def test_plain_command_routes_to_expected_executor(tmp_path: Path, monkeypatch) -> None:
     """真指令即使不含「代码/项目」等词，也要落到 medium 才会自动起跑。"""
     with make_client(tmp_path, monkeypatch) as client:
-        for text in ("帮我改一下 README 的错别字", "查一下石家庄中考招生政策", "打开闲鱼主页"):
+        cases = [
+            ("帮我改一下 README 的错别字", "delegate_backend", None),
+            ("查一下石家庄中考招生政策", "delegate_backend", "browser"),
+            ("打开闲鱼主页", "delegate_backend", "browser"),
+        ]
+        for text, category, executor in cases:
             resp = client.post("/api/tasks", json={"input": text})
             assert resp.status_code == 200
             body = resp.json()
-            assert body["task"]["category"] == "delegate_backend", text
+            assert body["task"]["category"] == category, text
+            assert body["task"]["preferred_executor"] == executor, text
             assert body["task"]["risk_level"] == "medium", text
 
 
@@ -186,6 +193,19 @@ def test_high_risk_routes_to_approval_and_updates_widget_state(tmp_path: Path, m
         assert state["state"] == "awaiting_approval"
 
 
+def test_url_message_routes_to_backend_web_task() -> None:
+    task = classify_task_input(
+        "https://mp.weixin.qq.com/s/LsCjMbsbKXvBgKVspOlczw我想让你整理和提炼这个公众号的内容"
+    )
+    assert task.category == "delegate_backend"
+    assert task.risk_level == "medium"
+    assert task.required_approval is False
+
+    short = classify_task_input("总结一下这篇文章 https://example.com/a")
+    assert short.category == "delegate_backend"
+    assert short.risk_level == "medium"
+
+
 def test_confirm_all_promotes_non_answer_to_approval(tmp_path: Path, monkeypatch) -> None:
     with make_client(tmp_path, monkeypatch, permission_level="confirm_all") as client:
         resp = client.post("/api/tasks", json={"input": "帮我打开浏览器搜索 Python 文档"})
@@ -195,15 +215,23 @@ def test_confirm_all_promotes_non_answer_to_approval(tmp_path: Path, monkeypatch
         assert body["approval_event"]["event_type"] == "task.approval_required"
 
 
-def test_chat_auto_routes_and_replies_to_frontend_task(tmp_path: Path, monkeypatch) -> None:
+def test_chat_auto_routes_and_replies_to_browser_task(tmp_path: Path, monkeypatch) -> None:
     with make_client(tmp_path, monkeypatch, llm_provider=DummyProvider()) as client:
+        async def _fake_execute(task, *, executor=None, mode="read-only", cwd=None):
+            return object()
+
+        # 单元测试不启动真实 Playwright：只验证对话页自动起跑分支与回执文案。
+        monkeypatch.setattr(
+            client.app.state.agent_run_manager, "execute", _fake_execute
+        )
         resp = client.post("/api/chat/stream", json={"message": "打开页面搜索 DeskMate"})
         assert resp.status_code == 200
         tasks = client.get("/api/tasks").json()["items"]
-        assert tasks and tasks[0]["category"] == "execute_frontend"
+        assert tasks and tasks[0]["category"] == "delegate_backend"
+        assert tasks[0]["preferred_executor"] == "browser"
         assert tasks[0]["status"] == "queued"
 
         conversations = client.get("/api/conversations").json()["items"]
         conversation_id = conversations[0]["conversation_id"]
         messages = client.get(f"/api/conversations/{conversation_id}").json()["messages"]
-        assert "前台任务" in messages[-1]["content"]
+        assert "后台执行" in messages[-1]["content"]
