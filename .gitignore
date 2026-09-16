@@ -18,6 +18,7 @@ data/**/*.wav
 data/agent_runs/
 data/conversations/
 data/memory/
+data/persona-tasks/
 data/run_logs/
 data/tasks/
 data/voice_samples/

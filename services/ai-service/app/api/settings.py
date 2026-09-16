@@ -97,6 +97,7 @@ class SettingsUpdate(BaseModel):
     voice_instruction: str | None = None
     dashscope_api_key: str | None = None
     minimax_api_key: str | None = None
+    setup_completed: bool | None = None
 
 
 def _settings_path(request: Request) -> Path:
@@ -178,9 +179,14 @@ def _persona_from_file(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _setup_completed(request: Request) -> bool:
+    return bool(_read_overrides(request).get("setup_completed", False))
+
+
 def _public_settings(request: Request) -> dict[str, Any]:
     settings = request.app.state.settings
     return {
+        "setup_completed": _setup_completed(request),
         "active_persona_id": settings.active_persona_id,
         "performance_mode": settings.performance_mode,
         "ui": {"language": settings.ui_language, "theme": settings.ui_theme},
@@ -259,6 +265,7 @@ async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str
         "voice_instruction",
         "dashscope_api_key",
         "minimax_api_key",
+        "setup_completed",
     ):
         if key in data:
             current[key] = data[key]
@@ -275,6 +282,29 @@ async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str
             request.app.state.event_hub,
         )
     return _public_settings(request)
+
+
+
+@router.get("/setup/status")
+def setup_status(request: Request) -> dict[str, Any]:
+    """首次启动引导状态：是否已完成 + 还缺哪些关键配置。
+
+    missing 只列影响核心可用的项（LLM 必填；语音可选）。
+    复用 resolve_llm_provider 判断 LLM 是否真正配置，而非只看 key 是否存在。
+    """
+    from app.config import resolve_llm_provider
+
+    settings = request.app.state.settings
+    completed = _setup_completed(request)
+    missing: list[str] = []
+    if resolve_llm_provider(settings) == "echo":
+        missing.append("llm")
+    return {
+        "completed": completed,
+        "missing": missing,
+        "llm_configured": resolve_llm_provider(settings) != "echo",
+        "voice_configured": bool(settings.dashscope_api_key or settings.minimax_api_key),
+    }
 
 
 @router.get("/model-profiles")

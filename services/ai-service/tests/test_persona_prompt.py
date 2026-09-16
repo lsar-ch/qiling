@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from app.config import load_settings
 from app.main import create_app
 from app.core.persona_prompt import (
+    PERSONA_PRESETS,
     build_system_prompt,
     compose_system_prompt,
     load_persona,
@@ -82,6 +83,32 @@ def test_partial_profile_mixes_with_legacy() -> None:
     assert "新身份" in text
     assert "默认角色" not in text  # 同段 priority profile；其他段无内容则跳过
     assert "### 说话风格" not in text
+
+
+def test_preset_fills_missing_profile_sections() -> None:
+    """P2-T4：预设是底座，profile 只覆盖自己写了的段。"""
+    text = build_system_prompt(
+        {"preset": "companion", "profile": {"identity": "我的专属身份"}},
+    )
+    assert "我的专属身份" in text
+    assert PERSONA_PRESETS["companion"]["identity"] not in text
+    assert PERSONA_PRESETS["companion"]["boundaries"] in text
+    assert "### 说话风格" in text
+
+
+def test_full_profile_overrides_preset() -> None:
+    """profile 写满时预设不生效，保证 default.yaml 行为不变。"""
+    text = build_system_prompt({**FULL_PROFILE_PERSONA, "preset": "service"})
+    assert "桌面上的 AI 工作伙伴" in text
+    assert PERSONA_PRESETS["service"]["identity"] not in text
+
+
+def test_unknown_or_blank_preset_is_ignored() -> None:
+    assert build_system_prompt({"preset": "不存在的预设"}) == ""
+    assert build_system_prompt({"preset": 123}) == ""
+    # 空白字符串不算覆盖，仍落到预设
+    text = build_system_prompt({"preset": "work", "profile": {"identity": "   "}})
+    assert PERSONA_PRESETS["work"]["identity"] in text
 
 
 def test_compose_system_prompt() -> None:

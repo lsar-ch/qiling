@@ -26,6 +26,8 @@ import {
   type AgentRun,
   type AgentRunMode,
   fetchSettings,
+  fetchSetupStatus,
+  type SetupStatus,
   routeTask,
   searchMemories,
   searchObsidian,
@@ -38,6 +40,7 @@ import {
   type AppSettings,
   type MemoryVaultStatus,
   type HealthResponse,
+  type DiagnosticItem,
   type SessionResponse,
   type WidgetStatusReport,
 } from "./api";
@@ -107,6 +110,13 @@ const AGENT_CARD_CLS: Record<AgentIntegrationStatus, string> = {
   auth_required: "border-warn/40 bg-warn-50/40",
   not_installed: "border-line-subtle bg-surface-tertiary",
   error: "border-bad/40 bg-bad-50/40",
+};
+// 手动停用的执行器：仍然展示，但不参与任务执行。
+const AGENT_DISABLED_PILL = {
+  pill: "bg-line-subtle text-muted",
+  dot: "bg-muted",
+  note: "已停用：不参与任务执行，需要时重新启用即可。",
+  noteCls: "text-muted",
 };
 
 const NAV: { key: PageKey; label: string }[] = [
@@ -802,6 +812,9 @@ function MyAgentsPage() {
   const [configSaving, setConfigSaving] = useState(false);
   const [configError, setConfigError] = useState("");
   const [configNotice, setConfigNotice] = useState("");
+  const [flagBusy, setFlagBusy] = useState("");
+  const [flagNotice, setFlagNotice] = useState("");
+  const [flagError, setFlagError] = useState("");
 
   const loadAgents = async (): Promise<void> => {
     setAgentLoading(true);
@@ -814,6 +827,26 @@ function MyAgentsPage() {
       setAgentError(e instanceof Error ? `执行器状态获取失败：${e.message}` : "执行器状态获取失败");
     } finally {
       setAgentLoading(false);
+    }
+  };
+
+  const setExecutorFlag = async (
+    name: string,
+    body: { enabled?: boolean; set_default?: boolean },
+    notice: string,
+  ): Promise<void> => {
+    if (flagBusy) return;
+    setFlagBusy(name);
+    setFlagNotice("");
+    setFlagError("");
+    try {
+      await updateAgentConfig(name, body);
+      setFlagNotice(notice);
+      await loadAgents();
+    } catch (e) {
+      setFlagError(e instanceof Error ? e.message : "执行器状态更新失败");
+    } finally {
+      setFlagBusy("");
     }
   };
 
@@ -1040,6 +1073,8 @@ function MyAgentsPage() {
           </button>
         </div>
         {defaultExecutor && <p className="text-xs text-muted mb-1.5 break-anywhere">默认执行器：<code className="font-mono">{defaultExecutor}</code></p>}
+        {flagNotice && <p className="text-xs text-ok mb-1.5 break-anywhere">{flagNotice}</p>}
+        {flagError && <p className="text-xs text-bad mb-1.5 break-anywhere">{flagError}</p>}
         {agentError && <div className="rounded-lg bg-bad-50 text-bad px-3.5 py-2.5 text-sm mb-2">{agentError}</div>}
         {agentLoading && agentItems.length === 0 ? (
           <p className="text-sm text-muted">正在探测执行器…</p>
@@ -1052,7 +1087,8 @@ function MyAgentsPage() {
           <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-2.5">
             {agentItems.map((agent) => {
               const st = agent.integration_status;
-              const pill = AGENT_PILL[st];
+              const isDefault = agent.name === defaultExecutor;
+              const pill = agent.enabled ? AGENT_PILL[st] : AGENT_DISABLED_PILL;
               return (
                 <div key={agent.name} className={`min-w-0 border rounded-lg p-3 ${AGENT_CARD_CLS[st]}`}>
                   <div className="flex items-start justify-between gap-2.5">
@@ -1062,7 +1098,7 @@ function MyAgentsPage() {
                     </div>
                     <span className={`inline-flex items-center gap-1.5 shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${pill.pill}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${pill.dot}`} />
-                      {AGENT_STATUS_ZH[st]}
+                      {agent.enabled ? AGENT_STATUS_ZH[st] : "已停用"}
                     </span>
                   </div>
                   <p className={`text-[11px] leading-relaxed mt-1.5 ${pill.noteCls}`}>{pill.note}</p>
@@ -1071,6 +1107,36 @@ function MyAgentsPage() {
                     <li><span className="text-muted">版本</span> <b>{agent.version ?? "—"}</b></li>
                     <li><span className="text-muted">协议</span> <b>{agent.protocol ?? "—"}</b></li>
                   </ul>
+                  <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
+                    <label
+                      className="flex items-center gap-1.5 text-[11px] text-muted shrink-0"
+                      title={isDefault ? "当前默认执行器：先切换默认再停用" : "停用后该执行器不参与任务执行"}
+                    >
+                      <input
+                        type="checkbox"
+                        className="w-3.5 h-3.5 accent-brand"
+                        checked={agent.enabled}
+                        disabled={Boolean(flagBusy) || (isDefault && agent.enabled)}
+                        onChange={(e) => void setExecutorFlag(
+                          agent.name,
+                          { enabled: e.target.checked },
+                          `${agent.label} ${e.target.checked ? "已启用" : "已停用"}。`,
+                        )}
+                      />
+                      启用
+                    </label>
+                    {isDefault ? (
+                      <span className="shrink-0 rounded-full bg-brand-100 text-brand px-2 py-0.5 text-[11px] font-medium">默认执行器</span>
+                    ) : agent.default_eligible && agent.enabled ? (
+                      <button
+                        className="px-2.5 py-1 rounded-md border border-line text-xs text-ink hover:bg-surface-secondary transition-colors disabled:opacity-50 shrink-0"
+                        disabled={Boolean(flagBusy) || !agent.available}
+                        onClick={() => void setExecutorFlag(agent.name, { set_default: true }, `默认执行器已切换为 ${agent.label}。`)}
+                      >
+                        {flagBusy === agent.name ? "保存中…" : "设为默认"}
+                      </button>
+                    ) : null}
+                  </div>
                   {agent.detail && <p className="text-xs text-muted mt-2 leading-relaxed break-anywhere">{agent.detail}</p>}
                   {(agent.name === "codex" || agent.name === "workbuddy") && (
                     configName === agent.name ? (
@@ -1475,7 +1541,7 @@ function performanceInfo(mode: HealthResponse["performance_mode"] | undefined): 
   }
 }
 
-function HomeStatusSection({ health, serviceOk }: { health: HealthResponse | null; serviceOk: boolean }) {
+function HomeStatusSection({ health, serviceOk, onNavigate }: { health: HealthResponse | null; serviceOk: boolean; onNavigate: (key: PageKey) => void }) {
   const vp = health?.voice_pipeline;
   const mem = health?.memory_stats;
   const activity = health?.recent_activity ?? [];
@@ -1490,7 +1556,53 @@ function HomeStatusSection({ health, serviceOk }: { health: HealthResponse | nul
     return ok ? onLabel : offLabel;
   };
 
+  const diagnostics = health?.diagnostics ?? [];
+  const diagStyle: Record<DiagnosticItem["status"], { dot: string; pill: string; label: string }> = {
+    ok: { dot: "bg-ok", pill: "bg-ok-50 text-ok", label: "正常" },
+    degraded: { dot: "bg-warn", pill: "bg-warn-50 text-warn", label: "部分可用" },
+    error: { dot: "bg-bad", pill: "bg-bad-50 text-bad", label: "不可用" },
+  };
+  const fixTarget: Record<string, PageKey> = { open_settings: "settings", open_agents: "agents" };
+
   return (
+    <>
+      {diagnostics.length > 0 && (
+        <section className="rounded-lg border border-line bg-white shadow-card overflow-hidden mb-4">
+          <div className="px-5 pt-5 pb-4">
+            <h3 className="text-sm font-semibold text-ink mb-3">能力诊断</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {diagnostics.map((item) => {
+                const st = diagStyle[item.status];
+                const target = item.fix_action ? fixTarget[item.fix_action] : undefined;
+                return (
+                  <div key={item.name} className="rounded-lg bg-surface-secondary p-3.5 flex flex-col">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
+                        <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                        {item.label}
+                      </span>
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${st.pill}`}>{st.label}</span>
+                    </div>
+                    <p className="text-[11px] text-muted leading-relaxed flex-1">{item.detail}</p>
+                    {item.fix_hint && (
+                      <p className="text-[11px] text-warn leading-relaxed mt-1.5">{item.fix_hint}</p>
+                    )}
+                    {target && (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate(target)}
+                        className="mt-2 self-start text-[11px] font-medium text-brand hover:underline"
+                      >
+                        去修复 →
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
     <section className="rounded-lg border border-line bg-white shadow-card overflow-hidden">
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-center justify-between mb-4">
@@ -1584,6 +1696,7 @@ function HomeStatusSection({ health, serviceOk }: { health: HealthResponse | nul
         </div>
       </div>
     </section>
+    </>
   );
 }
 
@@ -1640,6 +1753,129 @@ function ExecutorStatusSection({ agents }: { agents: AgentInfo[] }) {
   );
 }
 
+function SetupWizard({ onDone }: { onDone: () => void }) {
+  const [step, setStep] = useState(0);
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState("");
+  const [dashscopeKey, setDashscopeKey] = useState("");
+  const [minimaxKey, setMinimaxKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const finish = async (withVoice: boolean): Promise<void> => {
+    setSaving(true);
+    setErr("");
+    try {
+      const body: Record<string, unknown> = {
+        llm_base_url: baseUrl.trim(),
+        llm_api_key: apiKey.trim(),
+        llm_model: model.trim(),
+        setup_completed: true,
+      };
+      if (withVoice) {
+        if (dashscopeKey.trim()) body.dashscope_api_key = dashscopeKey.trim();
+        if (minimaxKey.trim()) body.minimax_api_key = minimaxKey.trim();
+      }
+      await updateSettings(body);
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls =
+    "w-full px-3 py-2 text-sm rounded-lg border border-line bg-white text-ink focus:outline-none focus:border-brand";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-card overflow-hidden">
+        <div className="px-6 pt-6 pb-4 border-b border-line">
+          <h2 className="text-lg font-bold text-ink">欢迎使用 DeskMate</h2>
+          <p className="text-xs text-muted mt-1">
+            {step === 0 ? "第 1 步 / 共 2 步 · 配置对话模型" : "第 2 步 / 共 2 步 · 配置语音（可跳过）"}
+          </p>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          {step === 0 ? (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1.5">API Base URL</label>
+                <input className={inputCls} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://api.openai.com/v1" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1.5">API Key</label>
+                <input className={inputCls} type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-..." />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1.5">模型名称</label>
+                <input className={inputCls} value={model} onChange={(e) => setModel(e.target.value)}
+                  placeholder="gpt-4o-mini" />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-muted leading-relaxed">
+                语音为可选能力，用于语音输入和播报。现在不填也可以，之后在设置页随时配置。
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1.5">DashScope API Key（语音识别）</label>
+                <input className={inputCls} type="password" value={dashscopeKey} onChange={(e) => setDashscopeKey(e.target.value)}
+                  placeholder="可留空" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1.5">MiniMax API Key（语音合成）</label>
+                <input className={inputCls} type="password" value={minimaxKey} onChange={(e) => setMinimaxKey(e.target.value)}
+                  placeholder="可留空" />
+              </div>
+            </>
+          )}
+
+          {err && <p className="text-xs text-bad">{err}</p>}
+        </div>
+
+        <div className="px-6 py-4 border-t border-line flex items-center justify-between gap-3">
+          {step === 0 ? (
+            <>
+              <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => finish(false)} disabled={saving}>
+                跳过全部，稍后配置
+              </button>
+              <button type="button"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
+                disabled={saving || !baseUrl.trim() || !apiKey.trim()}
+                onClick={() => setStep(1)}>
+                下一步
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => setStep(0)} disabled={saving}>
+                上一步
+              </button>
+              <div className="flex gap-2">
+                <button type="button" className="px-4 py-2 text-sm font-medium rounded-lg border border-line text-ink hover:bg-surface-secondary disabled:opacity-50"
+                  disabled={saving} onClick={() => finish(false)}>
+                  跳过语音
+                </button>
+                <button type="button"
+                  className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
+                  disabled={saving} onClick={() => finish(true)}>
+                  {saving ? "保存中…" : "完成"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useHashPage();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -1653,6 +1889,8 @@ export default function App() {
   const [serviceLost, setServiceLost] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const [demoMsg, setDemoMsg] = useState("");
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const setupLoadedRef = useRef(false);
   const stopRef = useRef<(() => void) | undefined>(undefined);
   // 曾经连上过服务：只有这种情况下的失联才算「DeskMate 退出了」
   const everOnlineRef = useRef(false);
@@ -1760,6 +1998,18 @@ export default function App() {
         setHealth(h);
         setSession(s);
         setError(null);
+        // 首次启动引导状态：只在尚未加载时取一次，避免每 8s 覆盖向导内的本地状态
+        if (setupLoadedRef.current === false) {
+          try {
+            const st = await fetchSetupStatus();
+            if (alive) {
+              setupLoadedRef.current = true;
+              setSetupStatus(st);
+            }
+          } catch {
+            /* 引导状态取不到不阻塞主界面 */
+          }
+        }
         const ws = await fetchWidgetState();
         if (alive && ws) setWidgetState(ws);
         if (!stopRef.current) {
@@ -1825,8 +2075,18 @@ export default function App() {
     setDemoMsg("演示完成：聆听 → 思考 → 说话 → 执行 → 授权 → 完成");
   };
 
+  const showWizard = !!setupStatus && !setupStatus.completed && serviceOk;
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-surface-secondary">
+      {showWizard && (
+        <SetupWizard
+          onDone={() => {
+            setupLoadedRef.current = false;
+            setSetupStatus({ completed: true, missing: [], llm_configured: true, voice_configured: setupStatus?.voice_configured ?? false });
+          }}
+        />
+      )}
       {/* Desktop sidebar */}
       <aside className="hidden md:flex flex-col w-56 bg-white border-r border-line px-3 py-5 shrink-0">
         <div className="flex items-center gap-2 px-3 mb-6">
@@ -2008,7 +2268,7 @@ export default function App() {
 
             {/* System status dashboard */}
             <ExecutorStatusSection agents={agents} />
-            <HomeStatusSection health={health} serviceOk={serviceOk} />
+            <HomeStatusSection health={health} serviceOk={serviceOk} onNavigate={setPage} />
 
             {/* Demo controls */}
             <div className="rounded-lg border border-line bg-white shadow-card">

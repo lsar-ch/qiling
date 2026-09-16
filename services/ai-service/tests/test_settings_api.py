@@ -251,3 +251,54 @@ def test_persona_profile_roundtrip_and_preserved_on_update(tmp_path: Path, monke
         assert hero["name"] == "改名后的助手"
         assert hero["description"] == "新描述"
         assert hero["profile"]["identity"] == "桌面上的 AI 工作伙伴"
+
+def test_setup_status_and_completion(tmp_path: Path, monkeypatch) -> None:
+    """首次启动引导：初始未完成且 echo 模式缺 LLM；写入 setup_completed 后持久化。"""
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text(
+        "app:\n  version: 0.1.0\n", encoding="utf-8"
+    )
+    (tmp_path / "config" / "personas" / "default.yaml").write_text(
+        "id: default\nname: 千问\nkind: assistant\nlanguage: zh-CN\n",
+        encoding="utf-8",
+    )
+    settings = load_settings()
+    settings.llm_provider = "echo"
+    settings.llm_api_key = None
+    settings.llm_base_url = None
+    with TestClient(create_app(settings)) as client:
+        status = client.get("/api/setup/status").json()
+        assert status["completed"] is False
+        assert "llm" in status["missing"]
+        assert status["llm_configured"] is False
+
+        # 公共设置里也带 setup_completed 标志
+        assert client.get("/api/settings").json()["setup_completed"] is False
+
+        # 完成引导：配置 LLM + 标记完成
+        updated = client.put(
+            "/api/settings",
+            json={
+                "llm_base_url": "https://api.example.com/v1",
+                "llm_api_key": "sk-test-123",
+                "llm_model": "test-model",
+                "setup_completed": True,
+            },
+        ).json()
+        assert updated["setup_completed"] is True
+        assert updated["llm"]["api_key_configured"] is True
+
+        status2 = client.get("/api/setup/status").json()
+        assert status2["completed"] is True
+        assert status2["llm_configured"] is True
+        assert status2["missing"] == []
+
+        # 持久化：重读 overrides 仍为已完成
+        assert client.get("/api/settings").json()["setup_completed"] is True
+
+        # 密钥值不出现在任何响应里
+        blob = json.dumps(updated, ensure_ascii=False)
+        assert "sk-test-123" not in blob
+

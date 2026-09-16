@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.config import is_lite_mode
+from app.config import is_lite_mode, resolve_llm_provider
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -99,12 +99,102 @@ def _memory_stats(request: Request) -> dict[str, Any]:
     }
 
 
+
+def _diagnostics(
+    request: Request,
+    *,
+    ready_agents: list[str],
+    degraded_agents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """每项能力的可读状态 + 修复建议；复用 health 已有信号，不重复探测。
+
+    status: ok（正常）/ degraded（部分可用）/ error（不可用）。
+    fix_action 为前端可识别的入口标识，如 open_settings。
+    """
+    settings = request.app.state.settings
+    voice = _voice_pipeline(request)
+    mem = _memory_stats(request)
+    items: list[dict[str, Any]] = []
+
+    if is_lite_mode(settings):
+        items.append({
+            "name": "llm", "label": "对话模型", "status": "ok",
+            "detail": "轻量模式，仅文字链路", "fix_hint": None, "fix_action": None,
+        })
+    elif resolve_llm_provider(settings) == "echo":
+        items.append({
+            "name": "llm", "label": "对话模型", "status": "error",
+            "detail": "未配置模型，当前为 echo 演示模式",
+            "fix_hint": "在设置页填写 OpenAI 兼容的 base_url 与 api_key",
+            "fix_action": "open_settings",
+        })
+    else:
+        items.append({
+            "name": "llm", "label": "对话模型", "status": "ok",
+            "detail": f"已配置（{settings.llm_model or 'default'}）",
+            "fix_hint": None, "fix_action": None,
+        })
+
+    if is_lite_mode(settings):
+        items.append({
+            "name": "voice", "label": "语音", "status": "degraded",
+            "detail": "轻量模式已禁用语音", "fix_hint": "切换到标准性能模式可启用语音",
+            "fix_action": "open_settings",
+        })
+    elif voice["stt_ready"] and voice["tts_ready"]:
+        items.append({
+            "name": "voice", "label": "语音", "status": "ok",
+            "detail": "识别与合成均可用", "fix_hint": None, "fix_action": None,
+        })
+    else:
+        items.append({
+            "name": "voice", "label": "语音", "status": "error",
+            "detail": voice["degradation_reason"] or "语音不可用",
+            "fix_hint": "在设置页配置语音供应商与对应 API key",
+            "fix_action": "open_settings",
+        })
+
+    if mem["total_entries"] == 0:
+        items.append({
+            "name": "memory", "label": "项目记忆", "status": "degraded",
+            "detail": "暂无记忆条目", "fix_hint": "开始对话或执行任务后会自动写入",
+            "fix_action": None,
+        })
+    else:
+        items.append({
+            "name": "memory", "label": "项目记忆", "status": "ok",
+            "detail": f"已记录 {mem['total_entries']} 条", "fix_hint": None, "fix_action": None,
+        })
+
+    if ready_agents:
+        items.append({
+            "name": "agents", "label": "执行器", "status": "ok",
+            "detail": "就绪：" + "、".join(ready_agents),
+            "fix_hint": None, "fix_action": None,
+        })
+    elif degraded_agents:
+        items.append({
+            "name": "agents", "label": "执行器", "status": "error",
+            "detail": "无可用执行器", "fix_hint": "在「我的智能体」页检查执行器安装与登录状态",
+            "fix_action": "open_agents",
+        })
+    else:
+        items.append({
+            "name": "agents", "label": "执行器", "status": "degraded",
+            "detail": "未注册任何执行器", "fix_hint": "在「我的智能体」页添加执行器",
+            "fix_action": "open_agents",
+        })
+
+    return items
+
+
 @router.get("/health")
 async def health(request: Request) -> dict:
     """健康状态 + 发布前能力汇总；只暴露状态，不返回任何密钥或本地文件。"""
     settings = request.app.state.settings
     registry = request.app.state.agent_registry
-    agents = await registry.detect_all()
+    # 停用是用户主动选择，不计入能力汇总。
+    agents = [agent for agent in await registry.detect_all() if agent.enabled]
     ready = [agent.name for agent in agents if agent.available and agent.integration_status == "ready"]
     degraded = [
         {
@@ -137,4 +227,5 @@ async def health(request: Request) -> dict:
                 "degraded": degraded,
             },
         },
+        "diagnostics": _diagnostics(request, ready_agents=ready, degraded_agents=degraded),
     }
