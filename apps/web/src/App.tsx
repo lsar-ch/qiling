@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { CompiledMemory, DocOverview, EventEnvelope, MemoryDoc, SearchHit } from "@deskmate/contracts";
 import type { AgentInfo, AgentIntegrationStatus, Task } from "@deskmate/contracts";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   connectEvents,
   addMemoryEntry,
@@ -1880,6 +1882,9 @@ export default function App() {
   const [page, setPage] = useHashPage();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
+  // 主界面被隐藏（关闭按钮走 hide）时让出语音租约，挂件自动接管「听」。
+  // 只有真隐藏/真显示会翻这个值：最小化、失焦、被遮挡都不算，语音留在主界面。
+  const [mainUiVisible, setMainUiVisible] = useState(true);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [wsOpen, setWsOpen] = useState(false);
@@ -1944,7 +1949,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (page !== "chat") {
+    if (!isTauri()) return; // 浏览器直开 5173 时恒为可见，行为不变
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<boolean>("main-ui-visibility", (event) => setMainUiVisible(event.payload)).then(
+      (stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      },
+    );
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (page !== "chat" || !mainUiVisible) {
       setVoiceLeaseOwned(false);
       return;
     }
@@ -1984,7 +2005,7 @@ export default function App() {
       window.removeEventListener("pagehide", release);
       release();
     };
-  }, [page]);
+  }, [page, mainUiVisible]);
 
   useEffect(() => {
     let alive = true;

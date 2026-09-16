@@ -13,11 +13,13 @@ use serde::Serialize;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 mod widget;
 
 const SERVICE_PORT: u16 = 8736;
+/// 主界面可见性事件：主界面据此让出/收回语音租约，挂件据此立即重探租约。
+const MAIN_UI_VISIBILITY: &str = "main-ui-visibility";
 const SERVICE_START_TIMEOUT: Duration = Duration::from_secs(15);
 const SERVICE_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const SERVICE_PORT_GRACE: Duration = Duration::from_millis(1500);
@@ -322,6 +324,7 @@ fn open_main_ui_window(app: &AppHandle, page: Option<String>) -> Result<(), Stri
             .map_err(|e| format!("切换主界面页面失败: {e}"))?;
         let _ = window.show();
         let _ = window.set_focus();
+        let _ = app.emit(MAIN_UI_VISIBILITY, true);
         return Ok(());
     }
     WebviewWindowBuilder::new(app, "main_ui", WebviewUrl::External(url.parse().map_err(|e| format!("主界面地址无效: {e}"))?))
@@ -495,6 +498,9 @@ pub fn run() {
                 if window.label() == "main_ui" {
                     api.prevent_close();
                     let _ = window.hide();
+                    // 隐藏（关闭按钮走 hide，不是最小化/失焦）= 用户大概率转闲聊：
+                    // 通知主界面让出语音租约，挂件才能自动接管「听」。
+                    let _ = window.app_handle().emit(MAIN_UI_VISIBILITY, false);
                 } else {
                     let app = window.app_handle().clone();
                     kill_child(&app);

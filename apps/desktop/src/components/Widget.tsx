@@ -739,8 +739,18 @@ export default function Widget() {
     };
     void refreshLease();
     const timer = setInterval(() => void refreshLease(), 4000);
+    // 主界面隐藏/显示时立刻重探租约，不必等下一轮轮询（自动 listening 由
+    // 下面的 voiceLeaseOwned effect 触发，这里只负责把租约状态提前拿到）
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+    void listen<boolean>("main-ui-visibility", () => void refreshLease()).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
     return () => {
       alive = false;
+      disposed = true;
+      unlisten?.();
       clearInterval(timer);
       stopVoiceResources();
       void releaseVoiceLease();
