@@ -310,6 +310,32 @@ def test_low_risk_chatter_is_not_auto_started(tmp_path, monkeypatch) -> None:
         assert client.get(f"/api/tasks/{done['task_id']}/run").json()["run"] is None
 
 
+def test_chat_auto_runs_browser_search_on_browser_executor(tmp_path, monkeypatch) -> None:
+    """搜索类后台任务自动起跑时优先选浏览器执行器。"""
+    browser = FakeReadyAdapter(result_message="石家庄中考招生政策摘要")
+    browser.name = "browser"
+    browser.adapter_id = "browser"
+    browser.display_name = "浏览器"
+    with make_client(tmp_path, monkeypatch, browser) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "搜索 石家庄中考招生政策 并返回前几条摘要"},
+        )
+        assert resp.status_code == 200
+        done = next(
+            json.loads(line[6:])
+            for line in resp.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        assert done["task_category"] == "delegate_backend"
+        run = client.get(f"/api/tasks/{done['task_id']}/run").json()["run"]
+        assert run["executor"] == "browser"
+        _wait_for(client, done["task_id"], ("completed",))
+        conv = client.get(f"/api/conversations/{done['conversation_id']}").json()
+        notes = [item["content"] for item in conv["messages"] if item["role"] == "tool"]
+        assert any("摘要" in text for text in notes)
+
+
 def test_execute_completed_updates_task_run_and_events(tmp_path, monkeypatch) -> None:
     adapter = FakeReadyAdapter()
     with make_client(tmp_path, monkeypatch, adapter) as client:

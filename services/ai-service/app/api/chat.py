@@ -173,7 +173,12 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
         and not _is_echo_of_reply(body.message, conversation)
     ):
         try:
-            auto_run = await request.app.state.agent_run_manager.execute(task, mode="read-only")
+            from app.agents.browser import is_browser_search
+
+            executor = "browser" if is_browser_search(body.message) else None
+            auto_run = await request.app.state.agent_run_manager.execute(
+                task, mode="read-only", executor=executor
+            )
         except Exception as exc:
             auto_start_error = str(exc)
     try:

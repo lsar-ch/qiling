@@ -30,6 +30,13 @@ _SEARCH_VERBS = re.compile(
 _LIMIT_HINTS = re.compile(r"前\s*(\d+)\s*条")
 _SENSITIVE = re.compile(r"登录|验证码|提交|发送|删除|支付|付款|转账|下载|购买|注册|填写.*表单")
 _DEFAULT_LIMIT = 5
+_BACKEND_TOPIC = re.compile(r"代码|项目|仓库|重构|部署|接口|报错|函数|api|sdk")
+
+
+def is_browser_search(text: str) -> bool:
+    """搜索类输入交给浏览器执行器；代码/项目类主题仍走默认执行器。"""
+    has_search = bool(re.search(r"搜索|搜一下|搜搜|查一下|查查|查询|查一查|找一下|查找", text))
+    return has_search and not _BACKEND_TOPIC.search(text)
 
 
 def _parse_search_request(text: str) -> tuple[str, int]:
