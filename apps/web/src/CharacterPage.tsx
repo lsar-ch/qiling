@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { confirmText } from "./dialog";
 import {
   createPersona,
   fetchModelProfiles,
@@ -295,7 +296,7 @@ export default function CharacterPage() {
   });
 
   const activate = async (persona: PersonaCard): Promise<void> => {
-    if (dirty && !window.confirm("当前角色有未保存修改，启用其它角色将丢弃编辑，继续吗？")) return;
+    if (dirty && !(await confirmText("当前角色有未保存修改，启用其它角色将丢弃编辑，继续吗？"))) return;
     setBusyId(persona.id);
     setError("");
     setNotice("");
@@ -341,10 +342,11 @@ export default function CharacterPage() {
   };
 
   const createNewPersona = async (): Promise<void> => {
-    const id = window.prompt("请输入角色卡 ID（只允许英文、数字、_、-）", `persona_${personas.length + 1}`);
-    if (!id) return;
-    const name = window.prompt("请输入角色名称", "新角色");
-    if (!name) return;
+    const used = new Set(personas.map((item) => item.id));
+    let index = personas.length + 1;
+    while (used.has(`persona_${index}`)) index += 1;
+    const id = `persona_${index}`;
+    const name = "新角色";
     setError("");
     setNotice("");
     try {

@@ -541,6 +541,7 @@ function MemoryPage() {
   const [obsidianSearched, setObsidianSearched] = useState(false);
   const [status, setStatus] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [entry, setEntry] = useState({ section: "", text: "" });
   const [vaultStatus, setVaultStatus] = useState<MemoryVaultStatus | null>(null);
 
   const reload = async (): Promise<void> => {
@@ -584,12 +585,11 @@ function MemoryPage() {
 
   const addEntry = async (): Promise<void> => {
     if (!selected) return;
-    const section = window.prompt("小节名称", "项目进度");
-    if (!section) return;
-    const text = window.prompt("记忆内容", "新的项目记录");
+    const text = entry.text.trim();
     if (!text) return;
-    const next = await addMemoryEntry(selected.layer, selected.key, section, text);
+    const next = await addMemoryEntry(selected.layer, selected.key, entry.section.trim() || "项目进度", text);
     setDoc(next);
+    setEntry({ section: "", text: "" });
     await reload();
   };
 
@@ -705,9 +705,11 @@ function MemoryPage() {
         <section className="rounded-lg border border-line bg-white shadow-card p-4 min-w-0">
           <div className="flex items-center justify-between gap-2.5 mb-3">
             <h3 className="text-sm font-semibold text-ink min-w-0 break-anywhere">{selected ? `${selected.layer}/${selected.key}` : "未选择记忆"}</h3>
-            <div className="flex gap-3 shrink-0">
-              <button className="text-brand text-xs hover:underline" onClick={() => void addEntry()}>新增条目</button>
-              <button className="text-brand text-xs hover:underline" onClick={() => void save()}>保存文档</button>
+            <div className="flex items-center gap-2 shrink-0 min-w-0">
+              <input className="w-24 border border-line rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-brand" value={entry.section} onChange={(event) => setEntry((current) => ({ ...current, section: event.target.value }))} placeholder="小节名称" aria-label="小节名称" />
+              <input className="w-36 border border-line rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-brand" value={entry.text} onChange={(event) => setEntry((current) => ({ ...current, text: event.target.value }))} placeholder="记忆内容" aria-label="记忆内容" />
+              <button className="text-brand text-xs hover:underline whitespace-nowrap" onClick={() => void addEntry()}>新增条目</button>
+              <button className="text-brand text-xs hover:underline whitespace-nowrap" onClick={() => void save()}>保存文档</button>
             </div>
           </div>
           {doc ? (

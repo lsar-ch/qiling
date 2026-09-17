@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { confirmText } from "./dialog";
 import {
   createModelProfile,
   deleteModelProfile,
@@ -218,7 +219,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
   };
 
   const remove = async (profile: ModelProfile): Promise<void> => {
-    if (!window.confirm(`删除模型档案「${profile.name}」？`)) return;
+    if (!(await confirmText(`删除模型档案「${profile.name}」？`, "删除模型档案"))) return;
     setBusy(true);
     setError("");
     setNotice("");

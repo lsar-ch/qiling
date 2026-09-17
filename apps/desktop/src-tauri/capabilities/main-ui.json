@@ -1,9 +1,9 @@
 {
   "identifier": "main-ui",
-  "description": "主界面原生目录选择：仅允许本机 AI 服务远程页面调用目录打开能力",
+  "description": "主界面原生对话框：仅允许本机 AI 服务远程页面调用目录选择与确认框",
   "windows": ["main_ui"],
   "remote": {
     "urls": ["http://127.0.0.1:8736/*"]
   },
-  "permissions": ["dialog:allow-open"]
+  "permissions": ["dialog:allow-open", "dialog:allow-ask"]
 }
