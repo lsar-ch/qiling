@@ -107,3 +107,18 @@ def test_obsidian_search_is_read_only(tmp_path: Path, monkeypatch) -> None:
         data = client.get("/api/memories/obsidian/search", params={"q": "本地优先"}).json()
         assert data["available"] is True
         assert data["items"][0]["path"] == "note.md"
+
+
+def test_obsidian_check_is_read_only_and_does_not_create_mirror(tmp_path: Path, monkeypatch) -> None:
+    prepare_home(tmp_path, monkeypatch)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "note.md").write_text("本地优先。", encoding="utf-8")
+
+    with TestClient(create_app(load_settings())) as client:
+        checked = client.get("/api/memories/obsidian/check", params={"path": str(vault)}).json()
+        assert checked == {"available": True, "path": str(vault), "note_count": 1}
+        assert not (vault / "DeskMate").exists()
+
+        missing = client.get("/api/memories/obsidian/check", params={"path": str(tmp_path / "missing")}).json()
+        assert missing == {"available": False, "path": str(tmp_path / "missing"), "note_count": 0}

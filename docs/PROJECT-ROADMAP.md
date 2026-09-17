@@ -17,9 +17,9 @@ DeskMate 当前收敛为：
 
 ## 当前进度
 
-**截至 2026-09-17：V1 已收口。P1 浏览器执行器已完成；P1 轻量主动性 T1-T4 已完成；P2 发布加固 T1-T6 已完成，V2 六项收尾也已完成。主线与收尾全部落地。本轮验证：`./scripts/check.sh` 全绿 —— pytest **209 passed**、`apps/web` 与 `apps/desktop` typecheck 均 RC=0、`cargo check` 通过、`apps/web/dist` 已重建（`assets/index-t7o65XPz.js`）。**
+**截至 2026-09-17：V1 已收口。P1 浏览器执行器已完成；P1 轻量主动性 T1-T4 已完成；P2 发布加固 T1-T6 已完成，V2 六项收尾也已完成。主线与收尾全部落地。本轮验证：`./scripts/check.sh` 全绿 —— pytest **210 passed**、`apps/web` 与 `apps/desktop` typecheck 均 RC=0、`cargo check` 通过、`apps/web/dist` 已重建（`assets/index-DD2m9LNm.js`）。**
 
-**2026-09-17 凌晨两项修复（`60c23c4` / `5a661b4`，均只过自动化、真机待验收）**：① WorkBuddy 授权链路 —— 模式映射改真值（`read-only→plan` 才是真只读，旧值 `dontAsk` 只是不弹窗、不隔离）、授权选项按 `kind` 匹配 `optionId`（修掉「允许一次」静默升级成永久放行）、授权卡片显示真实命令、5 分钟超时自动按拒绝收口；② 主界面隐藏时把语音租约交给挂件 —— 关闭走 `hide()` 不销毁，页面继续心跳持租约，导致挂件语音永远是「关」；现在只在真隐藏/真显示时广播 `main-ui-visibility`（最小化、失焦、遮挡不触发），挂件自动接管「听」。验收清单见 `docs/HANDOVER-2026-09-17.md` 第 2 节。**
+**2026-09-17 凌晨两项修复（`60c23c4` / `5a661b4`，自动化与真机均已通过）**：① WorkBuddy 授权链路 —— 模式映射改真值（`read-only→plan` 才是真只读，旧值 `dontAsk` 只是不弹窗、不隔离）、授权选项按 `kind` 匹配 `optionId`（修掉「允许一次」静默升级成永久放行）、授权卡片显示真实命令、5 分钟超时自动按拒绝收口；② 主界面隐藏时把语音租约交给挂件 —— 关闭走 `hide()` 不销毁，页面继续心跳持租约，导致挂件语音永远是「关」；现在只在真隐藏/真显示时广播 `main-ui-visibility`（最小化、失焦、遮挡不触发），挂件自动接管「听」。验收清单见 `docs/HANDOVER-2026-09-17.md` 第 2 节。**
 
 已完成：
 

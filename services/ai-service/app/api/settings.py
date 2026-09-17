@@ -196,6 +196,7 @@ def _public_settings(request: Request) -> dict[str, Any]:
             "mode": settings.memory_mode,
             "budget_chars": settings.memory_budget_chars,
             "obsidian_vault_path": settings.obsidian_vault_path,
+            "obsidian_default_path": settings.obsidian_default_path,
             "obsidian_configured": settings.memory_mode == "obsidian_linked"
             and Path(settings.obsidian_vault_path).expanduser().is_dir(),
         },

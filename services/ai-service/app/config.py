@@ -19,6 +19,9 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8736
 DEFAULT_WEB_DEV_PORT = 5173
 DEFAULT_DESKTOP_DEV_PORT = 1420
+DEFAULT_OBSIDIAN_VAULT_PATH = (
+    "/Users/lxb/Library/Mobile Documents/iCloud~md~obsidian/Documents/knowledge/knowledge"
+)
 
 
 class PerformanceMode(StrEnum):
@@ -96,9 +99,8 @@ class Settings:
     memory_budget_chars: int = 4000
     memory_mode: str = "standalone"
     performance_mode: str = "balanced"    # quality | balanced | lite
-    obsidian_vault_path: str = (
-        "/Users/lxb/Library/Mobile Documents/iCloud~md~obsidian/Documents/knowledge/knowledge"
-    )
+    obsidian_vault_path: str = DEFAULT_OBSIDIAN_VAULT_PATH
+    obsidian_default_path: str = DEFAULT_OBSIDIAN_VAULT_PATH
     dashscope_api_key: str | None = None
     minimax_api_key: str | None = None
     # ── 语音激活（常开/静默/唤醒，见 docs/VOICE-ACTIVATION.md）──

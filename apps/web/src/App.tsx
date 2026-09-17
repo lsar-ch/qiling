@@ -34,6 +34,7 @@ import {
   searchMemories,
   searchObsidian,
   fetchMemoryVaultStatus,
+  checkObsidianPath,
   fetchWidgetState,
   publishEvent,
   saveMemoryDoc,
@@ -224,6 +225,8 @@ function KnowledgeBasePage() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<{ available: boolean; note_count: number } | null>(null);
 
   useEffect(() => {
     void fetchSettings()
@@ -283,6 +286,34 @@ function KnowledgeBasePage() {
     }
   };
 
+  const checkPath = async (): Promise<void> => {
+    const path = draftPath.trim();
+    if (!path) {
+      setError("请先填写 Obsidian 库路径。");
+      return;
+    }
+    setChecking(true);
+    setNotice("");
+    setError("");
+    setCheckResult(null);
+    try {
+      const checked = await checkObsidianPath(path);
+      setCheckResult({ available: checked.available, note_count: checked.note_count });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "路径检测失败");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const resetObsidianPath = (): void => {
+    if (!settings?.memory.obsidian_default_path) return;
+    setDraftPath(settings.memory.obsidian_default_path);
+    setNotice("");
+    setError("");
+    setCheckResult(null);
+  };
+
   const runSearch = async () => {
     if (!query.trim()) return;
     setSearching(true);
@@ -319,11 +350,30 @@ function KnowledgeBasePage() {
             <input
               className="w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
               value={draftPath}
-              onChange={(e) => setDraftPath(e.target.value)}
+              onChange={(e) => {
+                setDraftPath(e.target.value);
+                setCheckResult(null);
+              }}
               placeholder="/Users/.../knowledge"
             />
           </label>
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              className="h-[38px] px-3 rounded-lg border border-line text-sm text-ink hover:bg-surface-secondary transition-colors disabled:opacity-50"
+              onClick={() => void checkPath()}
+              disabled={saving || checking}
+            >
+              {checking ? "检测中…" : "检测路径"}
+            </button>
+            {settings?.memory.obsidian_default_path && draftPath !== settings.memory.obsidian_default_path && (
+              <button
+                className="h-[38px] px-3 rounded-lg border border-line text-sm text-muted hover:text-ink transition-colors disabled:opacity-50"
+                onClick={resetObsidianPath}
+                disabled={saving || checking}
+              >
+                恢复默认
+              </button>
+            )}
             {!linked ? (
               <button
                 className="h-[38px] px-4 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
@@ -352,6 +402,12 @@ function KnowledgeBasePage() {
             )}
           </div>
           {notice && <p className="text-xs text-ok mt-2.5 leading-relaxed">{notice}</p>}
+          {checkResult && !checkResult.available && (
+            <p className="text-xs text-bad mt-2.5 leading-relaxed">路径不可访问：请检查拼写、权限或是否已下载到本地。</p>
+          )}
+          {checkResult?.available && (
+            <p className="text-xs text-ok mt-2.5 leading-relaxed">路径可用，检测到 {checkResult.note_count} 篇 Markdown 笔记。启用后才开始自动归档。</p>
+          )}
           {linked && vault && !vault.available && (
             <p className="text-xs text-warn mt-2.5 leading-relaxed">当前路径不可访问或未启用：检索暂不可用。记忆仍保存在本机，可保留该路径稍后修正。</p>
           )}

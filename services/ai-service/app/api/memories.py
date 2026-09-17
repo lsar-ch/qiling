@@ -82,6 +82,23 @@ def vault_status(request: Request) -> dict:
     return {"available": True, "path": raw, **status}
 
 
+@router.get("/obsidian/check")
+def obsidian_check(
+    request: Request,
+    path: str = Query(min_length=1, max_length=1024),
+) -> dict:
+    """只读检测一个 Obsidian vault 路径：不启用镜像、不写任何文件。"""
+    root = Path(path.strip()).expanduser()
+    if not root.is_dir():
+        return {"available": False, "path": str(root), "note_count": 0}
+    note_count = sum(
+        1
+        for note in root.rglob("*.md")
+        if note.relative_to(root).parts[0] != "DeskMate"
+    )
+    return {"available": True, "path": str(root), "note_count": note_count}
+
+
 @router.get("/sessions")
 def sessions(request: Request) -> dict:
     return {"items": memory(request).list_sessions()}

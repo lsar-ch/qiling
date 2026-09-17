@@ -261,6 +261,7 @@ export interface AppSettings {
     mode: string;
     budget_chars: number;
     obsidian_vault_path: string;
+    obsidian_default_path: string;
     obsidian_configured: boolean;
   };
   llm: {
@@ -452,6 +453,18 @@ export interface MemoryVaultStatus {
 
 export async function fetchMemoryVaultStatus(): Promise<MemoryVaultStatus> {
   return fetchJson<MemoryVaultStatus>("/api/memories/vault/status");
+}
+
+export interface ObsidianPathCheck {
+  available: boolean;
+  path: string;
+  note_count: number;
+}
+
+export async function checkObsidianPath(path: string): Promise<ObsidianPathCheck> {
+  return fetchJson<ObsidianPathCheck>(
+    `/api/memories/obsidian/check?path=${encodeURIComponent(path)}`,
+  );
 }
 
 export interface WidgetStatusReport {
