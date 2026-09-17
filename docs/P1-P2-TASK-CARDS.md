@@ -21,7 +21,7 @@
 
 **验收**：TTS 首响 <1s；分块播放期间 barge-in 仍可打断。
 
-**实际落地**：⚠️ 部分完成 —— Web 端已走分块播放（`services/ai-service/app/speech/base.py:66` `synthesize_stream`、分句 `:84`；`services/ai-service/app/api/voice.py:319` SSE 端点；`apps/web/src/api.ts:934`；`apps/web/src/ChatPage.tsx:317`）；挂件仍是全量合成（`apps/desktop/src/components/Widget.tsx:330`、`:375`），且无自动化测试、无首响延迟度量。
+**实际落地**：✅ 已完成 —— Web 端分块链路保留；挂件已接 `synthesizeSpeechStream`（`apps/desktop/src/api.ts`、`Widget.tsx`），保留 barge-in，并加 dev 首块耗时日志。
 
 ### P1-T2：任务完成/失败主动短播报
 
@@ -36,7 +36,7 @@
 
 **验收**：任务完成后 3 秒内挂件播报；多条播报自动合并。
 
-**实际落地**：✅ 已完成 —— `services/ai-service/app/agents/runtime.py:467` 发 bubble + `speak_text`，`apps/web/src/ChatPage.tsx:469` 自动播报；遗留挂件侧无「多条播报合并队列」（`apps/desktop/src/components/Widget.tsx:328` 忙则丢弃），转 V2。
+**实际落地**：✅ 已完成 —— 后端播报不变；挂件侧已加入 2s 合并队列，多条短播报合并为一句。
 
 ### P1-T3：记忆更新提示
 
@@ -65,7 +65,7 @@
 
 **验收**：闲聊对话不加载项目 L3；工作对话自动加载完整上下文。
 
-**实际落地**：✅ 已完成 —— `services/ai-service/app/api/chat.py:77` mode 字段、`:337` casual 压到 800 字/空 surfaces、work 全量；测试 `services/ai-service/tests/test_chat.py:231`；本轮补上手动切换 UI（`CHAT_MODES` 常量 `apps/web/src/ChatPage.tsx:63`，输入框上方三态分段控件 `:1179`，自动/闲聊/工作，带 `title`/`aria-label` 说明记忆深度）。遗留：`mode` 尚未进 `packages/contracts`，桌面端无法传，转 V2。
+**实际落地**：✅ 已完成 —— 上述 UI 保留；`ChatMode` 已进 py/ts contracts，`chat.py` 与桌面端 `streamChat` 可传 `auto/casual/work`。
 
 ---
 
@@ -132,7 +132,7 @@
 
 **验收**：切换预设后角色行为变化；用户自定义不被预设覆盖。
 
-**实际落地**：✅ 已完成（2026-09-16 修复）—— 原 `services/ai-service/app/core/persona_prompt.py` 只在 `profile` 完全为空时才用预设，而 `config/personas/default.yaml:35` 有完整 profile → `preset: work` 是死字段；已改为「预设作底座 + profile 非空字段覆盖」（`services/ai-service/app/core/persona_prompt.py:105`），并新增 3 个测试（`services/ai-service/tests/test_persona_prompt.py:88` `test_preset_fills_missing_profile_sections`、`:99` `test_full_profile_overrides_preset`、`:106` `test_unknown_or_blank_preset_is_ignored`）。已实测默认角色提示词零变化（6 段全来自 profile，无预设文本泄漏）。遗留：无切换预设的 API/UI（`PersonaPayload` 无 preset 字段），转 V2。
+**实际落地**：✅ 已完成 —— 原有 preset 底座逻辑保留；`PersonaPayload.preset` 已补齐，角色页新增自定义/工作/陪伴/服务四态选择，且测试覆盖写入与清空。
 
 ### P2-T5：音色/形象后台任务状态机
 
@@ -147,7 +147,7 @@
 
 **验收**：音色克隆任务提交后可查进度，完成后可切换。
 
-**实际落地**：⚠️ 部分完成 —— `scripts/persona_asset_import.py` 已有状态机 + 合法流转表（`:32`）、JSON 落盘 `data/persona-tasks/`、CLI（`:249`，含 `--self-test` 已实测通过）；未复用 AgentRun，未接 API/前端，进度只能在命令行看。
+**实际落地**：✅ 已完成（最小可用）—— 新增 `/api/persona-tasks`，以 `AgentRun` 形状读取/创建角色资产任务；角色页展示最近任务进度。实际音色克隆后台执行仍走 `probe_minimax.py`/CLI，未在此轮接入自动执行。
 
 ### P2-T6：AvatarDriver 字段预留
 
@@ -163,7 +163,7 @@
 
 **验收**：persona 加载不报错，现有挂件表现不变。
 
-**实际落地**：⚠️ 部分完成 —— 仅 `config/personas/default.yaml:13` 一行 `avatar_driver: procedural_2d`，contracts 双端都没有该字段（`packages/contracts/py/deskmate_contracts/character.py:13` 及 ts 对应文件），目前无读取方。符合「V1 零依赖预留」意图，但 contracts 那半句未做。
+**实际落地**：✅ 已完成 —— `AvatarDriver` 已补进 py/ts contracts，默认 `procedural_2d`，预留 `video_stream`。
 
 ---
 

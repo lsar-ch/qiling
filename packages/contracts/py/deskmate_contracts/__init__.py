@@ -6,8 +6,8 @@ packages/contracts/ts 中的类型是本包的镜像，修改后必须同步并�
 
 from .agent import AgentInfo, AgentIntegrationStatus
 from .approval import ApprovalDecision, ApprovalRequest, ApprovalStatus
-from .character import CharacterConfig, CharacterStyle
-from .conversation import Conversation, ConversationMessage, MessageRole
+from .character import AvatarDriver, CharacterConfig, CharacterStyle
+from .conversation import ChatMode, Conversation, ConversationMessage, MessageRole
 from .events import (
     EventEnvelope,
     EventSource,
@@ -41,8 +41,10 @@ __all__ = [
     "ApprovalDecision",
     "ApprovalRequest",
     "ApprovalStatus",
+    "AvatarDriver",
     "CharacterConfig",
     "CharacterStyle",
+    "ChatMode",
     "Conversation",
     "ConversationMessage",
     "CompiledMemory",

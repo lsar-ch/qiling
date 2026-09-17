@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 MessageRole = Literal["user", "assistant", "system", "tool"]
+ChatMode = Literal["auto", "casual", "work"]
 
 _ROLE_LABELS_ZH: dict[str, str] = {
     "user": "用户",

@@ -18,7 +18,7 @@ export type {
   MemorySection,
   SearchHit,
 } from "./memory";
-export type { ChatAttachment, ConversationMessage, MessageRole } from "./conversation";
+export type { ChatAttachment, ChatMode, ConversationMessage, MessageRole } from "./conversation";
 export type { VoiceProvider, VoiceParams, VoiceSettings } from "./voice";
-export type { CharacterConfig, CharacterStyle } from "./character";
+export type { AvatarDriver, CharacterConfig, CharacterStyle } from "./character";
 export type { RecordingFormat, RecordingMode, RecordingSession } from "./recording";

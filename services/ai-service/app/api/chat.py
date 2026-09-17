@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from deskmate_contracts import new_event_id
-from deskmate_contracts.conversation import ChatAttachment
+from deskmate_contracts.conversation import ChatAttachment, ChatMode
 from deskmate_contracts.events import EventEnvelope
 from app.chat.context import build_llm_messages
 from app.config import repo_root
@@ -74,7 +74,7 @@ class ChatTurnRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     attachments: list[ChatAttachment] = Field(default_factory=list)
     modality: Literal["text", "voice"] = "text"
-    mode: Literal["auto", "casual", "work"] = "auto"
+    mode: ChatMode = "auto"
     model_profile_id: str | None = None
 
     model_config = {"extra": "forbid"}

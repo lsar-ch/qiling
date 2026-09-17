@@ -1,5 +1,6 @@
 // 对话契约 —— 镜像自 deskmate_contracts/conversation.py。
 export type MessageRole = "user" | "assistant" | "system" | "tool";
+export type ChatMode = "auto" | "casual" | "work";
 
 export interface ChatAttachment {
   name: string;

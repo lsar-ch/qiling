@@ -184,6 +184,7 @@ export interface PersonaCard {
   llm?: {
     profile_id?: string;
   };
+  preset?: "work" | "companion" | "service" | null;
 }
 
 export type ModelProfileCategory = "text" | "multimodal" | "stt" | "tts";
@@ -348,6 +349,25 @@ export async function uploadPersonaAvatar(personaId: string, file: File): Promis
   });
   if (!resp.ok) throw new Error(await readDetail(resp));
   return (await resp.json()) as { avatar: string };
+}
+
+export async function fetchPersonaAssetTasks(limit = 20): Promise<AgentRun[]> {
+  const data = await fetchJson<{ items: AgentRun[] }>(`/api/persona-tasks?limit=${limit}`);
+  return data.items;
+}
+
+export async function createPersonaAssetTask(
+  kind: "voice_clone" | "avatar_import",
+  params: Record<string, unknown>,
+): Promise<AgentRun> {
+  const resp = await fetch("/api/persona-tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, params }),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  const data = (await resp.json()) as { run: AgentRun };
+  return data.run;
 }
 
 export async function fetchMemoryOverview(): Promise<DocOverview[]> {

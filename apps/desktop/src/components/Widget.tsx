@@ -15,7 +15,7 @@ import {
   recognizeSpeech,
   SERVICE_BASE,
   streamChat,
-  synthesizeSpeech,
+  synthesizeSpeechStream,
   type ExpressionEmotion,
   type ExpressionEvent,
   type PersonaAssetMetrics,
@@ -163,7 +163,11 @@ export default function Widget() {
   const segmentHandlerRef = useRef<(segment: AlwaysListenSegment) => void>(() => {});
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playbackRef = useRef<AudioBufferSourceNode | null>(null);
+  const playbackAbortRef = useRef<AbortController | null>(null);
   const speakingRef = useRef(false);
+  const announceQueueRef = useRef<string[]>([]);
+  const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announceActiveRef = useRef(false);
   const speakStartAtRef = useRef(0);
   const speakEndAtRef = useRef(0);
   const lastSpokenRef = useRef("");
@@ -316,6 +320,8 @@ export default function Widget() {
   };
 
   const stopSpeaking = (): void => {
+    playbackAbortRef.current?.abort();
+    playbackAbortRef.current = null;
     playbackRef.current?.stop();
     playbackRef.current = null;
     speakingRef.current = false;
@@ -323,20 +329,70 @@ export default function Widget() {
     setSpeaking(false);
   };
 
-  /** 任务事件短播报：不占语音租约、不打断正在朗读的回复，尊重 auto_speak 开关。 */
-  const playTts = async (text: string): Promise<void> => {
-    if (!voiceStatusRef.current?.auto_speak || speakingRef.current) return;
+  /** 播放单个音频 Blob；返回 Promise 在当前块播放结束后 resolve。barge-in 由 playbackRef 停止。 */
+  const _playAudioBlob = async (ctx: AudioContext, blob: Blob): Promise<void> => {
+    const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    playbackRef.current = source;
+    return new Promise<void>((resolve) => {
+      source.onended = () => {
+        if (playbackRef.current === source) playbackRef.current = null;
+        resolve();
+      };
+      source.start();
+    });
+  };
+
+  /** 任务事件短播报：2s 内多条合并成一句，不占语音租约、不打断正在朗读的回复。 */
+  const playTts = (text: string): void => {
+    if (!voiceStatusRef.current?.auto_speak) return;
+    announceQueueRef.current.push(text);
+    if (announceTimerRef.current) window.clearTimeout(announceTimerRef.current);
+    announceTimerRef.current = window.setTimeout(() => void flushAnnouncements(), 2000);
+  };
+
+  const flushAnnouncements = async (): Promise<void> => {
+    if (announceActiveRef.current) return;
+    if (speakingRef.current) {
+      announceTimerRef.current = window.setTimeout(() => void flushAnnouncements(), 1200);
+      return;
+    }
+    const items = announceQueueRef.current.splice(0);
+    if (!items.length) return;
+    announceActiveRef.current = true;
     try {
-      const blob = await synthesizeSpeech(text);
-      const ctx = await ensureAudioContext();
-      if (!ctx || !blob.size) return;
-      const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(ctx.destination);
-      src.start();
-    } catch {
-      /* TTS 不可用时静默，保留视觉提醒 */
+      await playTtsOnce(items.join("，"));
+    } finally {
+      announceActiveRef.current = false;
+      if (announceQueueRef.current.length) void flushAnnouncements();
+    }
+  };
+
+  const playTtsOnce = async (text: string): Promise<void> => {
+    const ctx = await ensureAudioContext();
+    if (!ctx) return;
+    const abort = new AbortController();
+    playbackAbortRef.current = abort;
+    const startedAt = performance.now();
+    let firstChunk = true;
+    try {
+      const stream = await synthesizeSpeechStream(text, "widget", abort.signal);
+      for await (const chunk of stream) {
+        if (abort.signal.aborted) break;
+        if (firstChunk) {
+          firstChunk = false;
+          if (import.meta.env.DEV) console.info("[widget-tts] first chunk ms:", Math.round(performance.now() - startedAt));
+        }
+        await _playAudioBlob(ctx, chunk.audio);
+      }
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        /* TTS 不可用时静默，保留视觉提醒 */
+      }
+    } finally {
+      if (playbackAbortRef.current === abort) playbackAbortRef.current = null;
     }
   };
 
@@ -369,24 +425,32 @@ export default function Widget() {
     speakStartAtRef.current = Date.now();
     speakEndAtRef.current = 0;
     setSpeaking(true);
+    const abort = new AbortController();
+    playbackAbortRef.current = abort;
+    const startedAt = performance.now();
+    let firstChunk = true;
 
-    let source: AudioBufferSourceNode | null = null;
     try {
-      const blob = await synthesizeSpeech(text.length > 1900 ? `${text.slice(0, 1900)}…` : text, "widget");
-      const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-      source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      playbackRef.current = source;
-      source.onended = () => {
-        if (playbackRef.current === source) playbackRef.current = null;
-        speakingRef.current = false;
-        speakEndAtRef.current = Date.now();
-        setSpeaking(false);
-      };
-      source.start();
-    } catch {
-      if (playbackRef.current === source) playbackRef.current = null;
+      const stream = await synthesizeSpeechStream(
+        text.length > 1900 ? `${text.slice(0, 1900)}…` : text,
+        "widget",
+        abort.signal,
+      );
+      for await (const chunk of stream) {
+        if (!speakingRef.current) break;
+        if (firstChunk) {
+          firstChunk = false;
+          if (import.meta.env.DEV) console.info("[widget-tts] first chunk ms:", Math.round(performance.now() - startedAt));
+        }
+        await _playAudioBlob(ctx, chunk.audio);
+      }
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        /* TTS 不可用或供应商失败时静默，气泡仍保留 */
+      }
+    } finally {
+      if (playbackAbortRef.current === abort) playbackAbortRef.current = null;
+      playbackRef.current = null;
       speakingRef.current = false;
       speakEndAtRef.current = Date.now();
       setSpeaking(false);
@@ -434,6 +498,11 @@ export default function Widget() {
   };
 
   const stopVoiceResources = (): void => {
+    if (announceTimerRef.current) {
+      window.clearTimeout(announceTimerRef.current);
+      announceTimerRef.current = null;
+    }
+    announceQueueRef.current = [];
     const listener = alwaysRef.current;
     alwaysRef.current = null;
     if (listener) listener.stop();

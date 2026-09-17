@@ -3,6 +3,7 @@ import {
   createPersona,
   fetchModelProfiles,
   fetchPersonas,
+  fetchPersonaAssetTasks,
   fetchSettings,
   fetchVoiceOptions,
   previewVoice,
@@ -10,6 +11,7 @@ import {
   updateSettings,
   uploadPersonaAvatar,
   type AppSettings,
+  type AgentRun,
   type ModelProfile,
   type PersonaCard,
   type VoiceOption,
@@ -20,6 +22,20 @@ import VoiceSelect from "./VoiceSelect";
 const inputCls =
   "w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20";
 const cardCls = "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0";
+
+const personaPresetOptions = [
+  { value: "", label: "自定义" },
+  { value: "work", label: "工作" },
+  { value: "companion", label: "陪伴" },
+  { value: "service", label: "服务" },
+] as const;
+
+const assetRunStatusZh: Record<string, string> = {
+  pending: "等待",
+  running: "处理中",
+  completed: "完成",
+  failed: "失败",
+};
 
 const splitList = (value: string): string[] =>
   value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean);
@@ -160,6 +176,7 @@ export default function CharacterPage() {
   const [voiceProvider, setVoiceProvider] = useState("");
   const [voiceOptionsReason, setVoiceOptionsReason] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [assetRuns, setAssetRuns] = useState<AgentRun[]>([]);
 
   const previewVoiceSample = async (): Promise<void> => {
     setPreviewing(true);
@@ -210,6 +227,9 @@ export default function CharacterPage() {
           setVoiceOptions([]);
           setVoiceOptionsReason("音色列表获取失败，可直接填写音色 ID");
         });
+      void fetchPersonaAssetTasks()
+        .then(setAssetRuns)
+        .catch(() => setAssetRuns([]));
     } catch (e) {
       setError(e instanceof Error ? e.message : "角色卡加载失败");
     } finally {
@@ -241,6 +261,22 @@ export default function CharacterPage() {
       return;
     }
     patch((current) => ({ ...current, activation: { ...current.activation, [key]: splitList(value) } }));
+  };
+
+  const setPreset = (value: string): void => {
+    patch((current) => ({
+      ...current,
+      preset: value === "" ? null : (value as PersonaCard["preset"]),
+    }));
+  };
+
+  const refreshAssetRuns = async (): Promise<void> => {
+    try {
+      setAssetRuns(await fetchPersonaAssetTasks());
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "资产任务刷新失败");
+    }
   };
 
   const setModelProfile = (profileId: string): void => {
@@ -525,6 +561,30 @@ export default function CharacterPage() {
                 <TextArea label="回复风格" value={draft.reply_style} onChange={(value) => patch((current) => ({ ...current, reply_style: value }))} hint="会影响后续对话提示词和语音表达。" />
               </CardSection>
 
+              <CardSection title="预设底座" badge="可选">
+                <div className="flex flex-wrap gap-2">
+                  {personaPresetOptions.map((option) => {
+                    const selected = (draft.preset ?? "") === option.value;
+                    return (
+                      <button
+                        key={option.value || "custom"}
+                        type="button"
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          selected ? "border-brand bg-brand-50 text-brand" : "border-line text-muted hover:border-brand"
+                        }`}
+                        aria-pressed={selected}
+                        onClick={() => setPreset(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-muted leading-relaxed break-words">
+                  预设只作为稳定底座，角色卡中的身份、背景、回复风格等非空字段会覆盖预设；选择「自定义」则完全使用当前角色卡内容。
+                </p>
+              </CardSection>
+
               <CardSection title="模型绑定" badge="可跟随全局">
                 <p className="text-xs text-muted leading-relaxed break-words">
                   只绑定模型档案，不在角色卡中保存 API Key。未指定时使用设置页对应分类的默认模型。
@@ -687,6 +747,37 @@ export default function CharacterPage() {
                   hint="说出其中任意一句后，普通语音不会触发对话。"
                 />
                 <p className="text-xs text-muted leading-relaxed break-words">默认状态（常开/静默）是全局设置，见设置页「语音能力」。</p>
+              </CardSection>
+
+              <CardSection title="资产任务" badge="进度">
+                <div className="flex items-center justify-between gap-2.5">
+                  <p className="text-xs text-muted leading-relaxed break-words">音色克隆与形象导入的后台任务状态，数据由角色资产导入脚本维护。</p>
+                  <button className="text-brand text-xs hover:underline whitespace-nowrap" type="button" onClick={() => void refreshAssetRuns()}>
+                    刷新
+                  </button>
+                </div>
+                {assetRuns.length ? (
+                  <div className="flex flex-col gap-2">
+                    {assetRuns.slice(0, 8).map((run) => {
+                      const status = assetRunStatusZh[run.status] ?? run.status;
+                      return (
+                        <div key={run.run_id} className="rounded-lg border border-line bg-surface-secondary px-3 py-2.5 flex items-center justify-between gap-2.5 min-w-0">
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <span className="text-xs font-medium text-ink break-words">{run.progress || run.run_id}</span>
+                            <span className="text-[11px] text-muted break-words">{run.error || run.result || run.updated_at}</span>
+                          </div>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${
+                            run.status === "completed" ? "bg-ok-50 text-ok" : run.status === "failed" ? "bg-bad-50 text-bad" : "bg-line-subtle text-muted"
+                          }`}>
+                            {status}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">暂无资产任务。</p>
+                )}
               </CardSection>
 
               <div className="flex items-center justify-between gap-2.5 min-w-0">

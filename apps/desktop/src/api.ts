@@ -287,10 +287,70 @@ export async function synthesizeSpeech(text: string, client: "web" | "widget" = 
   return await resp.blob();
 }
 
+export interface AudioChunk {
+  index: number;
+  format: string;
+  sample_rate: number;
+  audio: Blob;
+}
+
+/** 流式合成：返回 AsyncGenerator，逐句产出 AudioChunk。挂件边收边播，不再等整段。 */
+export async function synthesizeSpeechStream(
+  text: string,
+  client: "web" | "widget" = "widget",
+  signal?: AbortSignal,
+): Promise<AsyncGenerator<AudioChunk>> {
+  const resp = await fetch(`${SERVICE_BASE}/api/voice/synthesize/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Voice-Client": client },
+    body: JSON.stringify({ text }),
+    signal,
+  });
+  if (!resp.ok) {
+    throw new Error(await readDetail(resp));
+  }
+  return _parseAudioSSE(resp.body!);
+}
+
+async function* _parseAudioSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<AudioChunk> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6);
+      if (!payload) continue;
+      try {
+        const obj = JSON.parse(payload);
+        if (obj.error) throw new Error(obj.error);
+        if (obj.done) return;
+        if (obj.audio) {
+          const bytes = Uint8Array.from(atob(obj.audio), (c) => c.charCodeAt(0));
+          yield {
+            index: obj.index,
+            format: obj.format || "wav",
+            sample_rate: obj.sample_rate || 24000,
+            audio: new Blob([bytes], { type: "audio/" + (obj.format || "wav") }),
+          };
+        }
+      } catch (e) {
+        if (!(e instanceof SyntaxError)) throw e;
+      }
+    }
+  }
+}
+
 export async function streamChat(
   conversationId: string | null,
   message: string,
   onDelta: (content: string) => void,
+  mode: "auto" | "casual" | "work" = "auto",
 ): Promise<ChatStreamDone> {
   const resp = await fetch(`${SERVICE_BASE}/api/chat/stream`, {
     method: "POST",
@@ -299,6 +359,7 @@ export async function streamChat(
       conversation_id: conversationId,
       message,
       modality: "text",
+      mode,
     }),
   });
   if (!resp.ok || !resp.body) throw new Error(await readDetail(resp));

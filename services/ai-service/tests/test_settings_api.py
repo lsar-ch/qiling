@@ -252,6 +252,52 @@ def test_persona_profile_roundtrip_and_preserved_on_update(tmp_path: Path, monke
         assert hero["description"] == "新描述"
         assert hero["profile"]["identity"] == "桌面上的 AI 工作伙伴"
 
+
+def test_persona_preset_roundtrip_and_clear(tmp_path: Path, monkeypatch) -> None:
+    """预设字段可写入、可清空，且后续不带该字段的更新不会覆盖预设。"""
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text(
+        "app:\n  version: 0.1.0\n",
+        encoding="utf-8",
+    )
+    with TestClient(create_app(load_settings())) as client:
+        created = client.post(
+            "/api/personas",
+            json={
+                "id": "hero",
+                "name": "小助手",
+                "kind": "assistant",
+                "description": "",
+                "personality": [],
+                "backstory": "",
+                "language": "zh-CN",
+                "reply_style": "",
+                "avatar": "",
+                "voice": {},
+                "activation": {},
+                "preset": "companion",
+            },
+        )
+        assert created.status_code == 200
+        hero = next(
+            item for item in client.get("/api/personas").json()["items"] if item["id"] == "hero"
+        )
+        assert hero["preset"] == "companion"
+
+        cleared = client.put("/api/personas/hero", json={
+            "id": "hero",
+            "name": "小助手",
+            "kind": "assistant",
+            "preset": None,
+        })
+        assert cleared.status_code == 200
+        hero = next(
+            item for item in client.get("/api/personas").json()["items"] if item["id"] == "hero"
+        )
+        assert hero["preset"] is None
+
 def test_setup_status_and_completion(tmp_path: Path, monkeypatch) -> None:
     """首次启动引导：初始未完成且 echo 模式缺 LLM；写入 setup_completed 后持久化。"""
     monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
@@ -301,4 +347,3 @@ def test_setup_status_and_completion(tmp_path: Path, monkeypatch) -> None:
         # 密钥值不出现在任何响应里
         blob = json.dumps(updated, ensure_ascii=False)
         assert "sk-test-123" not in blob
-

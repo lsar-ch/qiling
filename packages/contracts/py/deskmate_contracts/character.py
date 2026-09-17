@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 
 CharacterStyle = Literal["2d_static", "2d_animated", "lip_sync", "live2d", "3d"]
+AvatarDriver = Literal["procedural_2d", "video_stream"]
 
 
 class CharacterConfig(BaseModel):
@@ -16,6 +17,7 @@ class CharacterConfig(BaseModel):
     id: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
     name: str = Field(min_length=1, max_length=40)
     style: CharacterStyle = "2d_static"
+    avatar_driver: AvatarDriver = "procedural_2d"
     avatar_asset: str = ""          # 静态图片路径或占位符
     animation_set: str = ""         # 动画集名称（用于 2d_animated）
     lip_sync_model: str | None = None  # 口型同步模型（未来）

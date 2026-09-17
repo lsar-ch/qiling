@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -72,6 +72,7 @@ class PersonaPayload(BaseModel):
     activation: dict[str, Any] = Field(default_factory=dict)
     llm: dict[str, Any] = Field(default_factory=dict)
     profile: PersonaProfile | None = None  # 六段式档案（Step 9.5 P1；可选，旧角色卡兼容）
+    preset: Literal["work", "companion", "service"] | None = None  # 预设底座；为空时只使用自定义档案
 
 
 class SettingsUpdate(BaseModel):

@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.agents.factory import build_agent_registry
 from app.agents.catalog import load_agent_catalog
 from app.agents.runtime import AgentRunManager, AgentRunStore
-from app.api import agent_runs, agents, chat, events, health, memories, recording, session, settings as settings_api, state, tasks, voice
+from app.api import agent_runs, agents, chat, events, health, memories, persona_tasks, recording, session, settings as settings_api, state, tasks, voice
 from app.chat.store import ConversationStore
 from app.memory import MemoryService
 from app.routing import TaskStore
@@ -137,6 +137,7 @@ def create_app(
     app.include_router(voice.router)
     app.include_router(settings_api.router)
     app.include_router(memories.router)
+    app.include_router(persona_tasks.router)
     app.include_router(recording.router)
 
     # 生产模式：主界面由 ai-service 托管（apps/web 构建产物）
