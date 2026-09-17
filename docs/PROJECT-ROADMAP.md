@@ -239,10 +239,10 @@ V1 验证成功后再考虑：
 
 | 编号 | 任务 | 来源 | 状态 |
 |------|------|------|------|
-| P1-T1 | TTS 增量分块播报（首响 <1s） | VC-Bundle 建议3 + P1 短播报需求 | ⚠️ 部分完成：Web 端已走分块播放（`app/speech/base.py:66` / `app/api/voice.py:319` / `apps/web/src/api.ts:934` / `ChatPage.tsx:317`）；挂件仍全量合成（`apps/desktop/src/components/Widget.tsx:330`、`:375`），且无自动化测试与首响延迟度量 |
-| P1-T2 | 任务完成/失败主动短播报 | 原 P1 范围 | ✅ 已完成（`app/agents/runtime.py:467` 发 bubble + speak_text，`ChatPage.tsx:469` 自动播报）；遗留挂件侧无「多条播报合并队列」（`Widget.tsx:328` 忙则丢弃） |
+| P1-T1 | TTS 增量分块播报（首响 <1s） | VC-Bundle 建议3 + P1 短播报需求 | ✅ 已完成：Web 端已走分块播放（`app/speech/base.py:66` / `app/api/voice.py:319` / `apps/web/src/api.ts:934` / `ChatPage.tsx:317`）；挂件同样走分块（`apps/desktop/src/components/Widget.tsx:381`、`:434`，保留 barge-in），首块耗时看 dev 日志 `[widget-tts] first chunk ms`（`Widget.tsx:386`），无自动化断言 |
+| P1-T2 | 任务完成/失败主动短播报 | 原 P1 范围 | ✅ 已完成（`app/agents/runtime.py:467` 发 bubble + speak_text，`ChatPage.tsx:469` 自动播报）；挂件侧 2s 合并队列已补（`Widget.tsx:349` `playTts` + `flushAnnouncements`） |
 | P1-T3 | 记忆更新气泡提示（低频 5min） | 原 P1 范围 | ✅ 已完成（2026-09-16 修复）：原 `ChatPage.tsx` 把 `memory.updated` 挡在 `TASK_EVENT_TYPES` 白名单外是死代码，现已把 `env.source !== "task"` 与事件类型过滤拆开（`ChatPage.tsx:428`、`:429`、`:443`），后端 `app/agents/runtime.py:544` 的事件可被消费；5min 限频 + 5s 自动清除保留；新增回归测试 `tests/test_agent_runtime.py::test_completed_task_publishes_memory_updated_event` |
-| P1-T4 | 工作模式自适应记忆深度 | 原 P1 范围 | ✅ 已完成（`app/api/chat.py:77` mode 字段、`:337` casual 压到 800 字/空 surfaces、work 全量，测试 `tests/test_chat.py:231`）；本轮补上手动切换分段控件（`ChatPage.tsx:63`、`:1179`）；遗留 `mode` 尚未进 `packages/contracts`，桌面端无法传 |
+| P1-T4 | 工作模式自适应记忆深度 | 原 P1 范围 | ✅ 已完成（`app/api/chat.py:77` mode 字段、`:337` casual 压到 800 字/空 surfaces、work 全量，测试 `tests/test_chat.py:231`）；本轮补上手动切换分段控件（`ChatPage.tsx:63`、`:1179`）；`ChatMode` 已进 py/ts contracts（`packages/contracts/py/deskmate_contracts/conversation.py:12`），桌面端可传 `auto/casual/work` |
 
 执行顺序：P1-T1 → P1-T2（依赖分块），P1-T3/T4 可并行。
 
@@ -255,9 +255,9 @@ V1 验证成功后再考虑：
 | P2-T1 | 一键安装脚本（smoke test + 按需安装） | 原 P2 + here 打包借鉴 | ✅ 已完成（`scripts/setup.sh`：工具链检测 / .venv 复用 / `npm ci` / `--with-voice` / `--with-browser` / smoke test / 修复入口 / Windows 指向迁移文档；本轮修掉 `fetch_health` 超时 2s→8s（`:83`）与语音 key 检测漏读项目根 `.env`（`:224`））；遗留未在干净 macOS 上跑完整 `setup.sh`（会清 node_modules 并重建 dist，需单独授权） |
 | P2-T2 | 首次启动配置引导 | 原 P2 范围 | ✅ 已完成（`app/api/settings.py:288` `GET /api/setup/status`、`apps/web/src/App.tsx:1756` SetupWizard、测试 `tests/test_settings_api.py:255`）；范围偏差：只有 2 步（LLM 必填 → 语音可选可跳过），无「角色选择」步；完成标记写入 `data/settings.local.json`（`app/config.py:163`）而非 `config/settings.yaml`，刻意让密钥不进仓库配置 |
 | P2-T3 | 能力汇总与故障诊断 Dashboard | 原 P2 范围 | ✅ 已完成（`app/api/health.py:103` `_diagnostics` 带中文 detail + `fix_hint`/`fix_action`、`App.tsx:1569` 卡片与「去修复」跳转、测试 `tests/test_health.py:46`）；偏差：诊断项合并为 4 类（llm/voice/memory/agents）而非任务卡列的 6 项，且仅在有诊断项时渲染 |
-| P2-T4 | Persona 预设模板（work/companion/service） | VC-Bundle 建议1 | ✅ 已完成（2026-09-16 修复）：原 `app/core/persona_prompt.py` 只在 profile 完全为空时才用预设，而 `config/personas/default.yaml:35` 有完整 profile → `preset: work` 是死字段；现改为「预设作底座 + profile 非空字段覆盖」（`persona_prompt.py:105`），并补 3 个测试（`tests/test_persona_prompt.py:88`、`:99`、`:106`），实测默认角色提示词零变化；遗留无切换预设的 API/UI（`PersonaPayload` 无 preset 字段） |
-| P2-T5 | 音色/形象后台任务状态机 | VC-Bundle 建议4 | ⚠️ 部分完成：`scripts/persona_asset_import.py` 已有状态机 + 合法流转表（`:32`）、JSON 落盘 `data/persona-tasks/`、CLI（`:249`，含 `--self-test` 实测通过）；未复用 AgentRun、未接 API/前端，进度只能在命令行看 |
-| P2-T6 | AvatarDriver 字段预留（procedural_2d） | VC-Bundle 建议2 | ⚠️ 部分完成：仅 `config/personas/default.yaml:13` 一行 `avatar_driver: procedural_2d`，contracts 双端都没有该字段（`packages/contracts/py/deskmate_contracts/character.py:13` 及 ts 对应文件），目前无读取方；符合「V1 零依赖预留」意图，但 contracts 那半句未做 |
+| P2-T4 | Persona 预设模板（work/companion/service） | VC-Bundle 建议1 | ✅ 已完成（2026-09-16 修复）：原 `app/core/persona_prompt.py` 只在 profile 完全为空时才用预设，而 `config/personas/default.yaml:35` 有完整 profile → `preset: work` 是死字段；现改为「预设作底座 + profile 非空字段覆盖」（`persona_prompt.py:105`），并补 3 个测试（`tests/test_persona_prompt.py:88`、`:99`、`:106`），实测默认角色提示词零变化；预设切换已接 API/UI（`apps/web/src/api.ts:187` `preset`、`apps/web/src/CharacterPage.tsx:564` 四态选择） |
+| P2-T5 | 音色/形象后台任务状态机 | VC-Bundle 建议4 | ✅ 已完成（最小可用）：`scripts/persona_asset_import.py` 状态机 + 合法流转表（`:32`）+ JSON 落盘 `data/persona-tasks/` + CLI；`/api/persona-tasks`（`services/ai-service/app/api/persona_tasks.py:16`）按 `AgentRun` 形状读写，角色页显示最近任务进度。偏差：音色克隆的实际后台执行仍走 `probe_minimax.py`/CLI，未自动触发 |
+| P2-T6 | AvatarDriver 字段预留（procedural_2d） | VC-Bundle 建议2 | ✅ 已完成：`AvatarDriver` 已进 py/ts contracts（`packages/contracts/py/deskmate_contracts/character.py:11`、`packages/contracts/ts/src/character.ts:4`），默认 `procedural_2d`、预留 `video_stream`；暂无消费方（V1 零依赖预留，符合预期） |
 
 执行顺序：P2-T1 → P2-T2，P2-T3/T4 并行，P2-T5/T6 并行。
 
