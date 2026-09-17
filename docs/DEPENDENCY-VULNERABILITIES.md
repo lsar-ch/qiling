@@ -3,7 +3,7 @@
 > 记录时间：2026-09-13
 > 环境：Windows 10.0.19045，Node v24.21.0，npm 11.19.0
 > 触发场景：Windows 迁移后执行 `npm install` 时 npm audit 报告
-> 当前处置：**暂不修复，记入待办，等整轮迁移验收通过后单独评估**
+> 当前处置：**已修复（2026-09-17）—— vite 升到 `^6.4.3`，两个前端包 `npm audit` 均 0 漏洞。结论见第 8 节**
 
 ## 1. 结论速览
 
@@ -168,3 +168,20 @@ Sass、`splitVendorChunkPlugin`、`transformIndexHtml` 的 `enforce`/`transform`
 但 `npm audit` 的一键修复只会报 `vite@8.3.0`（它按整棵依赖树算最小修复），
 **不能据此认定 v7 一定清零** —— 升级到 v7 后必须重新跑一次 `npm audit` 确认。
 若 v7 已清零，则「停 v7」是风险最小的选择（无需换 Rolldown 引擎，无需连升 plugin-react）。
+
+## 8. 处置结果（2026-09-17）
+
+实际只做了 7.6 路径的第一步的一半：**vite `^5.4.0` → `^6.4.3`**，没有升 7/8。
+
+- 依据：三条 vite advisory 的影响区间都是 `<= 6.4.2`，esbuild 那条是 `<= 0.24.2`；
+  vite 6.4.3 自带的 esbuild 已是 0.25.x，两条一起脱离。**不需要 8.3.0**——
+  那是 `npm audit` 按整棵依赖树算出的"一键修复目标"，不是最小修复版本，
+  此前按它评估成"跨 3 个大版本"，因此多挂了 4 天。
+- `@vitejs/plugin-react` 保持 `4.7.0` 未动：其 peer 是
+  `^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0`，本来就吃 vite 6。
+- 改动面：`apps/web/package.json`、`apps/desktop/package.json` 各一行 + 两份 lock。
+- 验证：`npm audit` 两包均 `found 0 vulnerabilities`；`npm run build` 两端通过；
+  vite 6 dev server 冒烟通过（挂件端口 200 且能转 JSX、主界面 5173 起服并成功代理 `/api/health`）；
+  `./scripts/check.sh` → 211 passed + 双端 typecheck 全绿。
+- 残留风险：无已知项。vite 6 的破坏性变更（CJS Node API 移除、旧默认值）不涉及本项目配置，
+  两个 `vite.config.ts` 都是 ESM 且只用到 `plugins/server/build`。
