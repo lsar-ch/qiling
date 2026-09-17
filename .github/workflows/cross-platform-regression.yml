@@ -7,7 +7,7 @@ on:
 
 jobs:
   macos-clean:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Clean install
@@ -33,15 +33,21 @@ jobs:
           .venv\Scripts\python.exe -m pip install -e packages\contracts\py -r services\ai-service\requirements.txt
       - name: Frontend dependencies
         shell: pwsh
-        run: |
-          cd apps\web; npm ci; cd ..
-          cd apps\desktop; npm ci; cd ..
+        run: npm ci --silent --no-audit --no-fund
+        working-directory: apps/web
+      - name: Desktop frontend dependencies
+        shell: pwsh
+        run: npm ci --silent --no-audit --no-fund
+        working-directory: apps/desktop
       - name: Backend tests
         shell: pwsh
         working-directory: services/ai-service
         run: ..\..\.venv\Scripts\python.exe -m pytest -q
       - name: Typecheck
         shell: pwsh
-        run: |
-          cd apps\web; npm run typecheck; cd ..
-          cd apps\desktop; npm run typecheck; cd ..
+        run: npm run typecheck --silent
+        working-directory: apps/web
+      - name: Desktop typecheck
+        shell: pwsh
+        run: npm run typecheck --silent
+        working-directory: apps/desktop
