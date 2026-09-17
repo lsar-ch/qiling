@@ -10,6 +10,8 @@ python-dotenv>=1.0.0
 pypinyin>=0.55.0
 pillow>=12.0.0
 dashscope>=1.27,<2
+# cryptography 49 起不再发 x86_64 macOS wheel，Intel Mac 装到 50.x 会退回源码编译并因缺 OpenSSL 失败
+cryptography<49; sys_platform == "darwin" and platform_machine == "x86_64"
 playwright>=1.40.0
 
 # ── 测试 ────────────────────────────────────────────────────

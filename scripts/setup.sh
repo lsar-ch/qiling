@@ -261,6 +261,9 @@ cd "$ROOT"
 
 HEALTH_OK=0
 HEALTH_BODY=""
+# 轮询期间的非零返回是预期行为；set -E 会把 ERR trap 带进命令替换的子 shell，
+# 所以这里临时摘掉 trap，否则冷启动等待会重复打印「安装中断」横幅。
+trap - ERR
 for _ in $(seq 1 45); do
   if ! kill -0 "$SMOKE_PID" 2>/dev/null; then
     break
@@ -271,6 +274,7 @@ for _ in $(seq 1 45); do
   fi
   sleep 1
 done
+trap 'on_error $? $LINENO' ERR
 
 if [ "$HEALTH_OK" -ne 1 ]; then
   say "──── $SMOKE_LOG 末尾 40 行 ────"
