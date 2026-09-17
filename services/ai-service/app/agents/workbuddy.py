@@ -261,8 +261,13 @@ class WorkBuddyAdapter(AgentAdapter):
     # 10~30 秒直接退出」是误诊。真实行为是 default(Always Ask) 下遇到 Bash 类
     # 工具**会**发 session/request_permission（T+8~15s），应答后任务正常
     # end_turn；不应答则一直阻塞、不会自己退出。所以授权照常转给 UI 即可。
-    #   - plan：只能分析，不能改文件也不能执行命令（read-only 的真实语义；
-    #     旧值 dontAsk 只是「不弹窗」，写文件/跑 Bash 仍会被放行，等于没隔离）
+    #
+    # 2026-09-17 实测再修正：plan **不是**硬隔离。它和 default 一样会逐个操作发
+    # session/request_permission，只要有人应答就照样写盘（run_685d6db533 里
+    # read-only 批准 Write 后文件真的落到了桌面）。昨夜「写不出」只是因为无人应答，
+    # 请求被静默挡住。所以 read-only 的隔离由 AgentRunManager 在收到
+    # permission_request 时自动回绝来保证，这里只按「弹窗频率」选档。
+    #   - plan：每次问（read-only：真正的隔离在运行器层补）
     #   - default：Always Ask，逐个操作发授权请求（agent）
     #   - bypassPermissions：跳过所有授权弹窗（agent-full-access，无人值守）
     _MODE_TO_WB = {
@@ -697,13 +702,15 @@ class WorkBuddyAdapter(AgentAdapter):
                 if option is not None:
                     return {"outcome": "selected", "optionId": option}
             self._pending_permissions[task_id] = params
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[dict[str, Any]] = loop.create_future()
+            self._permission_futures[task_id] = future
+            # future 必须先登记再通知：运行器的 read-only 自动回绝是在这次回调里
+            # 同步调 approve() 的，future 后建会让那次回绝静默丢失、任务永远挂着。
             await on_update(
                 "permission_request",
                 {"tool_call": params.get("toolCall"), "options": options},
             )
-            loop = asyncio.get_running_loop()
-            future: asyncio.Future[dict[str, Any]] = loop.create_future()
-            self._permission_futures[task_id] = future
             return await future
 
         return handle

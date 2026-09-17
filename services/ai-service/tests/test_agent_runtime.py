@@ -149,6 +149,9 @@ class BlockingAgentAdapter(FakeReadyAdapter):
         self.request = request
         await on_update("session_ready", {"session_id": "sess_block", "mode": request.mode})
         if self.await_permission:
+            # 与真实适配器一致：future 先登记再通知，运行器可能在这次回调里就回绝
+            loop = asyncio.get_running_loop()
+            self.permission_future = loop.create_future()
             await on_update(
                 "permission_request",
                 {
@@ -159,8 +162,6 @@ class BlockingAgentAdapter(FakeReadyAdapter):
                     ],
                 },
             )
-            loop = asyncio.get_running_loop()
-            self.permission_future = loop.create_future()
             await self.permission_future
         if self.block_on_start:
             loop = asyncio.get_running_loop()
@@ -212,12 +213,13 @@ def make_client(tmp_path: Path, monkeypatch, adapter: AgentAdapter):
 
 
 def _wait_for(client: TestClient, task_id: str, wanted: tuple[str, ...]) -> dict:
+    body: dict = {}
     for _ in range(100):
         body = client.get(f"/api/tasks/{task_id}/run").json()
         if body.get("run", {}).get("status") in wanted:
             return body["run"]
         time.sleep(0.05)
-    raise AssertionError(f"run did not reach {wanted}")
+    raise AssertionError(f"run did not reach {wanted}, last={body.get('run')}")
 
 
 def _route(
@@ -570,7 +572,7 @@ def test_approval_and_result_write_back_to_conversation(tmp_path, monkeypatch) -
 
         resp = client.post(
             f"/api/tasks/{task['task_id']}/execute",
-            json={"executor": adapter.name},
+            json={"executor": adapter.name, "mode": "agent"},
         )
         run_id = resp.json()["run"]["run_id"]
         _wait_for(client, task["task_id"], ("awaiting_approval",))
@@ -597,7 +599,7 @@ def test_approval_route_resolves_pending_permission(tmp_path, monkeypatch) -> No
         task = _route(client, preferred_executor=adapter.name)
         resp = client.post(
             f"/api/tasks/{task['task_id']}/execute",
-            json={"executor": adapter.name},
+            json={"executor": adapter.name, "mode": "agent"},
         )
         run_id = resp.json()["run"]["run_id"]
         _wait_for(client, task["task_id"], ("awaiting_approval",))
@@ -609,6 +611,59 @@ def test_approval_route_resolves_pending_permission(tmp_path, monkeypatch) -> No
         assert approval.status_code == 200
         assert approval.json()["run"]["status"] in ("running", "completed")
         _wait_for(client, task["task_id"], ("completed",))
+
+
+def test_read_only_auto_rejects_permission_request(tmp_path, monkeypatch) -> None:
+    """read-only 不弹授权卡片：需授权的操作由运行器直接回绝。
+
+    WorkBuddy 的 plan / Codex 的只读档都只是「每次问」，有人应答就能写盘，
+    所以隔离必须在 AgentRunManager 收口，不能依赖执行器自己的档位。
+    """
+    adapter = BlockingAgentAdapter(await_permission=True)
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        task = _route(client, preferred_executor=adapter.name)
+        resp = client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name, "mode": "read-only"},
+        )
+        run_id = resp.json()["run"]["run_id"]
+        _wait_for(client, task["task_id"], ("completed",))
+
+        assert adapter.approved_at == f"{task['task_id']}:rejected"
+        assert client.get("/api/agent-runs/awaiting").json()["items"] == []
+        listed = next(
+            item
+            for item in client.get("/api/agent-runs").json()["items"]
+            if item["run_id"] == run_id
+        )
+        assert listed["status"] == "completed"
+        assert listed["progress"] == "执行命令"
+        assert client.get(f"/api/tasks/{task['task_id']}").json()["status"] != "awaiting_approval"
+
+
+def test_read_only_rejection_writes_back_to_conversation(tmp_path, monkeypatch) -> None:
+    """自动拒绝要在会话里留下可见说明，否则用户只看到任务静默结束。"""
+    adapter = BlockingAgentAdapter(await_permission=True)
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        chat = client.post("/api/chat/stream", json={"message": "你好"})
+        conv_id = next(
+            json.loads(line[6:])["conversation_id"]
+            for line in chat.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        task = _route(client, preferred_executor=adapter.name)
+        task["conversation_id"] = conv_id
+        client.app.state.task_store.put(Task(**task))
+        client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name, "mode": "read-only"},
+        )
+        _wait_for(client, task["task_id"], ("completed",))
+
+        conv = client.get(f"/api/conversations/{conv_id}").json()
+        notes = [item["content"] for item in conv["messages"] if item["role"] == "tool"]
+        assert any(text.startswith("⛔") and "执行命令" in text for text in notes)
+        assert not any("请求授权" in text for text in notes)
 
 
 def test_pending_executor_execute_is_rejected(tmp_path, monkeypatch) -> None:
@@ -703,6 +758,38 @@ def test_permission_summary_prefers_real_command() -> None:
     assert _permission_summary({}) == "等待授权"
 
 
+def test_permission_summary_unwraps_workbuddy_tools() -> None:
+    """Write 要能看出写哪个文件；DeferExecuteTool 要显出被它包装的真实操作。
+
+    报文取自 2026-09-17 真实会话记录（~/.codebuddy/projects/…/*.jsonl）。
+    """
+    from app.agents.runtime import _permission_summary
+
+    assert _permission_summary(
+        {
+            "rawInput": {"file_path": "/Users/x/Desktop/note.txt", "content": "…"},
+            "_meta": {"codebuddy.ai/toolName": "Write"},
+        }
+    ) == "Write：/Users/x/Desktop/note.txt"
+    assert _permission_summary(
+        {"rawInput": {"file_path": "/Users/x/Desktop/note.txt"},
+         "_meta": {"codebuddy.ai/toolName": "Read"}}
+    ) == "Read：/Users/x/Desktop/note.txt"
+    assert _permission_summary(
+        {
+            "rawInput": {
+                "toolName": "ExitPlanMode",
+                "params": {"allowedPrompts": [{"tool": "Bash", "prompt": "确认桌面文件是否创建成功（ls）"}]},
+            },
+            "_meta": {"codebuddy.ai/toolName": "DeferExecuteTool"},
+        }
+    ) == "ExitPlanMode：确认桌面文件是否创建成功（ls）"
+    assert _permission_summary(
+        {"rawInput": {"toolName": "ExitPlanMode", "params": {}},
+         "_meta": {"codebuddy.ai/toolName": "DeferExecuteTool"}}
+    ) == "ExitPlanMode"
+
+
 def test_approval_timeout_auto_rejects(tmp_path, monkeypatch) -> None:
     """授权长时间无人响应时自动按拒绝收口，run 不会永远挂在 awaiting_approval。"""
     adapter = BlockingAgentAdapter(await_permission=True)
@@ -712,7 +799,7 @@ def test_approval_timeout_auto_rejects(tmp_path, monkeypatch) -> None:
         task = _route(client, preferred_executor=adapter.name)
         resp = client.post(
             f"/api/tasks/{task['task_id']}/execute",
-            json={"executor": adapter.name},
+            json={"executor": adapter.name, "mode": "agent"},
         )
         run_id = resp.json()["run"]["run_id"]
         _wait_for(client, task["task_id"], ("awaiting_approval",))
@@ -733,7 +820,7 @@ def test_manual_approval_cancels_timeout(tmp_path, monkeypatch) -> None:
         task = _route(client, preferred_executor=adapter.name)
         resp = client.post(
             f"/api/tasks/{task['task_id']}/execute",
-            json={"executor": adapter.name},
+            json={"executor": adapter.name, "mode": "agent"},
         )
         run_id = resp.json()["run"]["run_id"]
         _wait_for(client, task["task_id"], ("awaiting_approval",))

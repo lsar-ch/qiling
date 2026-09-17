@@ -253,7 +253,7 @@ export default function ChatPage({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy]);
+  }, [messages, busy, awaitingRuns.length]);
 
   const modelOptions = [
     { id: "", label: "跟随角色 / 全局" },
@@ -458,7 +458,6 @@ export default function ChatPage({
         setLiveTask((prev) =>
           prev && prev.taskId === taskId ? { ...prev, runId, status: "awaiting_approval" } : prev,
         );
-        continue;
       }
       if (env.event_type === "task.started") {
         setLiveTask({ taskId, runId, text: "已开始执行", status: "running" });
@@ -1024,36 +1023,7 @@ export default function ChatPage({
             )}
           </div>
         )}
-        {awaitingRuns.filter((run) => run.status === "awaiting_approval").map((run) => (
-          <div
-            key={run.run_id}
-            className="self-start flex flex-col gap-2 max-w-[78%] min-w-0 rounded-xl rounded-bl-sm border border-warn/40 bg-warn-50 px-3.5 py-2.5"
-          >
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-warn">
-              <span className="w-1.5 h-1.5 rounded-full bg-warn animate-pulse" />
-              等待授权
-            </span>
-            <p className="text-sm text-ink break-anywhere">
-              {run.progress || `${run.executor} · ${run.mode}`}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="rounded-md border border-ok-50 bg-ok-50 px-2.5 py-1 text-xs text-ok transition-opacity hover:opacity-80"
-                onClick={() => void decideRunById(run.run_id, "approved")}
-                type="button"
-              >
-                批准
-              </button>
-              <button
-                className="rounded-md border border-bad-50 bg-bad-50 px-2.5 py-1 text-xs text-bad transition-opacity hover:opacity-80"
-                onClick={() => void decideRunById(run.run_id, "rejected")}
-                type="button"
-              >
-                拒绝
-              </button>
-            </div>
-          </div>
-        ))}
+        {/* 待授权卡片在消息流末尾，见 bottomRef 前 */}
         {messages.map((m, i) => (
           <div key={`${m.role}-${i}`} className={`flex flex-col max-w-[78%] min-w-0 ${m.role === "user" ? "self-end items-end" : "self-start"}`}>
             <span className="text-[11px] text-muted mb-1 select-none" title={m.created_at}>
@@ -1089,6 +1059,36 @@ export default function ChatPage({
                 🔊 播报
               </button>
             )}
+          </div>
+        ))}
+        {awaitingRuns.filter((run) => run.status === "awaiting_approval").map((run) => (
+          <div
+            key={run.run_id}
+            className="self-start flex flex-col gap-2 max-w-[78%] min-w-0 rounded-xl rounded-bl-sm border border-warn/40 bg-warn-50 px-3.5 py-2.5"
+          >
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-warn">
+              <span className="w-1.5 h-1.5 rounded-full bg-warn animate-pulse" />
+              等待授权
+            </span>
+            <p className="text-sm text-ink break-anywhere">
+              {run.progress || `${run.executor} · ${run.mode}`}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="rounded-md border border-ok-50 bg-ok-50 px-2.5 py-1 text-xs text-ok transition-opacity hover:opacity-80"
+                onClick={() => void decideRunById(run.run_id, "approved")}
+                type="button"
+              >
+                批准
+              </button>
+              <button
+                className="rounded-md border border-bad-50 bg-bad-50 px-2.5 py-1 text-xs text-bad transition-opacity hover:opacity-80"
+                onClick={() => void decideRunById(run.run_id, "rejected")}
+                type="button"
+              >
+                拒绝
+              </button>
+            </div>
           </div>
         ))}
         <div ref={bottomRef} />

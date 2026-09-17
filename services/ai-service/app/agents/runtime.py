@@ -31,28 +31,42 @@ def _now() -> str:
 def _permission_summary(tool_call: object) -> str:
     """从 ACP session/request_permission 的 toolCall 里提取人类可读摘要。
 
-    Codex 的 toolCall 带 title/name；WorkBuddy 两者都没有，只有
-    rawInput.command / rawInput.description / _meta["codebuddy.ai/toolName"]
-    （实测报文见 /tmp/wb-probe-traffic.jsonl）。按此顺序兜底，否则授权卡片
-    只能显示「等待授权」，用户看不到自己要批准的是什么。
+    Codex 的 toolCall 带 title/name；WorkBuddy 两者都没有，只有 rawInput 里的
+    工具参数（2026-09-17 实测各家 key：Bash→command/description，
+    Write/Read→file_path，DeferExecuteTool→toolName/params）。按此顺序兜底，
+    否则卡片只能显示「等待授权」或 WorkBuddy 的包装器名，用户看不懂要批什么。
     """
     if not isinstance(tool_call, dict):
         return "等待授权"
     title = str(tool_call.get("title") or tool_call.get("name") or "").strip()
     if title:
         return title[:300]
+    meta = tool_call.get("_meta")
+    tool_name = ""
+    if isinstance(meta, dict):
+        tool_name = str(meta.get("codebuddy.ai/toolName") or "").strip()
     raw_input = tool_call.get("rawInput")
     if isinstance(raw_input, dict):
-        for key in ("command", "description", "path", "url", "query", "pattern"):
+        # DeferExecuteTool 只是分发器：真实操作在它自己的 toolName 里（如
+        # ExitPlanMode「离开只读规划、开始动手」），直接显示包装器名等于没说。
+        deferred = str(raw_input.get("toolName") or "").strip()
+        if deferred:
+            params = raw_input.get("params")
+            prompts = params.get("allowedPrompts") if isinstance(params, dict) else None
+            prompt = ""
+            if isinstance(prompts, list) and prompts and isinstance(prompts[0], dict):
+                prompt = str(prompts[0].get("prompt") or "").strip()
+            return (f"{deferred}：{prompt}" if prompt else deferred)[:300]
+        for key in ("command", "description"):
             value = str(raw_input.get(key) or "").strip()
             if value:
                 return value[:300]
-    meta = tool_call.get("_meta")
-    if isinstance(meta, dict):
-        tool_name = str(meta.get("codebuddy.ai/toolName") or "").strip()
-        if tool_name:
-            return f"{tool_name} 操作"[:300]
-    return "等待授权"
+        # 只有路径/查询时补上工具名，否则批准者分不清是读还是写
+        for key in ("file_path", "path", "url", "query", "pattern"):
+            value = str(raw_input.get(key) or "").strip()
+            if value:
+                return (f"{tool_name}：{value}" if tool_name else value)[:300]
+    return f"{tool_name} 操作"[:300] if tool_name else "等待授权"
 
 
 class AgentRun(BaseModel):
@@ -360,12 +374,28 @@ class AgentRunManager:
             )
             return
         if kind == "permission_request":
-            run.status = "awaiting_approval"
-            run.progress = _permission_summary(payload.get("tool_call"))
-            self.store.put(run)
+            summary = _permission_summary(payload.get("tool_call"))
             task = self.task_store.get(run.task_id)
             if task is None:
                 return
+            if run.mode == "read-only":
+                # read-only 的隔离只能由运行器自己收口：WorkBuddy 的 plan 和 Codex 的
+                # 只读档都只是「每次问」（2026-09-17 实测：plan 下写文件有人应答就落盘），
+                # 转给 UI 等于没隔离。这里不进 awaiting_approval、不弹卡片，
+                # 直接走与人工拒绝同一条回绝路径。
+                adapter = self.registry.get(run.executor)
+                if adapter is not None:
+                    await adapter.approve(run.task_id, "rejected")
+                run.progress = summary
+                self.store.put(run)
+                await self._notify_conversation(
+                    task,
+                    f"⛔ read-only 模式不执行需授权的操作，已自动拒绝：{summary}",
+                )
+                return
+            run.status = "awaiting_approval"
+            run.progress = summary
+            self.store.put(run)
             task.status = "awaiting_approval"
             task = self.task_store.put(task)
             await self._publish(

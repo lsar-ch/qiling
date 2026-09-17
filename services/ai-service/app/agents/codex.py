@@ -407,6 +407,11 @@ class CodexAdapter(AgentAdapter):
         async def handle(params: dict[str, Any]) -> dict[str, Any]:
             options = params.get("options") or []
             self._pending_permissions[task_id] = params
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[dict[str, Any]] = loop.create_future()
+            self._permission_futures[task_id] = future
+            # future 必须先登记再通知：运行器的 read-only 自动回绝是在这次回调里
+            # 同步调 approve() 的，future 后建会让那次回绝静默丢失、任务永远挂着。
             await on_update(
                 "permission_request",
                 {
@@ -414,9 +419,6 @@ class CodexAdapter(AgentAdapter):
                     "options": options,
                 },
             )
-            loop = asyncio.get_running_loop()
-            future: asyncio.Future[dict[str, Any]] = loop.create_future()
-            self._permission_futures[task_id] = future
             return await future
 
         return handle
