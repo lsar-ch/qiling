@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import tempfile
 
 import pytest
 
@@ -32,20 +33,26 @@ def test_acp_reader_survives_oversized_line() -> None:
             "sys.stdout.write(json.dumps(msg) + '\\n')\n"
             "sys.stdout.flush()\n"
         )
-        client = await AcpClient.spawn(
-            sys.executable,
-            args=["-c", script],
-            cwd=os.getcwd(),
-            env=dict(os.environ),
-            on_update=on_update,
-        )
+        script_fd, script_path = tempfile.mkstemp(suffix=".py", text=True)
         try:
-            for _ in range(50):
-                if seen:
-                    break
-                await asyncio.sleep(0.1)
+            with os.fdopen(script_fd, "w", encoding="utf-8") as fp:
+                fp.write(script)
+            client = await AcpClient.spawn(
+                sys.executable,
+                args=[script_path],
+                cwd=os.getcwd(),
+                env=dict(os.environ),
+                on_update=on_update,
+            )
+            try:
+                for _ in range(50):
+                    if seen:
+                        break
+                    await asyncio.sleep(0.1)
+            finally:
+                await client.close()
         finally:
-            await client.close()
+            os.unlink(script_path)
         return seen
 
     seen = asyncio.run(scenario())
