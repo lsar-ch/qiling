@@ -247,6 +247,17 @@ def load_settings() -> Settings:
         pass
     settings = Settings(repo_root=root, version=_read_version(root))
     overrides = _load_local_overrides(root)
+    legacy_llm = overrides.get("llm")
+    if not isinstance(legacy_llm, dict):
+        legacy_llm = {}
+    for legacy_key in ("llm_provider", "llm_base_url", "llm_model", "llm_api_key"):
+        value = overrides.get(legacy_key)
+        if isinstance(value, str) and value.strip():
+            key = legacy_key.removeprefix("llm_")
+            if not legacy_llm.get(key):
+                legacy_llm[key] = value
+    if legacy_llm:
+        overrides["llm"] = legacy_llm
     settings.active_persona_id = str(overrides.get("active_persona_id", settings.active_persona_id))
     persona_cfg = _load_persona(root, settings.active_persona_id)
     _apply_persona(settings, persona_cfg)

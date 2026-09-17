@@ -249,13 +249,16 @@ async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str
     for key in ("ui_language", "ui_theme"):
         if key in data:
             ui[key.removeprefix("ui_")] = data.pop(key)
+    llm = current.setdefault("llm", {})
+    if not isinstance(llm, dict):
+        llm = {}
+        current["llm"] = llm
+    for key in ("llm_provider", "llm_base_url", "llm_model", "llm_api_key"):
+        if key in data:
+            llm[key.removeprefix("llm_")] = data.pop(key)
     for key in (
         "permission_level",
         "performance_mode",
-        "llm_provider",
-        "llm_base_url",
-        "llm_model",
-        "llm_api_key",
         "voice_enabled",
         "voice_auto_speak",
         "activation_enabled",

@@ -125,7 +125,7 @@ def _diagnostics(
         items.append({
             "name": "llm", "label": "对话模型", "status": "error",
             "detail": "未配置模型，当前为 echo 演示模式",
-            "fix_hint": "在设置页填写 OpenAI 兼容的 base_url 与 api_key",
+            "fix_hint": "在设置页填写 OpenAI 兼容的 base_url 与 API Key",
             "fix_action": "open_settings",
         })
     else:
