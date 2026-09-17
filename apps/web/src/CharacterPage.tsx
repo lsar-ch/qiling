@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { confirmText } from "./dialog";
 import {
   createPersona,
+  deletePersona,
   fetchModelProfiles,
   fetchPersonas,
   fetchPersonaAssetTasks,
@@ -171,6 +172,7 @@ export default function CharacterPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
@@ -369,6 +371,28 @@ export default function CharacterPage() {
       setNotice(`已创建「${created.name}」。完善配置后点击「保存」。`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "角色卡创建失败");
+    }
+  };
+
+  const removePersona = async (): Promise<void> => {
+    if (!draft) return;
+    const target = draft;
+    const label = target.name || target.id;
+    if (!(await confirmText(`删除角色卡「${label}」？身份、音色与唤醒配置将一并移除，且不可恢复。`, "删除角色卡"))) return;
+    setDeleting(true);
+    setError("");
+    setNotice("");
+    try {
+      await deletePersona(target.id);
+      const rest = personas.filter((item) => item.id !== target.id);
+      setPersonas(rest);
+      setDraft(rest[0] ?? null);
+      setDirty(false);
+      setNotice(`已删除「${label}」。`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "角色卡删除失败");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -786,14 +810,24 @@ export default function CharacterPage() {
                 <p className="text-[11px] text-muted break-words">
                   {draft.id === activePersonaId ? "当前角色正在使用中：保存后身份与语音配置立即生效。" : "保存仅写入角色卡；启用请点击左侧卡片「启用」。"}
                 </p>
-                <button
-                  className="rounded-lg px-4 py-2.5 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-55 shrink-0"
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void save()}
-                >
-                  {saving ? "保存中…" : "保存"}
-                </button>
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    className="rounded-lg px-3.5 py-2.5 border border-line text-warn text-sm font-medium hover:border-warn transition-colors disabled:opacity-55"
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => void removePersona()}
+                  >
+                    {deleting ? "删除中…" : "删除角色"}
+                  </button>
+                  <button
+                    className="rounded-lg px-4 py-2.5 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-55"
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void save()}
+                  >
+                    {saving ? "保存中…" : "保存"}
+                  </button>
+                </div>
               </div>
             </>
           ) : null}

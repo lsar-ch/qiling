@@ -347,3 +347,23 @@ def test_setup_status_and_completion(tmp_path: Path, monkeypatch) -> None:
         # 密钥值不出现在任何响应里
         blob = json.dumps(updated, ensure_ascii=False)
         assert "sk-test-123" not in blob
+
+
+def test_persona_delete_guards(tmp_path: Path, monkeypatch) -> None:
+    """删除角色卡：内置与启用中不可删，删除后不再出现在列表。"""
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
+    (tmp_path / "config" / "personas" / "default.yaml").write_text("id: default\nname: 千问\n", encoding="utf-8")
+    payload = {"id": "cat", "name": "小猫"}
+    with TestClient(create_app(load_settings())) as client:
+        assert client.post("/api/personas", json=payload).status_code == 200
+        assert client.delete("/api/personas/default").status_code == 400
+        assert client.delete("/api/personas/missing").status_code == 404
+        assert client.put("/api/settings", json={"active_persona_id": "cat"}).json()["active_persona_id"] == "cat"
+        assert client.delete("/api/personas/cat").status_code == 409
+        assert client.put("/api/settings", json={"active_persona_id": "default"}).status_code == 200
+        assert client.delete("/api/personas/cat").status_code == 200
+        assert not (tmp_path / "config" / "personas" / "cat.yaml").exists()
+        assert [item["id"] for item in client.get("/api/personas").json()["items"]] == ["default"]

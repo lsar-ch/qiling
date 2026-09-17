@@ -357,6 +357,11 @@ export async function fetchPersonaAssetTasks(limit = 20): Promise<AgentRun[]> {
   return data.items;
 }
 
+export async function deletePersona(id: string): Promise<void> {
+  const resp = await fetch(`/api/personas/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+}
+
 export async function createPersonaAssetTask(
   kind: "voice_clone" | "avatar_import",
   params: Record<string, unknown>,

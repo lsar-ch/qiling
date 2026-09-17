@@ -560,6 +560,23 @@ def create_persona(payload: PersonaPayload, request: Request) -> dict[str, Any]:
     return payload.model_dump()
 
 
+@router.delete("/personas/{persona_id}")
+def delete_persona(persona_id: str, request: Request) -> dict[str, Any]:
+    """删除角色卡：内置角色与正在启用的角色不可删，避免把自己锁死。
+
+    只删 config/personas/<id>.yaml；data/persona-assets/<id>/ 保留（用户上传的原图不可再生）。
+    """
+    if persona_id == "default":
+        raise HTTPException(status_code=400, detail="内置角色不能删除")
+    if request.app.state.settings.active_persona_id == persona_id:
+        raise HTTPException(status_code=409, detail="该角色正在启用中，请先切换到其它角色再删除")
+    path = _persona_dir(request) / f"{persona_id}.yaml"
+    if not _PERSONA_ID.fullmatch(persona_id) or not path.is_file():
+        raise HTTPException(status_code=404, detail="角色卡不存在")
+    path.unlink()
+    return {"deleted": persona_id}
+
+
 @router.put("/personas/{persona_id}")
 def update_persona(persona_id: str, payload: PersonaPayload, request: Request) -> dict[str, Any]:
     if persona_id != payload.id:
