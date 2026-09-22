@@ -18,7 +18,7 @@ const WIDGET_EDGE_TRIGGER: i32 = 44;
 // Replace it with a platform drag-end event if pausing during a drag feels premature.
 const WIDGET_DRAG_SETTLE_DELAY: Duration = Duration::from_millis(350);
 const WIDGET_MIN_SCALE: f64 = 0.75;
-const WIDGET_MAX_SCALE: f64 = 1.15;
+const WIDGET_MAX_SCALE: f64 = 2.0;
 const WIDGET_PREFERENCES_FILE: &str = "widget.json";
 // 贴边隐藏后让透明区域不再拦截鼠标点击（目前只在 Windows 分支实现）。
 // 若隐藏态的挂件变得难以抓取，把这个开关改成 false 即可整体关掉该行为。
@@ -34,12 +34,20 @@ const WIDGET_POINTER_GRAB_MARGIN: f64 = 20.0;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn CGEventSourceButtonState(state_id: i32, button: u32) -> bool;
+    fn CGEventSourceSecondsSinceLastEventType(state_id: i32, event_type: u32) -> f64;
 }
 
 #[cfg(target_os = "macos")]
 fn primary_mouse_down() -> bool {
     // Combined session state, left mouse button. No input monitoring permission is required.
     unsafe { CGEventSourceButtonState(0, 0) }
+}
+
+/// 系统无输入空闲秒数；macOS 无需输入监控权限，只读组合会话状态。
+#[cfg(target_os = "macos")]
+fn system_idle_seconds_impl() -> f64 {
+    // kCGEventSourceStateCombinedSessionState = 0，kCGAnyInputEventType = !0
+    unsafe { CGEventSourceSecondsSinceLastEventType(0, !0u32) }
 }
 
 #[cfg(target_os = "windows")]
@@ -66,9 +74,48 @@ fn primary_mouse_down() -> bool {
     unsafe { (GetAsyncKeyState(0x01) as u16 & 0x8000) != 0 }
 }
 
+/// Windows 输入空闲秒数：GetLastInputInfo 返回系统 tick，与 GetTickCount 做差。
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct LastInputInfo {
+    cb_size: u32,
+    dw_time: u32,
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetTickCount() -> u32;
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+extern "system" {
+    fn GetLastInputInfo(plii: *mut LastInputInfo) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+fn system_idle_seconds_impl() -> f64 {
+    let mut info = LastInputInfo {
+        cb_size: std::mem::size_of::<LastInputInfo>() as u32,
+        dw_time: 0,
+    };
+    let ok = unsafe { GetLastInputInfo(&mut info) };
+    if ok == 0 {
+        return 0.0;
+    }
+    let now = unsafe { GetTickCount() };
+    (now.wrapping_sub(info.dw_time) as f64) / 1000.0
+}
+
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn primary_mouse_down() -> bool {
     false
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn system_idle_seconds_impl() -> f64 {
+    0.0
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -469,6 +516,11 @@ pub fn finish_widget_drag(app: AppHandle) -> Result<(), String> {
         settle_and_emit(&app)?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn system_idle_seconds() -> f64 {
+    system_idle_seconds_impl()
 }
 
 #[tauri::command]

@@ -4,9 +4,26 @@
 // tests/test_contracts_sync.py。
 
 export type { AgentInfo, AgentIntegrationStatus } from "./agent";
+export type {
+  ExtensionSource,
+  McpServerInfo,
+  McpServerStatus,
+  McpToolAccess,
+  McpToolInfo,
+  McpTransport,
+  SkillDetail,
+  SkillInfo,
+} from "./extension";
 export type { EventEnvelope, EventSource, EventType } from "./events";
-export type { WidgetState, WidgetStatusReport } from "./widget";
-export type { RiskLevel, Task, TaskCategory, TaskStatus } from "./task";
+export type { PersonaPresentation, PersonaStyle, WidgetState, WidgetStatusReport } from "./widget";
+export type {
+  InteractionKind,
+  RiskLevel,
+  Task,
+  TaskCategory,
+  TaskStatus,
+  WorkKind,
+} from "./task";
 export type { ApprovalRequest, ApprovalStatus } from "./approval";
 export type {
   CompiledMemory,
@@ -20,5 +37,16 @@ export type {
 } from "./memory";
 export type { ChatAttachment, ChatMode, ConversationMessage, MessageRole } from "./conversation";
 export type { VoiceProvider, VoiceParams, VoiceSettings } from "./voice";
-export type { AvatarDriver, CharacterConfig, CharacterStyle } from "./character";
+export type { ArtStyle, AvatarDriver, CharacterConfig, CharacterStyle, MotionFamily } from "./character";
 export type { RecordingFormat, RecordingMode, RecordingSession } from "./recording";
+export type {
+  ProjectNode,
+  ProjectNodeKind,
+  ProjectNodeStatus,
+} from "./project";
+export type {
+  Reminder,
+  ReminderKind,
+  ReminderRepeat,
+  ReminderStatus,
+} from "./reminder";

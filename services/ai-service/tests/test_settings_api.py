@@ -298,6 +298,53 @@ def test_persona_preset_roundtrip_and_clear(tmp_path: Path, monkeypatch) -> None
         )
         assert hero["preset"] is None
 
+def test_persona_motion_family_roundtrip_and_preserved(tmp_path: Path, monkeypatch) -> None:
+    """动作族/画风可写入，且后续不带该字段的更新不会覆盖。"""
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text(
+        "app:\n  version: 0.1.0\n",
+        encoding="utf-8",
+    )
+    with TestClient(create_app(load_settings())) as client:
+        created = client.post(
+            "/api/personas",
+            json={
+                "id": "hero",
+                "name": "小助手",
+                "kind": "assistant",
+                "description": "",
+                "personality": [],
+                "backstory": "",
+                "language": "zh-CN",
+                "reply_style": "",
+                "avatar": "",
+                "voice": {},
+                "activation": {},
+                "motion_family": "animal",
+                "art_style": "chibi",
+            },
+        )
+        assert created.status_code == 200
+        hero = next(
+            item for item in client.get("/api/personas").json()["items"] if item["id"] == "hero"
+        )
+        assert hero["motion_family"] == "animal"
+        assert hero["art_style"] == "chibi"
+
+        updated = client.put(
+            "/api/personas/hero",
+            json={"id": "hero", "name": "小助手", "kind": "assistant"},
+        )
+        assert updated.status_code == 200
+        hero = next(
+            item for item in client.get("/api/personas").json()["items"] if item["id"] == "hero"
+        )
+        assert hero["motion_family"] == "animal"
+        assert hero["art_style"] == "chibi"
+
+
 def test_setup_status_and_completion(tmp_path: Path, monkeypatch) -> None:
     """首次启动引导：初始未完成且 echo 模式缺 LLM；写入 setup_completed 后持久化。"""
     monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
@@ -367,3 +414,76 @@ def test_persona_delete_guards(tmp_path: Path, monkeypatch) -> None:
         assert client.delete("/api/personas/cat").status_code == 200
         assert not (tmp_path / "config" / "personas" / "cat.yaml").exists()
         assert [item["id"] for item in client.get("/api/personas").json()["items"]] == ["default"]
+
+
+def test_persona_asset_file_route(tmp_path: Path, monkeypatch) -> None:
+    """layers.json / 图层文件可经资产路由读取；路径穿越与缺失文件返回 404。"""
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
+    (tmp_path / "config" / "personas" / "default.yaml").write_text("id: default\nname: 千问\n", encoding="utf-8")
+    asset_dir = tmp_path / "data" / "persona-assets" / "default"
+    (asset_dir / "layers").mkdir(parents=True)
+    (asset_dir / "layers" / "eyes.png").write_bytes(b"fake-png")
+    (asset_dir / "layers.json").write_text(
+        json.dumps({"layers": [{"id": "eyes", "file": "layers/eyes.png", "z": 1, "role": "eyes"}]}),
+        encoding="utf-8",
+    )
+    with TestClient(create_app(load_settings())) as client:
+        layers = client.get("/api/personas/default/asset/layers.json")
+        assert layers.status_code == 200
+        assert layers.json()["layers"][0]["role"] == "eyes"
+        image = client.get("/api/personas/default/asset/layers/eyes.png")
+        assert image.status_code == 200
+        assert image.content == b"fake-png"
+        assert client.get("/api/personas/default/asset/../settings.yaml").status_code == 404
+        assert client.get("/api/personas/default/asset/%2e%2e/settings.yaml").status_code == 404
+        assert client.get("/api/personas/missing/asset/layers.json").status_code == 404
+
+
+def test_import3d_zip_applies_assets_and_yaml(tmp_path: Path, monkeypatch) -> None:
+    import zipfile
+
+    import yaml as yaml_lib
+
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "personas" / "hero.yaml").write_text(
+        "id: hero\nname: 测试\nkind: assistant\navatar: ''\n",
+        encoding="utf-8",
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("pack/model.vrm", b"glTF-fake")
+        zf.writestr("pack/vrma/idle.vrma", b"vrma-idle")
+        zf.writestr("pack/vrma/notatrig.vrma", b"vrma-bogus")
+        zf.writestr("pack/avatar.png", b"png-fake")
+    buf.seek(0)
+
+    with TestClient(create_app(load_settings())) as client:
+        resp = client.post(
+            "/api/personas/hero/import3d",
+            files={"file": ("pack.zip", buf, "application/zip")},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["vrma"] == ["idle"]
+        assert body["avatar"] == "/api/personas/hero/avatar"
+
+        assets = tmp_path / "data" / "persona-assets" / "hero"
+        assert (assets / "model.vrm").read_bytes() == b"glTF-fake"
+        assert (assets / "vrma" / "idle.vrma").read_bytes() == b"vrma-idle"
+        assert not (assets / "vrma" / "notatrig.vrma").exists()
+        raw = yaml_lib.safe_load(
+            (tmp_path / "config" / "personas" / "hero.yaml").read_text(encoding="utf-8")
+        )
+        assert raw["vrm"] == "model.vrm"
+        assert raw["avatar_driver"] == "vrm_3d"
+
+        missing = client.post(
+            "/api/personas/hero/import3d",
+            files={"file": ("empty.zip", io.BytesIO(b"not a zip"), "application/zip")},
+        )
+        assert missing.status_code == 400

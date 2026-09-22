@@ -37,9 +37,6 @@ EMOTION_ALIASES: dict[str, ExpressionEmotion] = {
     "confusing": "confused",
     "puzzled": "confused",
     "unsure": "confused",
-    "surprised": "confused",
-    "shock": "confused",
-    "shocked": "confused",
     "approval": "confused",
     "awaiting_approval": "confused",
     "困惑": "confused",
@@ -49,35 +46,46 @@ EMOTION_ALIASES: dict[str, ExpressionEmotion] = {
     # 成功 / 愉快
     "success": "success",
     "successful": "success",
-    "happy": "success",
-    "joy": "success",
-    "joyful": "success",
-    "excited": "success",
-    "glad": "success",
     "completed": "success",
     "complete": "success",
     "done": "success",
     "win": "success",
     "成功": "success",
     "完成": "success",
-    "开心": "success",
-    "高兴": "success",
-    "兴奋": "success",
-    "喜悦": "success",
+    # 社交：开心
+    "happy": "happy",
+    "joy": "happy",
+    "joyful": "happy",
+    "excited": "happy",
+    "glad": "happy",
+    "开心": "happy",
+    "高兴": "happy",
+    "兴奋": "happy",
+    "喜悦": "happy",
     # 错误 / 失败 / 负面
     "error": "error",
     "failed": "error",
     "fail": "error",
     "failure": "error",
-    "sad": "error",
     "angry": "error",
-    "upset": "error",
     "problem": "error",
     "失败": "error",
     "错误": "error",
     "出错": "error",
-    "难过": "error",
     "生气": "error",
+    # 社交：难过
+    "sad": "sad",
+    "upset": "sad",
+    "难过": "sad",
+    "伤心": "sad",
+    "失落": "sad",
+    # 社交：惊讶
+    "surprised": "surprised",
+    "shock": "surprised",
+    "shocked": "surprised",
+    "惊讶": "surprised",
+    "吃惊": "surprised",
+    "意外": "surprised",
 }
 
 # 情绪 → 挂件视觉提示（眼睛/嘴/光环；对应 docs/EXPRESSION-EVENT-SCHEMA.md §3）
@@ -88,6 +96,9 @@ EMOTION_VISUAL_HINTS: dict[ExpressionEmotion, dict[str, str]] = {
     "confused": {"eyes": "一侧缩小", "mouth": "问号型微张", "aura": "黄色抖动"},
     "success": {"eyes": "弯月笑眼", "mouth": "微笑", "aura": "绿色闪烁"},
     "error": {"eyes": "X 眼/垂眼", "mouth": "下垂", "aura": "红色闪烁"},
+    "happy": {"eyes": "弯月笑眼", "mouth": "开口笑", "aura": "暖黄闪烁"},
+    "sad": {"eyes": "垂眼", "mouth": "下弯", "aura": "蓝色微光"},
+    "surprised": {"eyes": "睁大", "mouth": "圆张", "aura": "紫白闪"},
 }
 
 
@@ -111,4 +122,43 @@ def resolve_emotion(raw: str | None) -> ExpressionEmotion:
 
 def canonical_emotions() -> tuple[ExpressionEmotion, ...]:
     """全部归一化情绪（覆盖 ExpressionEmotion 全集）。"""
-    return ("neutral", "attentive", "thinking", "confused", "success", "error")
+    return (
+        "neutral",
+        "attentive",
+        "thinking",
+        "confused",
+        "success",
+        "error",
+        "happy",
+        "sad",
+        "surprised",
+    )
+
+
+_POSITIVE_HINTS = (
+    "太棒", "太好了", "开心", "高兴", "兴奋", "哈哈", "耶", "恭喜", "真不错", "喜欢",
+)
+_SAD_HINTS = (
+    "难过", "伤心", "失落", "遗憾", "抱歉", "沮丧", "叹气", "唉", "辛苦", "心疼",
+)
+_SURPRISED_HINTS = (
+    "哇", "居然", "没想到", "惊讶", "吃惊", "意外", "天哪", "我的天",
+)
+
+
+def infer_emotion(text: str, *, casual: bool) -> ExpressionEmotion:
+    """从回复文本做确定性情绪推断，避免额外 LLM 调用。
+
+    只在 casual/companion 模式启用社交情绪；work 模式回退 neutral，
+    保持「工作状态由事件决定，不随文本漂移」的可靠性原则。
+    """
+    if not casual:
+        return "neutral"
+    source = text or ""
+    if any(hint in source for hint in _SAD_HINTS):
+        return "sad"
+    if any(hint in source for hint in _SURPRISED_HINTS):
+        return "surprised"
+    if any(hint in source for hint in _POSITIVE_HINTS):
+        return "happy"
+    return "neutral"

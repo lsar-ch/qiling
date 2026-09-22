@@ -79,6 +79,39 @@ class FakeReadyAdapter(AgentAdapter):
         self.approved_at = f"{task_id}:{decision}"
 
 
+class WordArtifactAdapter(FakeReadyAdapter):
+    """模拟 Word 执行器写出一个新文档，验证产物回传。"""
+
+    async def run(self, request: AgentTaskRequest, on_update) -> AgentTaskResult:
+        self.request = request
+        await on_update("session_ready", {"session_id": "sess_word", "mode": request.mode})
+        output = Path(request.cwd) / "报告_edited.docx"
+        output.write_bytes(b"fake-docx")
+        return AgentTaskResult(status="completed", message="已完成 Word 排版")
+
+
+class ExcelArtifactAdapter(FakeReadyAdapter):
+    """模拟 Excel 执行器写出一个新表格，验证产物回传。"""
+
+    async def run(self, request: AgentTaskRequest, on_update) -> AgentTaskResult:
+        self.request = request
+        await on_update("session_ready", {"session_id": "sess_excel", "mode": request.mode})
+        output = Path(request.cwd) / "数据_processed.xlsx"
+        output.write_bytes(b"fake-xlsx")
+        return AgentTaskResult(status="completed", message="已完成 Excel 数据处理")
+
+
+class PptArtifactAdapter(FakeReadyAdapter):
+    """模拟 PPT 执行器写出一个新演示文稿，验证产物回传。"""
+
+    async def run(self, request: AgentTaskRequest, on_update) -> AgentTaskResult:
+        self.request = request
+        await on_update("session_ready", {"session_id": "sess_ppt", "mode": request.mode})
+        output = Path(request.cwd) / "方案_edited.pptx"
+        output.write_bytes(b"fake-pptx")
+        return AgentTaskResult(status="completed", message="已完成 PPT 美化")
+
+
 class PendingAdapter(FakeReadyAdapter):
     name = "fake-pending"
     adapter_id = "pending"
@@ -295,6 +328,66 @@ def test_chat_task_reports_back_into_conversation(tmp_path, monkeypatch) -> None
         notes = [item["content"] for item in conv["messages"] if item["role"] == "tool"]
         assert any("已交给" in text and adapter.name in text for text in notes)
         assert any(text.startswith("✓ 任务完成") and "fake result" in text for text in notes)
+
+
+def test_word_task_uses_agent_mode_and_reports_new_artifact(tmp_path, monkeypatch) -> None:
+    adapter = WordArtifactAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "帮我把这个 Word 文档重新排版"},
+        )
+        assert resp.status_code == 200
+        done = next(
+            json.loads(line[6:])
+            for line in resp.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        run = _wait_for(client, done["task_id"], ("completed",))
+        assert run["mode"] == "agent"
+        assert "报告_edited.docx" in (run["result"] or "")
+        assert adapter.request is not None
+        assert adapter.request.mode == "agent"
+        assert "不要覆盖原文件" in adapter.request.prompt
+
+
+def test_excel_task_uses_agent_mode_and_reports_new_artifact(tmp_path, monkeypatch) -> None:
+    adapter = ExcelArtifactAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        resp = client.post("/api/chat/stream", json={"message": "分析这个 Excel 数据并生成图表"})
+        assert resp.status_code == 200
+        done = next(
+            json.loads(line[6:])
+            for line in resp.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        run = _wait_for(client, done["task_id"], ("completed",))
+        assert run["mode"] == "agent"
+        assert "数据_processed.xlsx" in (run["result"] or "")
+        assert adapter.request is not None
+        assert adapter.request.mode == "agent"
+        assert "不要覆盖原文件" in adapter.request.prompt
+
+
+def test_ppt_task_uses_agent_mode_and_reports_new_artifact(tmp_path, monkeypatch) -> None:
+    adapter = PptArtifactAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        resp = client.post("/api/chat/stream", json={"message": "把这个 PPT 美化一下"})
+        assert resp.status_code == 200
+        done = next(
+            json.loads(line[6:])
+            for line in resp.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        run = _wait_for(client, done["task_id"], ("completed",))
+        assert run["mode"] == "agent"
+        assert "方案_edited.pptx" in (run["result"] or "")
+        assert adapter.request is not None
+        assert adapter.request.mode == "agent"
+        assert "不要覆盖原文件" in adapter.request.prompt
 
 
 def test_low_risk_chatter_is_not_auto_started(tmp_path, monkeypatch) -> None:
@@ -832,3 +925,124 @@ def test_manual_approval_cancels_timeout(tmp_path, monkeypatch) -> None:
         time.sleep(1.2)
         assert client.get(f"/api/tasks/{task['task_id']}").json()["status"] == "completed"
         assert adapter.approved_at == f"{task['task_id']}:approved"
+
+
+def _link_node(client, tmp_path: Path, task_id: str):
+    """在项目下建一个已关联该任务的节点，返回 node_id。"""
+    from deskmate_contracts.project import ProjectNode
+
+    node = ProjectNode(
+        project=str(tmp_path),
+        title="V2 P1-T2 节点联动",
+        kind="node",
+        status="in_progress",
+        task_ids=[task_id],
+    )
+    client.app.state.project_node_store.put(node)
+    return node.node_id
+
+
+def test_completed_task_advances_linked_project_node(tmp_path, monkeypatch) -> None:
+    """任务完成后，关联节点应自动推进为 completed。"""
+    adapter = FakeReadyAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        task = _route(client, preferred_executor=adapter.name)
+        task["project"] = str(tmp_path)
+        client.app.state.task_store.put(Task(**task))
+        node_id = _link_node(client, tmp_path, task["task_id"])
+
+        client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name, "mode": "read-only"},
+        )
+        _wait_for(client, task["task_id"], ("completed",))
+
+        node = client.app.state.project_node_store.get(node_id)
+        assert node is not None
+        assert node.status == "completed"
+
+
+def test_failed_task_blocks_linked_project_node(tmp_path, monkeypatch) -> None:
+    """任务失败后，关联节点应转为 blocked 并记下原因。"""
+    adapter = FakeReadyAdapter(result_status="failed", error="执行器崩了")
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        task = _route(client, preferred_executor=adapter.name)
+        task["project"] = str(tmp_path)
+        client.app.state.task_store.put(Task(**task))
+        node_id = _link_node(client, tmp_path, task["task_id"])
+
+        client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name, "mode": "read-only"},
+        )
+        _wait_for(client, task["task_id"], ("failed",))
+
+        node = client.app.state.project_node_store.get(node_id)
+        assert node is not None
+        assert node.status == "blocked"
+        assert "执行器崩了" in (node.blocker or "")
+
+        hub = client.app.state.event_hub
+        blocked_events: list[dict] = []
+        for _ in range(100):
+            blocked_events = [
+                item for item in hub.recent(50) if item.get("event_type") == "project.blocked"
+            ]
+            if blocked_events:
+                break
+            time.sleep(0.05)
+        assert blocked_events, "节点阻塞后未发布 project.blocked 事件"
+        assert "节点阻塞" in (blocked_events[0].get("payload", {}).get("bubble") or "")
+
+
+def test_unlinked_node_is_untouched_by_task_finish(tmp_path, monkeypatch) -> None:
+    """没关联该任务的节点不应被误改。"""
+    adapter = FakeReadyAdapter()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        task = _route(client, preferred_executor=adapter.name)
+        task["project"] = str(tmp_path)
+        client.app.state.task_store.put(Task(**task))
+
+        from deskmate_contracts.project import ProjectNode
+
+        other = ProjectNode(project=str(tmp_path), title="无关节点", status="planned")
+        client.app.state.project_node_store.put(other)
+
+        client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name, "mode": "read-only"},
+        )
+        _wait_for(client, task["task_id"], ("completed",))
+
+        assert client.app.state.project_node_store.get(other.node_id).status == "planned"
+
+
+def test_stale_sweeper_reminds_once_per_run(tmp_path) -> None:
+    """T3：超阈值无进展的 running run 发 task.stale，且同一 run 只提醒一次。"""
+    import asyncio
+
+    from app.agents.runtime import AgentRun, AgentRunManager, AgentRunStore
+    from app.core.bus import EventHub
+    from app.routing.store import TaskStore
+
+    hub = EventHub()
+    manager = AgentRunManager(
+        registry=None,  # type: ignore[arg-type]
+        store=AgentRunStore(tmp_path / "runs"),
+        task_store=TaskStore(tmp_path / "tasks"),
+        hub=hub,
+        memory=None,  # type: ignore[arg-type]
+        data_dir=tmp_path,
+    )
+    run = AgentRun(task_id="task_a", executor="fake", status="running")
+    manager.store.put(run)
+    run.updated_at = "2000-01-01T00:00:00+00:00"
+
+    async def _sweep_twice() -> None:
+        await manager._sweep_stale_runs(60)
+        await manager._sweep_stale_runs(60)
+
+    asyncio.run(_sweep_twice())
+    stale = [e for e in hub.recent(10) if e.get("event_type") == "task.stale"]
+    assert len(stale) == 1
+    assert "无进展" in (stale[0].get("payload", {}).get("bubble") or "")

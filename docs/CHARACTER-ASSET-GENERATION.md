@@ -129,6 +129,26 @@ V1.5：
 
 V2/V3 才考虑组件识别、分层、骨骼和高级渲染。
 
+## 5.1 分层资产契约（2026-09-19 定稿）
+
+资产生成路线重开后按 `layers.json` v1 交付（现有单图模式保留为回退）：
+
+- `layers[]`: `{id, file, z, role}`，`z` 升序 = 从底到顶叠放（alpha 合成可复现 `main.png`）
+- `role` = T4 动作分组：`eyes` / `mouth` / `hair_front` / `hair_back` / `face` / `body` / `accessory`；同 role 多图层（如眼睛的多部件）作为一组做整体变换
+- `stage` / `motions` 字段与 default 包兼容；无分层时回退单张 `main.png`
+- 后端经 `GET /api/personas/{id}/asset/{path}` 提供文件（禁止路径穿越）；挂件 `fetchPersonaAssetManifest` 读取并按 z 叠放
+- role 动画：眼睛 `dmBlink`、说话 `dmMouthTalk`、前后发 `dmHairSway`、配饰 `dmAccessoryFloat`，整体动作仍走 `data-action` 上的全局 keyframes
+- 首个测试包：`data/persona-assets/qianwen_t4/`（19 层，v0 已知问题见包内 README，等 1024 半身重跑替换）
+
+### 5.2 多帧 / spritesheet 扩展（2026-09-22）
+
+`layers.json` v2 在 v1 基础上增加两个可选块，均不影响旧包：
+
+- 单层多帧：`layers[].frames = { "<state_name>": ["layers/mouth_0.png", ...] }`，可选 `frame_fps = { "<state_name>": 8 }`；状态名与动作触发器一致（idle/listening/thinking/speaking/executing/awaiting_approval/success/error 等）。
+- 全身 spritesheet：顶层 `spritesheets = [{ "state_name": "idle", "file": "sprites/idle.png", "frame_width": 512, "frame_height": 512, "frames": 8, "fps": 8 }]`；优先于分层渲染，无匹配状态时回退 layers / main.png。
+
+挂件渲染优先级：VRM > 当前状态 spritesheet > 分层 frames > 单图。
+
 ## 6. 不再做的事
 - 不再让用户手工走外部工具拆层（太费劲且不可控）
 - V1 不接本地 ComfyUI 管线（工程量大，等角色生成器验证后再评估）

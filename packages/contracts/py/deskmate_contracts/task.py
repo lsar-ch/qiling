@@ -15,6 +15,18 @@ TaskCategory = Literal[
     "request_approval",    # 需先授权
 ]
 
+WorkKind = Literal[
+    "general",
+    "code",
+    "browser",
+    "word",
+    "excel",
+    "ppt",
+    "project",
+]
+
+InteractionKind = Literal["casual", "project", "work"]
+
 RiskLevel = Literal["low", "medium", "high"]
 
 TaskStatus = Literal[
@@ -34,8 +46,11 @@ def create_task_id() -> str:
 class Task(BaseModel):
     task_id: str = Field(default_factory=create_task_id)
     conversation_id: str | None = None
+    project: str | None = None
     input: str
     category: TaskCategory = "answer"
+    work_kind: WorkKind = "general"
+    interaction_kind: InteractionKind = "casual"
     risk_level: RiskLevel = "low"
     complexity: Literal["simple", "medium", "complex"] = "simple"
     estimated_duration: Literal["short", "medium", "long"] = "short"

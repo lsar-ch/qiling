@@ -19,15 +19,20 @@ from fastapi.staticfiles import StaticFiles
 from app.agents.factory import build_agent_registry
 from app.agents.catalog import load_agent_catalog
 from app.agents.runtime import AgentRunManager, AgentRunStore
-from app.api import agent_runs, agents, chat, events, health, memories, persona_tasks, recording, session, settings as settings_api, state, tasks, voice
+from app.api import agent_runs, agents, chat, events, extensions, health, memories, persona_tasks, project_nodes, recording, reminders, session, settings as settings_api, state, tasks, voice
 from app.chat.store import ConversationStore
 from app.memory import MemoryService
+from app.skills import SkillRegistry
+from app.mcp import McpManager
 from app.routing import TaskStore
+from app.project_nodes import ProjectNodeStore
 from app.speech.base import SpeechStack
 from app.speech.factory import build_speech_stack
 from app.config import Settings, resolve_llm_provider
 from app.core.state_mapper import WidgetStateRegistry, make_composed_hook
 from app.core.presentation_bridge import PresentationBridge
+from app.core.reminders import ReminderEngine, ReminderStore
+from app.core.wellness import WellnessEngine
 from app.llm import LLMProvider, create_provider
 from app.config import Settings, load_settings
 from app.core.bus import EventHub
@@ -40,14 +45,30 @@ class VoiceLease:
         self.ttl_seconds = ttl_seconds
         self.lock = asyncio.Lock()
 
-    async def acquire(self, client: str) -> bool:
+    async def acquire(
+        self,
+        client: str,
+        force: bool = False,
+        *,
+        on_change=None,
+    ) -> bool:
         async with self.lock:
             now = time.monotonic()
-            if self.owner is None or self.expires_at <= now or client == "web":
+            previous = self.owner if self.expires_at > now else None
+            if force or previous is None:
                 self.owner = client
                 self.expires_at = now + self.ttl_seconds
-                return True
-            return self.owner == client
+                result = True
+            elif self.owner == client:
+                # 同一持有者轮询即续期，省掉单独心跳（心跳接口仍保留）。
+                self.expires_at = now + self.ttl_seconds
+                result = True
+            else:
+                result = self.owner == client
+            next_owner = self.owner if result else previous
+        if result and previous != client and on_change is not None:
+            await on_change(next_owner)
+        return result
 
     async def heartbeat(self, client: str) -> bool:
         async with self.lock:
@@ -56,11 +77,16 @@ class VoiceLease:
             self.expires_at = time.monotonic() + self.ttl_seconds
             return True
 
-    async def release(self, client: str) -> None:
+    async def release(self, client: str, *, on_change=None) -> None:
         async with self.lock:
             if self.owner == client:
                 self.owner = None
                 self.expires_at = 0.0
+                changed = True
+            else:
+                changed = False
+        if changed and on_change is not None:
+            await on_change(None)
 
     async def is_owner(self, client: str) -> bool:
         async with self.lock:
@@ -86,6 +112,9 @@ def create_app(
         # 启动时广播当前角色呈现
         if settings.active_persona_id:
             await presentation_bridge.broadcast(settings.active_persona_id, hub)
+        app.state.agent_run_manager.start_stale_sweeper()
+        app.state.reminder_engine.start()
+        app.state.wellness.start()
         yield
 
     app = FastAPI(
@@ -101,6 +130,16 @@ def create_app(
     app.state.presentation_bridge = presentation_bridge
     app.state.conversation_store = ConversationStore(settings.data_dir)
     app.state.task_store = TaskStore(settings.data_dir)
+    app.state.project_node_store = ProjectNodeStore(settings.data_dir)
+    app.state.reminder_store = ReminderStore(settings.data_dir)
+    app.state.reminder_engine = ReminderEngine(app.state.reminder_store, hub)
+    app.state.wellness = WellnessEngine(
+        hub,
+        enabled=settings.proactive_enabled,
+        sedentary_minutes=settings.sedentary_minutes,
+        long_work_minutes=settings.long_work_minutes,
+        cooldown_minutes=settings.reminder_cooldown_minutes,
+    )
     app.state.memory = MemoryService(settings.memory_dir, persona_dir=settings.personas_dir)
     app.state.agent_catalog = load_agent_catalog()
     app.state.agent_registry = build_agent_registry(app.state.agent_catalog)
@@ -112,7 +151,17 @@ def create_app(
         memory=app.state.memory,
         data_dir=settings.data_dir,
         conversations=app.state.conversation_store,
+        project_nodes=app.state.project_node_store,
     )
+    app.state.skill_registry = SkillRegistry(
+        builtin_dir=settings.repo_root / "skills" / "builtin",
+        user_dir=settings.data_dir / "skills",
+        state_path=settings.data_dir / "skills-state.json",
+    )
+    app.state.mcp_manager = McpManager(
+        settings.repo_root / "config" / "mcp-servers.yaml"
+    )
+    app.state.tool_approvals: dict = {}
     app.state.llm_provider = provider
     app.state.speech = speech
     app.state.voice_lease = VoiceLease()
@@ -136,8 +185,11 @@ def create_app(
     app.include_router(tasks.router)
     app.include_router(voice.router)
     app.include_router(settings_api.router)
+    app.include_router(extensions.router)
     app.include_router(memories.router)
     app.include_router(persona_tasks.router)
+    app.include_router(project_nodes.router)
+    app.include_router(reminders.router)
     app.include_router(recording.router)
 
     # 生产模式：主界面由 ai-service 托管（apps/web 构建产物）

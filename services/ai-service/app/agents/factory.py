@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.agents.catalog import AgentCatalog, load_agent_catalog
 from app.agents.browser import BrowserAdapter
 from app.agents.codex import CodexAdapter
+from app.agents.local_office import LocalOfficeAdapter
 from app.agents.registry import AgentRegistry
 from app.agents.reserved import PendingAgentAdapter
 from app.agents.workbuddy import WorkBuddyAdapter
@@ -31,3 +32,5 @@ def rebuild_agent_registry(registry: AgentRegistry, catalog: AgentCatalog) -> No
             registry.register(BrowserAdapter(catalog_entry=entry))
         else:
             registry.register(PendingAgentAdapter(entry))
+    # 内置执行器始终注册，不受 agents.yaml 影响
+    registry.register(LocalOfficeAdapter())

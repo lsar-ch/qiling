@@ -62,18 +62,35 @@ class PresentationBridge:
         animations = {**_DEFAULT_ANIMATIONS, **pres.get("animations", {})}
         fx = {**_DEFAULT_FX, **pres.get("fx", {})}
         avatar = str(raw.get("avatar") or "")
+        vrm = str(raw.get("vrm") or "")  # VRM 模型相对 persona 资产目录的路径
         style = pres.get("style")
-        if style not in {"human", "animal"}:
+        if style not in {"human", "animal", "anime"}:
+            style = raw.get("motion_family")
+        if style not in {"human", "animal", "anime"}:
             style = "animal" if str(raw.get("kind", "")).lower() in {"cat", "dog", "bird", "rabbit", "animal"} else "human"
+        motion_family = raw.get("motion_family")
+        if motion_family not in {"human", "animal", "anime"}:
+            motion_family = style
+        art_style = raw.get("art_style")
+        if art_style not in {"realistic", "anime", "chibi", "pixel"}:
+            art_style = None
+
+        asset: dict[str, Any] = {}
+        if avatar:
+            asset["avatar_url"] = avatar
+        if vrm:
+            asset["vrm_path"] = vrm
 
         return PersonaPresentation(
             persona_id=persona_id,
             persona_name=raw.get("name", persona_id),
             style=style,
+            motion_family=motion_family,
+            art_style=art_style,
             theme=theme,
             animations=animations,
             fx=fx,
-            asset={"avatar_url": avatar} if avatar else None,
+            asset=asset or None,
         )
 
     async def broadcast(self, persona_id: str, hub) -> None:

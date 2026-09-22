@@ -11,10 +11,13 @@ def build_llm_messages(
     *,
     budget_chars: int = 8000,
     memory_context: str = "",
+    skill_context: str = "",
 ) -> list[dict[str, str]]:
     prompt = system_prompt
     if memory_context.strip():
         prompt = f"{system_prompt}\n\n## 项目记忆（只读上下文）\n{memory_context.strip()}"
+    if skill_context.strip():
+        prompt = f"{prompt}\n\n## 本轮技能指引（按需采用）\n{skill_context.strip()}"
     messages: list[dict[str, str]] = [{"role": "system", "content": prompt}]
     budget = budget_chars
     if prompt:

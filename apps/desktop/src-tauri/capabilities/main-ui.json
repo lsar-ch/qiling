@@ -1,9 +1,16 @@
 {
   "identifier": "main-ui",
-  "description": "主界面原生对话框：仅允许本机 AI 服务远程页面调用目录选择与确认框",
+  "description": "主界面原生能力：本机 AI 服务远程页面可查询窗口可见性、接收事件并调用对话框",
   "windows": ["main_ui"],
   "remote": {
     "urls": ["http://127.0.0.1:8736/*"]
   },
-  "permissions": ["dialog:allow-open", "dialog:allow-ask"]
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:allow-is-visible",
+    "core:window:allow-show",
+    "dialog:allow-open",
+    "dialog:allow-ask"
+  ]
 }

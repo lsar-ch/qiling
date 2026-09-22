@@ -1,107 +1,106 @@
-# ── 桌面助理核心配置 ─────────────────────────────────────────
-
 app:
-  name: "DeskMate"
-  version: "0.1.0"
-  description: "本地优先的桌面 AI 精灵"
-
-# ── 界面 ─────────────────────────────────────────────────────
-ui:
-  mode: floating_spring    # floating_spring | live2d
-  size: { width: 120, height: 120 }
-  position: center         # center | top-center | bottom-center
-  always_on_top: true
-  opacity: 0.95
-  theme: "material_blue"
-  animations:
-    idle_breathe: true     # 待机呼吸动画
-    listen_pulse: true     # 倾听时脉冲
-    speak_wave: true       # 说话时声波
-    thinking_spin: true    # 思考中旋转
-
-# ── 语音（Step 4：云 API，详见 docs/VOICE-PROVIDERS.md）─────────
-voice:
-  enabled: true
-  auto_speak: true             # 自动播报回复；关闭后仍保留语音输入和手动播报
-  stt:
-    provider: dashscope        # dashscope | volcengine | disabled（auto=按 key 自动选）
-    model: paraformer-realtime-v2
-    sample_rate: 16000
-    language: zh
-  tts:
-    provider: minimax          # minimax | dashscope | volcengine | disabled（见 docs/VOICE-PROVIDERS.md）
-    model: speech-2.8-hd       # MiniMax 主声模型；克隆音也走该模型
-    voice: "Chinese (Mandarin)_Soft_Girl"   # 2026-09-04 用户拍板默认音色
-    format: mp3                # wav | mp3 | pcm
-    sample_rate: 32000
-    # 切换回 DashScope 时改：provider: dashscope / model: cosyvoice-v2 /
-    #   voice: longxiaochun_v2 / format: wav / sample_rate: 24000
-  params:                      # 归一化表现参数，供应商适配层做映射
-    speed: 1.05                # 语速倍率 0.5~2.0
-    pitch: 1.0                 # 音高倍率 0.5~2.0
-    volume: 1.0                # 音量 0~2.0
-    emotion: null              # V1 槽位，一般留空
-    instruction: null          # V1 槽位，风格/口音描述（后续人设启用）
-  dashscope:
-    api_key: ""                # 优先读环境变量 DASHSCOPE_API_KEY
-  minimax:
-    api_key: ""                # 优先读环境变量 MINIMAX_API_KEY
-  volcengine:                  # 预留：火山豆包语音（Step 8 实测后接入）
-    app_id: ""
-    token: ""
-    cluster: volcano_tts
-    voice_type: ""
-  activation:                  # 语音激活（常开/静默/唤醒），详见 docs/VOICE-ACTIVATION.md
-    enabled: true
-    default_state: listening   # listening | sleeping；角色卡实现后以角色配置为准
-    persona_name: 千问          # 唤醒词 = 唤醒前缀 + 角色名（如「你好，千问」），可自定义
-    wake_prefixes: ["你好", "嗨"]
-    sleep_phrases: ["暂时静默", "先静默", "先别说话", "别说话", "安静一下", "静默"]
-  interruption:
-    enabled: true
-    auto_barge_in: false       # V1 用按钮打断，后续升级自动抢话
-
-# ── LLM ─────────────────────────────────────────────────────
-llm:
-  provider: auto
-  fallback_provider: openai
-  model: qwen-plus
-  temperature: 0.7
-  max_tokens: 512
-  system_prompt_path: "config/system_prompt.md"
-  stream: true
-  timeout_seconds: 60
-
-# ── 记忆 ─────────────────────────────────────────────────────
-memory:
-  storage: sqlite
-  db_path: "./data/memory/chat_history.db"
-  embedding:  # 预留：语义检索未启用，当前无代码消费
-    model: "sentence-transformers/all-MiniLM-L6-v2"
-    dimension: 384
-  retention:
-    days: 90
-    max_messages: 10000
-  summary:
-    enabled: true
-    every_n_messages: 10    # 每 N 条消息生成一次摘要
-    model: "qwen-plus"
-
-# ── 主动感知 ─────────────────────────────────────────────────
+  description: 本地优先的桌面 AI 精灵
+  name: DeskMate
+  version: 0.1.0
 awareness:
+  active_window:
+    enabled: true
+    prompt_on_change: false
   screen_capture:
     enabled: false
     interval_seconds: 30
-    privacy_mode: true      # 不存储截图，仅分析内容
-  active_window:
+    privacy_mode: true
+llm:
+  fallback_provider: openai
+  max_tokens: 512
+  model: qwen-plus
+  provider: auto
+  stream: true
+  system_prompt_path: config/system_prompt.md
+  temperature: 0.7
+  timeout_seconds: 60
+memory:
+  db_path: ./data/memory/chat_history.db
+  embedding:
+    dimension: 384
+    model: sentence-transformers/all-MiniLM-L6-v2
+  retention:
+    days: 90
+    max_messages: 10000
+  storage: sqlite
+  summary:
     enabled: true
-    prompt_on_change: false  # 切换应用时是否提示
-
-# ── 本地 AI 服务（Step 1 基线）────────────────────────────
+    every_n_messages: 10
+    model: qwen-plus
+proactive:
+  enabled: true
+  sedentary_minutes: 40
+  long_work_minutes: 90
+  cooldown_minutes: 30
 service:
-  host: "127.0.0.1"
-  port: 8736
   cors_origins:
-    - "http://localhost:5173"
-    - "http://localhost:1420"
-    - "tauri://localhost"
+  - http://localhost:5173
+  - http://localhost:1420
+  - tauri://localhost
+  host: 127.0.0.1
+  port: 8736
+ui:
+  always_on_top: true
+  animations:
+    idle_breathe: true
+    listen_pulse: true
+    speak_wave: true
+    thinking_spin: true
+  mode: floating_spring
+  opacity: 0.95
+  position: center
+  size:
+    height: 120
+    width: 120
+  theme: material_blue
+voice:
+  activation:
+    default_state: listening
+    enabled: true
+    persona_name: 千问
+    sleep_phrases:
+    - 暂时静默
+    - 先静默
+    - 先别说话
+    - 别说话
+    - 安静一下
+    - 静默
+    wake_prefixes:
+    - 你好
+    - 嗨
+  auto_speak: true
+  dashscope:
+    api_key: ''
+  enabled: true
+  interruption:
+    auto_barge_in: false
+    enabled: true
+  minimax:
+    api_key: ''
+  params:
+    emotion: null
+    instruction: null
+    pitch: 1.0
+    speed: 1.05
+    volume: 1.0
+  stt:
+    language: zh
+    model: paraformer-realtime-v2
+    provider: dashscope
+    sample_rate: 16000
+  tts:
+    format: mp3
+    model: speech-01-turbo
+    provider: minimax
+    sample_rate: 32000
+    voice: xiaoming
+  volcengine:
+    app_id: ''
+    cluster: volcano_tts
+    token: ''
+    voice_type: ''

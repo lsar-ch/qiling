@@ -39,6 +39,12 @@ async def publish_event(request: Request, body: EventPublishRequest) -> dict:
         task_id=body.task_id,
     )
     await request.app.state.event_hub.publish(envelope)
+    if body.event_type == "widget.activity":
+        try:
+            idle_seconds = float(body.payload.get("idle_seconds") or 0)
+        except (TypeError, ValueError):
+            idle_seconds = 0.0
+        request.app.state.wellness.ingest_activity(idle_seconds)
     current = request.app.state.widget_state.current()
     return {
         "event": envelope.to_ws_dict(),

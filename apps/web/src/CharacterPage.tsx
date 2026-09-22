@@ -12,6 +12,7 @@ import {
   updatePersona,
   updateSettings,
   uploadPersonaAvatar,
+  importPersona3d,
   type AppSettings,
   type AgentRun,
   type ModelProfile,
@@ -175,6 +176,7 @@ export default function CharacterPage() {
   const [deleting, setDeleting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [importing3d, setImporting3d] = useState(false);
   const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
   const [voiceProvider, setVoiceProvider] = useState("");
   const [voiceOptionsReason, setVoiceOptionsReason] = useState<string | null>(null);
@@ -270,6 +272,26 @@ export default function CharacterPage() {
     patch((current) => ({
       ...current,
       preset: value === "" ? null : (value as PersonaCard["preset"]),
+    }));
+  };
+
+  const setProfileText = (
+    key: "identity" | "personality" | "speech" | "relationship" | "preferences" | "boundaries",
+    value: string,
+  ): void => {
+    patch((current) => ({
+      ...current,
+      profile: { ...(current.profile ?? {}), [key]: value },
+    }));
+  };
+
+  const setProfileList = (
+    key: "catchphrases" | "flaws" | "likes" | "dislikes",
+    value: string,
+  ): void => {
+    patch((current) => ({
+      ...current,
+      profile: { ...(current.profile ?? {}), [key]: splitList(value) },
     }));
   };
 
@@ -415,6 +437,30 @@ export default function CharacterPage() {
       setError(e instanceof Error ? e.message : "形象上传失败");
     } finally {
       setUploadingAvatar(false);
+    }
+  };
+
+  const import3dPack = async (file: File): Promise<void> => {
+    if (!draft) return;
+    setImporting3d(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await importPersona3d(draft.id, file);
+      const list = await fetchPersonas();
+      setPersonas(list);
+      const fresh = list.find((item) => item.id === draft.id);
+      if (fresh) {
+        setDraft(fresh);
+        setDirty(false);
+      }
+      setNotice(
+        `3D 资产包已应用：model.vrm + ${result.vrma.length} 个动作${result.avatar ? " + 占位图" : ""}；若该角色正在启用，挂件已即时切换。`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "3D 资产包导入失败");
+    } finally {
+      setImporting3d(false);
     }
   };
 
@@ -611,6 +657,72 @@ export default function CharacterPage() {
                 </p>
               </CardSection>
 
+              <CardSection title="六段式档案" badge="提示词">
+                <p className="text-xs text-muted leading-relaxed break-words">
+                  这些字段会展开为角色系统提示词；非空字段覆盖预设底座，空字段自动跳过。口头禅、缺点、喜好/不喜用顿号分隔。
+                </p>
+                <TextArea
+                  label="身份"
+                  value={draft.profile?.identity ?? ""}
+                  onChange={(value) => setProfileText("identity", value)}
+                  placeholder="住在用户桌面上的 AI 工作伙伴"
+                />
+                <TextArea
+                  label="性格"
+                  value={draft.profile?.personality ?? ""}
+                  onChange={(value) => setProfileText("personality", value)}
+                  placeholder="自然、可靠、略带幽默；可含 MBTI"
+                />
+                <Field
+                  label="口头禅"
+                  value={(draft.profile?.catchphrases ?? []).join("、")}
+                  onChange={(value) => setProfileList("catchphrases", value)}
+                  placeholder="收到、马上就好"
+                />
+                <Field
+                  label="缺点"
+                  value={(draft.profile?.flaws ?? []).join("、")}
+                  onChange={(value) => setProfileList("flaws", value)}
+                  placeholder="偶尔较真、容易话多"
+                />
+                <TextArea
+                  label="说话风格"
+                  value={draft.profile?.speech ?? ""}
+                  onChange={(value) => setProfileText("speech", value)}
+                  placeholder="短句、口语化、适合朗读"
+                />
+                <TextArea
+                  label="与用户的关系"
+                  value={draft.profile?.relationship ?? ""}
+                  onChange={(value) => setProfileText("relationship", value)}
+                  placeholder="并肩推进项目的长期搭档"
+                />
+                <TextArea
+                  label="偏好"
+                  value={draft.profile?.preferences ?? ""}
+                  onChange={(value) => setProfileText("preferences", value)}
+                  placeholder="先执行后汇报、清晰的任务边界"
+                />
+                <Field
+                  label="喜好"
+                  value={(draft.profile?.likes ?? []).join("、")}
+                  onChange={(value) => setProfileList("likes", value)}
+                  placeholder="代码整洁、文档清晰"
+                />
+                <Field
+                  label="不喜"
+                  value={(draft.profile?.dislikes ?? []).join("、")}
+                  onChange={(value) => setProfileList("dislikes", value)}
+                  placeholder="啰嗦、重复确认"
+                />
+                <TextArea
+                  label="边界"
+                  value={draft.profile?.boundaries ?? ""}
+                  onChange={(value) => setProfileText("boundaries", value)}
+                  placeholder="不编造记忆、敏感操作先确认"
+                />
+              </CardSection>
+
               <CardSection title="模型绑定" badge="可跟随全局">
                 <p className="text-xs text-muted leading-relaxed break-words">
                   只绑定模型档案，不在角色卡中保存 API Key。未指定时使用设置页对应分类的默认模型。
@@ -660,6 +772,23 @@ export default function CharacterPage() {
                     </label>
                     <p className="text-[11px] text-muted leading-relaxed break-words">
                       支持 PNG、JPG、WebP，短边至少 512px、长边不超过 4096px，最大 15 MB。透明图会直接裁切；普通图需要背景颜色单一，系统会自动去背景并对齐到固定画布。
+                    </p>
+                    <label className="inline-flex items-center justify-center rounded-lg px-3 py-2 border border-line text-xs font-medium text-ink hover:border-brand hover:text-brand transition-colors cursor-pointer w-fit">
+                      {importing3d ? "导入中…" : "导入 3D 资产包（.zip）"}
+                      <input
+                        className="sr-only"
+                        type="file"
+                        accept=".zip,application/zip,application/x-zip-compressed"
+                        disabled={importing3d}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.currentTarget.value = "";
+                          if (file) void import3dPack(file);
+                        }}
+                      />
+                    </label>
+                    <p className="text-[11px] text-muted leading-relaxed break-words">
+                      zip 内放 model.vrm（必需）、vrma/ 下按动作名命名的 .vrma（可选：idle、thinking、speaking、success 等 11 个）、avatar.png（可选，加载期占位图）。导入即整体替换并写入角色卡，无需再点保存。
                     </p>
                   </div>
                 </div>

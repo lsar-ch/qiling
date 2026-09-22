@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
+from deskmate_contracts.character import ArtStyle, MotionFamily
+
 from pydantic import BaseModel, Field
 
 WidgetState = Literal[
@@ -18,7 +20,7 @@ WidgetState = Literal[
     "completed",          # 完成（可带 message）
     "interrupted",        # 被打断
 ]
-PersonaStyle = Literal["human", "animal"]
+PersonaStyle = MotionFamily
 
 _STATE_LABELS_ZH: dict[str, str] = {
     "idle": "空闲",
@@ -58,6 +60,9 @@ ExpressionEmotion = Literal[
     "confused",   # 需要确认
     "success",    # 任务成功/对话完成
     "error",      # 任务失败/错误
+    "happy",      # 社交：开心/兴奋（仅 companion/casual）
+    "sad",        # 社交：难过/失落（仅 companion/casual）
+    "surprised",  # 社交：惊讶（仅 companion/casual）
 ]
 
 BubbleStyle = Literal["info", "success", "warning", "error"]
@@ -101,6 +106,8 @@ class PersonaPresentation(BaseModel):
     persona_id: str = Field(min_length=1, max_length=64)
     persona_name: str = Field(min_length=1, max_length=40)
     style: PersonaStyle = "human"
+    motion_family: PersonaStyle = "human"
+    art_style: ArtStyle | None = None
 
     theme: dict[str, str] = Field(
         default_factory=lambda: {

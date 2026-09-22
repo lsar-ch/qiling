@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+import io
+import zipfile
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any, Literal
 
 import yaml
@@ -54,6 +57,10 @@ class PersonaProfile(BaseModel):
     relationship: str = ""    # 与用户的关系设定
     preferences: str = ""     # 喜好与工作偏好
     boundaries: str = ""      # 边界与禁忌
+    catchphrases: list[str] = Field(default_factory=list)  # 口头禅
+    flaws: list[str] = Field(default_factory=list)         # 缺点/反差
+    likes: list[str] = Field(default_factory=list)         # 喜好清单
+    dislikes: list[str] = Field(default_factory=list)      # 不喜清单
 
     model_config = {"extra": "forbid"}
 
@@ -73,6 +80,8 @@ class PersonaPayload(BaseModel):
     llm: dict[str, Any] = Field(default_factory=dict)
     profile: PersonaProfile | None = None  # 六段式档案（Step 9.5 P1；可选，旧角色卡兼容）
     preset: Literal["work", "companion", "service"] | None = None  # 预设底座；为空时只使用自定义档案
+    motion_family: Literal["human", "animal", "anime"] | None = None  # 动作族：human | animal | anime
+    art_style: Literal["realistic", "anime", "chibi", "pixel"] | None = None  # 画风，动作选择不依赖
 
 
 class SettingsUpdate(BaseModel):
@@ -153,6 +162,19 @@ def _avatar_path(request: Request, persona_id: str) -> Path | None:
         if path.is_file():
             return path
     return None
+
+
+def _resolve_persona_asset(directory: Path, file_path: str) -> Path | None:
+    """把角色资产目录内的相对路径解析成真实文件，拒绝越权读取。"""
+    raw = file_path.replace("\\", "/").strip("/")
+    if not raw or ".." in raw.split("/"):
+        return None
+    target = (directory / raw).resolve()
+    try:
+        target.relative_to(directory.resolve())
+    except ValueError:
+        return None
+    return target if target.is_file() else None
 
 
 def _normalize_avatar(body: bytes, expected_format: str) -> NormalizedAvatar:
@@ -478,6 +500,16 @@ def get_persona_asset_manifest(persona_id: str, request: Request) -> dict[str, A
     return manifest
 
 
+@router.get("/personas/{persona_id}/asset/{file_path:path}")
+def get_persona_asset_file(persona_id: str, file_path: str, request: Request) -> Response:
+    """角色资产目录内的文件（layers.json / layers/*.png 等），禁止路径穿越。"""
+    directory = _persona_asset_dir(request, persona_id)
+    target = _resolve_persona_asset(directory, file_path)
+    if target is None:
+        raise HTTPException(status_code=404, detail="角色资产不存在")
+    return FileResponse(target)
+
+
 @router.put("/personas/{persona_id}/avatar")
 async def upload_persona_avatar(persona_id: str, request: Request) -> dict[str, Any]:
     persona_path = _persona_dir(request) / f"{persona_id}.yaml"
@@ -545,6 +577,89 @@ async def upload_persona_avatar(persona_id: str, request: Request) -> dict[str, 
         "height": output_height,
         "background_removed": normalized.background_removed,
         "processing": normalized.processing,
+    }
+
+
+# 3D 资产包导入：zip 内 model.vrm 必需，vrma/<trigger>.vrma 与 avatar 图片可选
+_VRM_TRIGGERS = {
+    "idle", "listening", "thinking", "speaking", "executing",
+    "awaiting_approval", "success", "error", "click", "project", "hover",
+}
+_IMPORT3D_MAX_BYTES = 300 * 1024 * 1024
+
+
+@router.post("/personas/{persona_id}/import3d")
+async def import_persona_3d(persona_id: str, request: Request) -> dict[str, Any]:
+    """导入 3D 资产包（zip）：解压校验后落盘并广播，挂件即时切换。"""
+    persona_path = _persona_dir(request) / f"{persona_id}.yaml"
+    if not _PERSONA_ID.fullmatch(persona_id) or not persona_path.is_file():
+        raise HTTPException(status_code=404, detail="角色卡不存在")
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(status_code=400, detail="缺少 file 字段（zip 包）")
+    data = await upload.read()
+    if len(data) > _IMPORT3D_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="资产包超过 300MB 上限")
+
+    model_bytes: bytes | None = None
+    vrma_files: dict[str, bytes] = {}
+    avatar_bytes: bytes | None = None
+    avatar_suffix = ".png"
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                name = PurePosixPath(info.filename)
+                if any(part in ("..", "/", "") for part in name.parts):
+                    raise HTTPException(status_code=400, detail=f"zip 内含非法路径: {info.name}")
+                stem, suffix = name.stem.lower(), name.suffix.lower()
+                if suffix == ".vrm":
+                    if model_bytes is not None:
+                        raise HTTPException(status_code=400, detail="zip 内只允许一个 .vrm 模型")
+                    model_bytes = zf.read(info)
+                elif suffix == ".vrma" and stem in _VRM_TRIGGERS:
+                    vrma_files[stem] = zf.read(info)
+                elif suffix in (".png", ".jpg", ".jpeg", ".webp") and stem.startswith("avatar"):
+                    if avatar_bytes is None:
+                        avatar_bytes = zf.read(info)
+                        avatar_suffix = ".png" if suffix == ".png" else suffix
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="不是有效的 zip 包") from exc
+    if model_bytes is None:
+        raise HTTPException(status_code=400, detail="zip 内未找到 model.vrm")
+
+    directory = _persona_asset_dir(request, persona_id)
+    (directory / "model.vrm").write_bytes(model_bytes)
+    vrma_dir = directory / "vrma"
+    vrma_dir.mkdir(parents=True, exist_ok=True)
+    for old in vrma_dir.glob("*.vrma"):
+        old.unlink()  # 导入为整体替换语义，避免残留旧动作
+    for stem, body in vrma_files.items():
+        (vrma_dir / f"{stem}.vrma").write_bytes(body)
+    avatar_url: str | None = None
+    if avatar_bytes is not None:
+        (directory / f"avatar{avatar_suffix}").write_bytes(avatar_bytes)
+        avatar_url = f"/api/personas/{persona_id}/avatar"
+
+    raw = yaml.safe_load(persona_path.read_text(encoding="utf-8")) or {}
+    raw["vrm"] = "model.vrm"
+    raw["avatar_driver"] = "vrm_3d"
+    if avatar_url:
+        raw["avatar"] = avatar_url
+    persona_path.write_text(
+        yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    await request.app.state.presentation_bridge.broadcast(
+        persona_id, request.app.state.event_hub
+    )
+    return {
+        "persona_id": persona_id,
+        "vrm": "model.vrm",
+        "vrma": sorted(vrma_files),
+        "avatar": avatar_url,
     }
 
 

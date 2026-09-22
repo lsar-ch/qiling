@@ -10,6 +10,7 @@ from deskmate_contracts.widget import ExpressionEmotion
 from app.core.emotion_resolver import (
     EMOTION_VISUAL_HINTS,
     canonical_emotions,
+    infer_emotion,
     resolve_emotion,
 )
 
@@ -19,24 +20,24 @@ from app.core.emotion_resolver import (
     [
         # 英文别名与大小写/空白容错
         ("neutral", "neutral"),
-        ("JOY", "success"),
-        (" joy ", "success"),
-        ("happy", "success"),
+        ("JOY", "happy"),
+        (" joy ", "happy"),
+        ("happy", "happy"),
         ("completed", "success"),
         ("done", "success"),
         ("failed", "error"),
-        ("sad", "error"),
-        ("shock", "confused"),
-        ("surprised", "confused"),
+        ("sad", "sad"),
+        ("shock", "surprised"),
+        ("surprised", "surprised"),
         ("awaiting approval", "confused"),
         ("thinking", "thinking"),
         ("listening", "attentive"),
         ("unknown_tag", "neutral"),
         # 中文别名
-        ("开心", "success"),
+        ("开心", "happy"),
         ("完成", "success"),
         ("失败", "error"),
-        ("难过", "error"),
+        ("难过", "sad"),
         ("需要确认", "confused"),
         ("思考", "thinking"),
         ("聆听", "attentive"),
@@ -57,3 +58,11 @@ def test_visual_hints_cover_all_canonical_emotions() -> None:
     for hints in EMOTION_VISUAL_HINTS.values():
         assert set(hints) == {"eyes", "mouth", "aura"}
         assert all(hints[part].strip() for part in ("eyes", "mouth", "aura"))
+
+
+def test_infer_emotion_only_in_casual_mode() -> None:
+    assert infer_emotion("太棒了，我这就帮你搞定！", casual=True) == "happy"
+    assert infer_emotion("我有点难过，这个问题没解决。", casual=True) == "sad"
+    assert infer_emotion("哇，这个结果居然这么快！", casual=True) == "surprised"
+    assert infer_emotion("任务已完成。", casual=True) == "neutral"
+    assert infer_emotion("太棒了", casual=False) == "neutral"

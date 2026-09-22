@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -8,9 +8,10 @@ import {
   connectEvents,
   eventToState,
   fetchActivePersonaAsset,
+  fetchPersonaAssetManifest,
   fetchVoiceStatus,
   acquireVoiceLease,
-  heartbeatVoiceLease,
+  personaAssetUrl,
   releaseVoiceLease,
   recognizeSpeech,
   SERVICE_BASE,
@@ -18,7 +19,11 @@ import {
   synthesizeSpeechStream,
   type ExpressionEmotion,
   type ExpressionEvent,
+  type InteractionKind,
+  type MotionFamily,
   type PersonaAssetMetrics,
+  type PersonaLayer,
+  type PersonaSpriteSheet,
   type PersonaPresentation,
   type VoiceEndpointStatus,
   type WsMessage,
@@ -30,6 +35,17 @@ import {
   type AlwaysListenSegment,
 } from "../voiceCapture";
 import defaultMascotArt from "../assets/personas/default/main.png";
+import { lipSyncBus } from "../widget/lipSync";
+import {
+  pickAction,
+  triggerFor,
+  type ActionSelection,
+  type ActionTrigger,
+} from "../widget/actions";
+
+// three 依赖较重（~600KB），仅 VRM persona 才动态加载
+const VrmStage = lazy(() => import("../widget/VrmStage"));
+
 import "./widget.css";
 
 const STATE_LABEL: Record<string, string> = {
@@ -43,6 +59,8 @@ const STATE_LABEL: Record<string, string> = {
   interrupted: "已打断",
 };
 
+const ERROR_STATES = new Set<WidgetState>(["interrupted"]);
+
 type VoiceMode = "off" | "starting" | "listening" | "sleeping";
 
 // 一次性情绪动画的停留时长：动画播完由前端回落 neutral。
@@ -51,6 +69,9 @@ const EMOTION_HOLD_MS: Partial<Record<ExpressionEmotion, number>> = {
   attentive: 1100,
   success: 1900,
   error: 1400,
+  happy: 1900,
+  sad: 1700,
+  surprised: 1200,
 };
 
 type WidgetPreferences = {
@@ -104,6 +125,12 @@ const WIDGET_HIDE_HANDLE_RATIO = 0.34;
 const WIDGET_INTERACTIVE_PADDING = 16;
 // 同一轮对话里 submitText 与 conversation.completed 都会要求展开主界面，去重窗口。
 const MAIN_UI_AUTO_DEDUPE_MS = 2000;
+// 交互模式调整空闲动作节奏：casual 更活跃、work 更克制、project 居中。
+const INTERACTION_RHYTHM: Record<InteractionKind, number> = {
+  work: 1.2,
+  casual: 0.8,
+  project: 1.0,
+};
 
 function applyPresentation(pres: PersonaPresentation): void {
   const root = document.querySelector<HTMLDivElement>(".w-root");
@@ -121,9 +148,89 @@ function resolveMascotUrl(url: string | undefined): string {
   return url;
 }
 
+function FramedLayer({
+  personaId,
+  layer,
+  trigger,
+  state,
+}: {
+  personaId: string;
+  layer: PersonaLayer;
+  trigger: ActionTrigger;
+  state: WidgetState;
+}) {
+  const [index, setIndex] = useState(0);
+  const frameSet = layer.frames?.[trigger] ?? layer.frames?.[state];
+  const fps = layer.frame_fps?.[trigger] ?? layer.frame_fps?.[state] ?? 8;
+  useEffect(() => {
+    if (!frameSet || frameSet.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % frameSet.length);
+    }, Math.max(50, Math.round(1000 / fps)));
+    return () => window.clearInterval(timer);
+  }, [frameSet, fps]);
+  return (
+    <img
+      className={`mascot-layer ${layer.role ? `role-${layer.role}` : "role-static"}`}
+      src={personaAssetUrl(personaId, frameSet?.[index] ?? layer.file)}
+      alt=""
+      draggable={false}
+      style={{ zIndex: layer.z }}
+    />
+  );
+}
+
+function SpriteSheetStage({
+  personaId,
+  sheet,
+}: {
+  personaId: string;
+  sheet: PersonaSpriteSheet;
+}) {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setFrame((current) => (current + 1) % sheet.frames);
+    }, Math.max(50, Math.round(1000 / sheet.fps)));
+    return () => window.clearInterval(timer);
+  }, [sheet.file, sheet.frames, sheet.fps]);
+  const aspect = sheet.frame_height > 0 ? sheet.frame_width / sheet.frame_height : 1;
+  return (
+    <div
+      className="mascot-sprite"
+      style={{
+        width: `calc(var(--mascot-size) * ${aspect})`,
+        height: "var(--mascot-size)",
+      }}
+    >
+      <img
+        src={personaAssetUrl(personaId, sheet.file)}
+        alt=""
+        draggable={false}
+        style={{
+          display: "block",
+          height: "100%",
+          width: "auto",
+          maxWidth: "none",
+          transform: `translateX(-${(frame / sheet.frames) * 100}%)`,
+        }}
+      />
+    </div>
+  );
+}
+
 export default function Widget() {
   const [state, setState] = useState<WidgetState>("idle");
   const [emotion, setEmotion] = useState<ExpressionEmotion>("neutral");
+  const [action, setAction] = useState<ActionSelection | null>(null);
+  const [motionFamily, setMotionFamily] = useState<MotionFamily>("human");
+  const [idleActionIntervalMs, setIdleActionIntervalMs] = useState(8000);
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const [interactionKind, setInteractionKind] = useState<InteractionKind>("casual");
+  const [layers, setLayers] = useState<PersonaLayer[] | null>(null);
+  const [spritesheets, setSpritesheets] = useState<PersonaSpriteSheet[]>([]);
+  const [layersPersonaId, setLayersPersonaId] = useState<string | null>(null);
+  const [vrmReady, setVrmReady] = useState(false);
   const [presentation, setPresentation] = useState<PersonaPresentation | null>(null);
   const [mascotArt, setMascotArt] = useState(defaultMascotArt);
   const [bubble, setBubble] = useState("");
@@ -155,6 +262,13 @@ export default function Widget() {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playedActionsRef = useRef<Record<string, number>>({});
+  const actionActiveRef = useRef(false);
+  const actionLowRef = useRef(false);
+  const motionFamilyRef = useRef<MotionFamily>("human");
+  const projectRef = useRef<string | null>(null);
+  const layersLoadedRef = useRef<string | null>(null);
   const resizeRafRef = useRef<number | null>(null);
   const persistentHintRef = useRef("");
   const conversationIdRef = useRef<string | null>(null);
@@ -187,6 +301,7 @@ export default function Widget() {
   const mascotRef = useRef<HTMLImageElement | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement | null>(null);
   const mainUiOpenedAtRef = useRef(0);
+  const leaseOwnerEventRef = useRef<(owner: string | null) => void>(() => {});
   // 供 window.resize 监听拿到最新一版同步函数（闭包里要用最新的 assetMetrics）。
   const syncOverlayRef = useRef<() => void>(() => {});
 
@@ -222,6 +337,83 @@ export default function Widget() {
       if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
     };
   }, [bubble, inputOpen]);
+
+  useEffect(() => {
+    motionFamilyRef.current = motionFamily;
+  }, [motionFamily]);
+
+  // Step C: 统一动作播放；低优先级（idle/hover/click）不打断状态动作
+  const playTrigger = useCallback((trigger: ActionTrigger): void => {
+    const now = Date.now();
+    const low = trigger === "idle" || trigger === "hover" || trigger === "click";
+    if (actionActiveRef.current) {
+      if (low && !actionLowRef.current) return;
+      if (trigger === "idle") return;
+    }
+    const selection = pickAction(
+      motionFamilyRef.current,
+      trigger,
+      playedActionsRef.current,
+      now,
+    );
+    if (!selection) return;
+    playedActionsRef.current[selection.id] = now;
+    actionActiveRef.current = true;
+    actionLowRef.current = low;
+    setAction(selection);
+    if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
+    actionTimerRef.current = setTimeout(() => {
+      actionActiveRef.current = false;
+      actionLowRef.current = false;
+      setAction((current) => (current?.id === selection.id ? null : current));
+    }, selection.durationMs);
+  }, []);
+
+  // 分层资产：每个 persona 只加载一次，失败或缺失时回退单图
+  const loadLayersFor = useCallback((personaId: string): void => {
+    if (!personaId || layersLoadedRef.current === personaId) return;
+    layersLoadedRef.current = personaId;
+    setLayers(null);
+    setSpritesheets([]);
+    setLayersPersonaId(personaId);
+    void fetchPersonaAssetManifest(personaId)
+      .then((manifest) => {
+        setLayers(manifest.layers);
+        setSpritesheets(manifest.spritesheets);
+      })
+      .catch(() => {
+        setLayers(null);
+        setSpritesheets([]);
+      });
+  }, []);
+
+  // 状态/情绪变化触发动作
+  useEffect(() => {
+    playTrigger(triggerFor(state, emotion));
+  }, [emotion, motionFamily, playTrigger, state]);
+
+  // 空闲调度器：只在 idle 且无动作时播放，间隔按 presentation 配置加随机抖动
+  useEffect(() => {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = (): void => {
+      if (!disposed && state === "idle" && !actionActiveRef.current && !document.hidden) {
+        playTrigger("idle");
+      }
+      timer = setTimeout(
+        tick,
+        idleActionIntervalMs * INTERACTION_RHYTHM[interactionKind] * (0.8 + Math.random() * 0.4),
+      );
+    };
+    timer = setTimeout(
+      tick,
+      idleActionIntervalMs * INTERACTION_RHYTHM[interactionKind] * (0.8 + Math.random() * 0.4),
+    );
+    return () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [idleActionIntervalMs, interactionKind, playTrigger, state]);
 
   const showBrief = (text: string, ms = bubbleDuration(text)): void => {
     if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
@@ -329,16 +521,25 @@ export default function Widget() {
     setSpeaking(false);
   };
 
+  const handleVrmReady = useCallback(() => setVrmReady(true), []);
+
   /** 播放单个音频 Blob；返回 Promise 在当前块播放结束后 resolve。barge-in 由 playbackRef 停止。 */
   const _playAudioBlob = async (ctx: AudioContext, blob: Blob): Promise<void> => {
     const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(ctx.destination);
+    // 口型同步取数点：source → analyser → destination（对 2D 路径无副作用）
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0;
+    source.connect(analyser);
+    analyser.connect(ctx.destination);
+    lipSyncBus.analyser = analyser;
     playbackRef.current = source;
     return new Promise<void>((resolve) => {
       source.onended = () => {
         if (playbackRef.current === source) playbackRef.current = null;
+        if (lipSyncBus.analyser === analyser) lipSyncBus.analyser = null;
         resolve();
       };
       source.start();
@@ -346,9 +547,12 @@ export default function Widget() {
   };
 
   /** 任务事件短播报：2s 内多条合并成一句，不占语音租约、不打断正在朗读的回复。 */
-  const playTts = (text: string): void => {
+  const playTts = (text: string, emotion?: ExpressionEmotion): void => {
     if (!voiceStatusRef.current?.auto_speak) return;
     announceQueueRef.current.push(text);
+    if (emotion && emotion !== "neutral") {
+      applyEmotion(emotion);
+    }
     if (announceTimerRef.current) window.clearTimeout(announceTimerRef.current);
     announceTimerRef.current = window.setTimeout(() => void flushAnnouncements(), 2000);
   };
@@ -370,7 +574,7 @@ export default function Widget() {
     }
   };
 
-  const playTtsOnce = async (text: string): Promise<void> => {
+  const playTtsOnce = async (text: string, emotion?: ExpressionEmotion): Promise<void> => {
     const ctx = await ensureAudioContext();
     if (!ctx) return;
     const abort = new AbortController();
@@ -378,7 +582,7 @@ export default function Widget() {
     const startedAt = performance.now();
     let firstChunk = true;
     try {
-      const stream = await synthesizeSpeechStream(text, "widget", abort.signal);
+      const stream = await synthesizeSpeechStream(text, "widget", abort.signal, emotion);
       for await (const chunk of stream) {
         if (abort.signal.aborted) break;
         if (firstChunk) {
@@ -413,9 +617,9 @@ export default function Widget() {
     }
   };
 
-  const speak = async (text: string): Promise<void> => {
+  const speak = async (text: string, emotion?: ExpressionEmotion): Promise<void> => {
     const voice = voiceStatusRef.current;
-    if (!voiceLeaseOwned || !voice?.enabled || !voice.tts.available || speakingRef.current) return;
+    if (!voice?.enabled || !voice.tts.available || speakingRef.current) return;
     const ctx = await ensureAudioContext();
     if (!ctx) return;
 
@@ -435,6 +639,7 @@ export default function Widget() {
         text.length > 1900 ? `${text.slice(0, 1900)}…` : text,
         "widget",
         abort.signal,
+        emotion,
       );
       for await (const chunk of stream) {
         if (!speakingRef.current) break;
@@ -475,9 +680,10 @@ export default function Widget() {
       // 长回复只把摘要放进气泡并朗读，全文交给对话页。早先这里跳过气泡，
       // 挂件会一直停在「正在思考…」并且一句话都不播报。
       showBrief(done.short ? done.message || done.speak_text : done.speak_text || done.message);
-      if (speakReply && voiceStatusRef.current?.enabled && voiceStatusRef.current.auto_speak && voiceModeRef.current !== "off") {
+      if (done.emotion && done.emotion !== "neutral") applyEmotion(done.emotion);
+      if (speakReply && voiceStatusRef.current?.enabled && voiceStatusRef.current.auto_speak) {
         stopSpeaking();
-        void speak(done.speak_text || done.message);
+        void speak(done.speak_text || done.message, done.emotion);
       }
       if (!done.short) {
         // 长回复直接落到对话页，用户不用再手点一次
@@ -508,6 +714,13 @@ export default function Widget() {
     if (listener) listener.stop();
     playbackRef.current?.stop();
     playbackRef.current = null;
+  };
+
+  /** 只关麦克风（owner 被主页抢走时）：不打断正在播放的播报。 */
+  const stopMicOnly = (): void => {
+    const listener = alwaysRef.current;
+    alwaysRef.current = null;
+    if (listener) listener.stop();
   };
 
   const disableAlwaysListen = (): void => {
@@ -580,8 +793,11 @@ export default function Widget() {
     try {
       const r = await recognizeSpeech(segment.wav, "widget");
       text = (r.text || "").trim();
-    } catch {
-      // 监听/静默态由状态动画提示即可；背景噪音产生的无效音频不弹气泡。
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "语音识别失败";
+      if (!message.includes("未识别到有效语音内容")) {
+        showBrief(`语音识别失败：${message}`, 5000);
+      }
       return;
     }
     if (!text) return;
@@ -628,7 +844,9 @@ export default function Widget() {
       .then((asset) => {
         if (!alive) return;
         setMascotArt(resolveMascotUrl(asset.avatar));
-        setPresentation((current) => current ? { ...current, style: asset.style } : current);
+        setPresentation((current) => current ? { ...current, style: asset.style, motion_family: asset.motion_family ?? asset.style } : current);
+        setMotionFamily(asset.motion_family ?? asset.style);
+        loadLayersFor(asset.personaId);
         setAssetMetrics({
           personaId: asset.personaId,
           canvasWidth: asset.canvasWidth,
@@ -643,6 +861,11 @@ export default function Widget() {
 
     const onMsg = (msg: WsMessage) => {
       if (!alive) return;
+      if (msg.event_type === "voice.lease.changed") {
+        const owner = (msg.payload?.owner as string | null | undefined) ?? null;
+        leaseOwnerEventRef.current(owner);
+        return;
+      }
       if (msg.event_type === "system.health") {
         const wsState = msg.payload?.widget_state as
           | { state?: string; message?: string | null }
@@ -655,12 +878,63 @@ export default function Widget() {
         return;
       }
 
+      // 主动提醒：久坐/长工作/备忘录/任务，不进状态机，只气泡+语音
+      if (msg.event_type === "reminder.triggered") {
+        const bubble = typeof msg.payload?.bubble === "string" ? msg.payload.bubble : "";
+        const speakText = typeof msg.payload?.speak_text === "string" ? msg.payload.speak_text : bubble;
+        if (bubble) {
+          showBrief(bubble, 8000);
+          void playTts(speakText || bubble, "attentive");
+        }
+        return;
+      }
+
+      // T3 主动监督：阻塞/里程碑/无进展提醒，不进状态机，只气泡+语音
+      if (
+        msg.event_type === "project.blocked" ||
+        msg.event_type === "project.milestone" ||
+        msg.event_type === "task.stale"
+      ) {
+        const text = typeof msg.payload?.bubble === "string" ? msg.payload.bubble : "";
+        if (text) {
+          showBrief(text, 6000);
+          void playTts(text);
+        }
+        return;
+      }
+
       const next = eventToState(msg.event_type);
       if (!next) {
+        // D 步：task.classified 带 interaction_kind 与 project，作为挂件项目上下文单通道
+        if (msg.event_type === "task.classified") {
+          const payload = msg.payload ?? {};
+          const rawKind = payload.interaction_kind;
+          if (rawKind === "work" || rawKind === "casual" || rawKind === "project") {
+            setInteractionKind(rawKind);
+          }
+          const projectPath =
+            typeof payload.project === "string" && payload.project ? payload.project : null;
+          const key = projectPath ?? "";
+          if (key === projectRef.current) return;
+          const previous = projectRef.current;
+          projectRef.current = key;
+          const name =
+            projectPath ? projectPath.split(/[\\/]/).filter(Boolean).pop() ?? null : null;
+          setProjectName(name);
+          if (previous !== null) {
+            playTrigger("project");
+            showBrief(name ? `已切换到项目：${name}` : "已回到普通对话", 3000);
+          }
+          return;
+        }
         // persona.presentation 事件：更新角色呈现
         if (msg.event_type === "persona.presentation" && msg.presentation) {
           setPresentation(msg.presentation);
           applyPresentation(msg.presentation);
+          setVrmReady(false);
+          setMotionFamily(msg.presentation.motion_family ?? msg.presentation.style);
+          setIdleActionIntervalMs(Math.max(2000, msg.presentation.animations?.idle_action_interval_ms ?? 8000));
+          loadLayersFor(msg.presentation.persona_id);
           setMascotArt(resolveMascotUrl(msg.presentation.asset?.avatar_url));
         }
         return;
@@ -784,6 +1058,33 @@ export default function Widget() {
     };
   }, []);
 
+  // 主动健康提醒：每 30s 上报系统空闲秒数，后端据此判断久坐/长时间工作。
+  useEffect(() => {
+    let alive = true;
+    const reportActivity = async (): Promise<void> => {
+      try {
+        const idle_seconds = await invoke<number>("system_idle_seconds");
+        await fetch(`${SERVICE_BASE}/api/events/publish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event_type: "widget.activity",
+            source: "widget",
+            payload: { idle_seconds },
+          }),
+        });
+      } catch {
+        /* 服务未连接或桌面端能力不可用时静默 */
+      }
+    };
+    const timer = window.setInterval(() => void reportActivity(), 30000);
+    void reportActivity();
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   useEffect(() => {
     const image = new Image();
     image.src = mascotArt;
@@ -791,37 +1092,52 @@ export default function Widget() {
 
   useEffect(() => {
     let alive = true;
-    const refreshLease = async (): Promise<void> => {
-      const [owned, voice] = await Promise.all([
-        acquireVoiceLease(),
-        fetchVoiceStatus().catch(() => null),
-      ]);
-      if (!alive) return;
-      if (voice && voice.auto_speak !== voiceStatusRef.current?.auto_speak) {
-        setVoiceStatus(voice);
+    let prevOwned = false;
+    const reclaim = async (attempts: number, delayMs: number): Promise<void> => {
+      // 主页释放与挂件收回同刻并发，短重试几次即时拿回，不干等轮询。
+      for (let attempt = 0; attempt < attempts && alive; attempt += 1) {
+        const owned = await acquireVoiceLease();
+        if (!alive) return;
+        if (owned) {
+          prevOwned = true;
+          setVoiceLeaseOwned(true);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
+    };
+    const refreshLease = async (): Promise<void> => {
+      const owned = await acquireVoiceLease();
+      if (!alive) return;
+      if (owned === prevOwned) return;
+      prevOwned = owned;
       setVoiceLeaseOwned(owned);
       if (!owned) {
-        stopVoiceResources();
+        stopMicOnly();
         setVoiceMode("off");
       }
     };
-    void refreshLease();
+    void reclaim(6, 250);
     const timer = setInterval(() => void refreshLease(), 4000);
-    // 主界面隐藏/显示时立刻重探租约，不必等下一轮轮询（自动 listening 由
-    // 下面的 voiceLeaseOwned effect 触发，这里只负责把租约状态提前拿到）
-    let disposed = false;
-    let unlisten: UnlistenFn | undefined;
-    void listen<boolean>("main-ui-visibility", () => void refreshLease()).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    });
+    // owner 变更广播：被抢立即关麦；主页释放后立即尝试收回。
+    leaseOwnerEventRef.current = (owner) => {
+      if (owner === "web") {
+        if (prevOwned) {
+          prevOwned = false;
+          setVoiceLeaseOwned(false);
+          stopMicOnly();
+          setVoiceMode("off");
+        }
+      } else {
+        // owner 为 widget（抢占成功）或 null（主页释放）：立即收回
+        void reclaim(6, 250);
+      }
+    };
     return () => {
       alive = false;
-      disposed = true;
-      unlisten?.();
       clearInterval(timer);
-      stopVoiceResources();
+      leaseOwnerEventRef.current = () => {};
+      stopMicOnly();
       void releaseVoiceLease();
     };
   }, []);
@@ -829,11 +1145,17 @@ export default function Widget() {
   useEffect(() => {
     if (!voiceLeaseOwned) {
       autoVoiceRef.current = false;
-      stopVoiceResources();
+      stopMicOnly();
       setVoiceMode("off");
       return;
     }
-    if (!voiceStatus?.enabled || voiceStatus.activation?.enabled === false) return;
+    if (!voiceStatus?.enabled || voiceStatus.activation?.enabled === false) {
+      autoVoiceRef.current = false;
+      stopMicOnly();
+      setVoiceMode("off");
+      setState((current) => (current === "listening" ? "idle" : current));
+      return;
+    }
     if (autoVoiceRef.current) return;
     autoVoiceRef.current = true;
     const mode = voiceStatus.activation?.default_state === "sleeping" ? "sleeping" : "listening";
@@ -895,6 +1217,7 @@ export default function Widget() {
       draggingRef.current = true;
       dragStartRef.current = null;
       setCtxMenu(null);
+      playTrigger("hover");
       void invoke("start_widget_drag")
         .then(() => {
           dragFallbackTimerRef.current = window.setTimeout(() => {
@@ -1230,13 +1553,26 @@ export default function Widget() {
         : "语音未开启：点击开启"
     : "语音未配置";
 
+  const vrmPath = presentation?.asset?.vrm_path;
+  const vrmPersonaId = presentation?.persona_id;
+  const activeTrigger = triggerFor(state, emotion);
+  const activeSpriteSheet =
+    spritesheets.find((sheet) => sheet.state_name === activeTrigger) ??
+    spritesheets.find((sheet) => sheet.state_name === state) ??
+    null;
+
   return (
     <div
       className="w-root"
       data-state={state}
       data-emotion={emotion}
-      data-persona-style={presentation?.style ?? "human"}
-        data-alert={alert ? "1" : "0"}
+      data-vrm={vrmPath ? "1" : "0"}
+      data-persona-style={presentation?.style ?? motionFamily}
+      data-motion-family={motionFamily}
+      data-interaction={interactionKind}
+      data-action={action?.className ?? ""}
+      data-fx={action?.fx ?? ""}
+      data-alert={alert ? "1" : "0"}
       data-voice={voiceMode}
       data-speaking={speaking ? "1" : "0"}
       data-connected={connected}
@@ -1288,7 +1624,7 @@ export default function Widget() {
         style={{ "--mascot-size": `${MASCOT_BASE_SIZE * preferences.scale}px` } as CSSProperties}
         title="点击激活（播报中点击打断）· 双击打开主界面 · 按住拖动 · 右键菜单"
         onPointerDown={startStageDrag}
-        onMouseEnter={() => applyEmotion("attentive")}
+        onMouseEnter={() => playTrigger("hover")}
         onMouseLeave={() => {
           if (state === "idle") applyEmotion("neutral");
         }}
@@ -1301,6 +1637,7 @@ export default function Widget() {
             event.stopPropagation();
             return;
           }
+          playTrigger("click");
           // 播报中点击 = 打断当前语音（与主界面 ⏹ 停止等价）
           if (speakingRef.current) {
             stopSpeaking();
@@ -1318,7 +1655,7 @@ export default function Widget() {
             event.stopPropagation();
             return;
           }
-          void openMainUiManual();
+          void openMainUiManual("chat");
         }}
         onContextMenu={(e) => {
           openContextMenu(e);
@@ -1332,13 +1669,93 @@ export default function Widget() {
         >
           {bubble}
         </div>
-        <img
-          className="mascot"
-          ref={mascotRef}
-          src={mascotArt}
-          alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
-          draggable={false}
-        />
+        <div
+          className="widget-context"
+          data-visible={projectName || ERROR_STATES.has(state) ? "1" : "0"}
+          aria-hidden="true"
+        >
+          {projectName && <span className="widget-context-project">{projectName}</span>}
+          {ERROR_STATES.has(state) && (
+            <span className="widget-context-state">{STATE_LABEL[state] ?? state}</span>
+          )}
+        </div>
+        {vrmPath && vrmPersonaId ? (
+          <div className="mascot mascot-wrap" data-vrm="1">
+            <img
+              className="mascot-base"
+              ref={mascotRef}
+              src={mascotArt}
+              alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+              draggable={false}
+              data-hidden={vrmReady ? "1" : undefined}
+            />
+            <Suspense fallback={null}>
+              <VrmStage
+                personaId={vrmPersonaId}
+                vrmPath={vrmPath}
+                trigger={activeTrigger}
+                emotion={emotion}
+                onReady={handleVrmReady}
+              />
+            </Suspense>
+          </div>
+        ) : activeSpriteSheet && layersPersonaId ? (
+          <div className="mascot mascot-wrap" data-sprite="1">
+            <img
+              className="mascot-base"
+              ref={mascotRef}
+              src={mascotArt}
+              alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+              draggable={false}
+              data-hidden="1"
+            />
+            <div className="mascot-sprite-stage">
+              <SpriteSheetStage
+                personaId={layersPersonaId}
+                sheet={activeSpriteSheet}
+              />
+            </div>
+          </div>
+        ) : layers && layersPersonaId ? (
+          <div className="mascot mascot-wrap" data-layers="1">
+            <img
+              className="mascot-base"
+              ref={mascotRef}
+              src={mascotArt}
+              alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+              draggable={false}
+              data-hidden="1"
+            />
+            <div className="mascot-layers">
+              {layers.map((layer) => (
+                <FramedLayer
+                  key={layer.id || `${layer.z}-${layer.file}`}
+                  personaId={layersPersonaId}
+                  layer={layer}
+                  trigger={activeTrigger}
+                  state={state}
+                />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <img
+            className="mascot"
+            ref={mascotRef}
+            src={mascotArt}
+            alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+            draggable={false}
+          />
+        )}
+
+        <div className="fx-layer" aria-hidden="true">
+          <span className="fx-sparkle" />
+          <span className="fx-magic" />
+          <span className="fx-speed" />
+          <span className="fx-thought" />
+          <span className="fx-question" />
+          <span className="fx-note" />
+        </div>
 
         <div className="badge">
           <span className="badge-thinking">···</span>
@@ -1352,7 +1769,7 @@ export default function Widget() {
           <i /><i /><i />
         </div>
 
-        {voiceStatus && (
+        {voiceEnabled && (
           <button
             className={`voice-chip voice-${voiceMode}`}
             data-no-drag
@@ -1384,7 +1801,7 @@ export default function Widget() {
           <button
             onClick={() => {
               setCtxMenu(null);
-              void openMainUiManual();
+              void openMainUiManual("chat");
             }}
           >
             打开主界面

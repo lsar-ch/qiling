@@ -28,11 +28,17 @@ export type EventType =
   | "task.cancelled"
   | "task.approval_reminder"
   | "task.timed_out"
+  | "task.stale"
+  | "project.blocked"
+  | "project.milestone"
+  | "reminder.triggered"
+  | "widget.activity"
   | "memory.created"
   | "memory.updated"
   | "memory.entry.deleted"
   | "system.health"
   | "system.error"
+  | "voice.lease.changed"
   | "persona.presentation";
 
 export interface EventEnvelope {

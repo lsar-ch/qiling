@@ -1,0 +1,16 @@
+{
+  "node_id": "node_da71bfee14",
+  "project": "/Users/lxb/Documents/desktop assistant project",
+  "title": "P2 发布加固（安装脚本/引导/诊断/预设/状态机）",
+  "kind": "phase",
+  "status": "completed",
+  "parent_id": null,
+  "task_ids": [],
+  "artifact_paths": [],
+  "decision": null,
+  "blocker": null,
+  "next_step": null,
+  "source": null,
+  "created_at": "2026-09-18T14:44:24.952605+00:00",
+  "updated_at": "2026-09-18T14:44:24.955240+00:00"
+}

@@ -1,8 +1,24 @@
 // 主界面与 ai-service 通信（同源 /api；开发模式由 Vite 代理转发）。
+import { invoke } from "@tauri-apps/api/core";
+
 import type { AgentInfo, AgentIntegrationStatus } from "@deskmate/contracts";
 import type { EventEnvelope } from "@deskmate/contracts";
+import type {
+  McpServerInfo,
+  SkillDetail,
+  SkillInfo,
+} from "@deskmate/contracts";
 import type { CompiledMemory, DocOverview, MemoryDoc, SearchHit } from "@deskmate/contracts";
-import type { Task, TaskCategory, TaskStatus } from "@deskmate/contracts";
+import type {
+  InteractionKind,
+  ProjectNode,
+  ProjectNodeKind,
+  ProjectNodeStatus,
+  Task,
+  TaskCategory,
+  TaskStatus,
+} from "@deskmate/contracts";
+import type { Reminder, ReminderKind, ReminderRepeat, ReminderStatus } from "@deskmate/contracts";
 
 export interface HealthResponse {
   status: string;
@@ -68,6 +84,104 @@ export interface SessionResponse {
   };
 }
 
+export async function fetchProjectNodes(project: string): Promise<ProjectNode[]> {
+  const data = await fetchJson<{ items: ProjectNode[] }>(
+    `/api/projects/nodes?project=${encodeURIComponent(project)}`,
+  );
+  return data.items;
+}
+
+export type ProjectNodePayload = {
+  project: string;
+  title: string;
+  kind: ProjectNodeKind;
+  status: ProjectNodeStatus;
+  parent_id?: string | null;
+  task_ids?: string[];
+  artifact_paths?: string[];
+  decision?: string | null;
+  blocker?: string | null;
+  next_step?: string | null;
+  source?: string | null;
+};
+
+async function writeProjectNode(
+  method: "POST" | "PUT",
+  path: string,
+  payload: ProjectNodePayload,
+  verb: string,
+): Promise<ProjectNode> {
+  const resp = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const detail = await resp.json().catch(() => null);
+    throw new Error((detail as { detail?: string } | null)?.detail || `项目节点${verb}失败：HTTP ${resp.status}`);
+  }
+  return (await resp.json()) as ProjectNode;
+}
+
+export async function createProjectNode(payload: ProjectNodePayload): Promise<ProjectNode> {
+  return writeProjectNode("POST", "/api/projects/nodes", payload, "创建");
+}
+
+export async function updateProjectNode(nodeId: string, payload: ProjectNodePayload): Promise<ProjectNode> {
+  return writeProjectNode("PUT", `/api/projects/nodes/${nodeId}`, payload, "更新");
+}
+
+export async function deleteProjectNode(nodeId: string): Promise<void> {
+  const resp = await fetch(`/api/projects/nodes/${nodeId}`, { method: "DELETE" });
+  if (!resp.ok) {
+    const detail = await resp.json().catch(() => null);
+    throw new Error((detail as { detail?: string } | null)?.detail || `项目节点删除失败：HTTP ${resp.status}`);
+  }
+}
+
+export type ReminderPayload = {
+  kind: ReminderKind;
+  text: string;
+  remind_at: string;
+  repeat: ReminderRepeat;
+  task_id?: string | null;
+};
+
+export async function fetchReminders(limit = 100): Promise<Reminder[]> {
+  const data = await fetchJson<{ items: Reminder[] }>(`/api/reminders?limit=${limit}`);
+  return data.items;
+}
+
+export async function createReminder(payload: ReminderPayload): Promise<Reminder> {
+  const resp = await fetch("/api/reminders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  const data = (await resp.json()) as { reminder: Reminder };
+  return data.reminder;
+}
+
+export async function updateReminder(
+  reminderId: string,
+  payload: Partial<ReminderPayload> & { status?: ReminderStatus },
+): Promise<Reminder> {
+  const resp = await fetch(`/api/reminders/${encodeURIComponent(reminderId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  const data = (await resp.json()) as { reminder: Reminder };
+  return data.reminder;
+}
+
+export async function deleteReminder(reminderId: string): Promise<void> {
+  const resp = await fetch(`/api/reminders/${encodeURIComponent(reminderId)}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+}
+
 async function fetchJson<T>(path: string, timeoutMs = 5000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -86,6 +200,137 @@ export async function fetchHealth(): Promise<HealthResponse> {
 
 export async function fetchAgents(): Promise<{ items: AgentInfo[]; default_executor: string }> {
   return fetchJson<{ items: AgentInfo[]; default_executor: string }>("/api/agents");
+}
+
+export async function fetchSkills(): Promise<SkillInfo[]> {
+  const data = await fetchJson<{ skills: SkillInfo[] }>("/api/skills");
+  return data.skills;
+}
+
+export async function fetchSkill(id: string): Promise<SkillDetail> {
+  return fetchJson<SkillDetail>(`/api/skills/${encodeURIComponent(id)}`);
+}
+
+export async function toggleSkill(id: string, enabled: boolean): Promise<SkillInfo> {
+  const resp = await fetch(`/api/skills/${encodeURIComponent(id)}/toggle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!resp.ok) throw new Error(`toggle skill -> HTTP ${resp.status}`);
+  return (await resp.json()) as SkillInfo;
+}
+
+export async function uploadSkillZip(file: File): Promise<SkillInfo> {
+  const form = new FormData();
+  form.append("file", file);
+  const resp = await fetch("/api/skills/upload", { method: "POST", body: form });
+  if (!resp.ok) throw new Error(`upload skill -> HTTP ${resp.status}`);
+  return (await resp.json()) as SkillInfo;
+}
+
+export async function registerSkillDirectory(path: string): Promise<SkillInfo> {
+  const resp = await fetch("/api/skills/register-directory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (!resp.ok) throw new Error(`register directory -> HTTP ${resp.status}`);
+  return (await resp.json()) as SkillInfo;
+}
+
+export async function deleteSkill(id: string): Promise<void> {
+  const resp = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) throw new Error(`delete skill -> HTTP ${resp.status}`);
+}
+
+export interface McpServerPayload {
+  id: string;
+  transport: "stdio" | "streamablehttp";
+  access: "read" | "write";
+  enabled: boolean;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+}
+
+export async function fetchMcpServers(): Promise<McpServerInfo[]> {
+  const data = await fetchJson<{ servers: McpServerInfo[] }>("/api/mcp-servers");
+  return data.servers;
+}
+
+export async function addMcpServer(payload: McpServerPayload): Promise<void> {
+  const resp = await fetch("/api/mcp-servers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => null);
+    throw new Error((body as { detail?: string } | null)?.detail ?? `添加 MCP -> HTTP ${resp.status}`);
+  }
+}
+
+export async function toggleMcpServer(id: string, enabled: boolean): Promise<void> {
+  const resp = await fetch(`/api/mcp-servers/${encodeURIComponent(id)}/toggle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!resp.ok) throw new Error(`toggle MCP -> HTTP ${resp.status}`);
+}
+
+export async function deleteMcpServer(id: string): Promise<void> {
+  const resp = await fetch(`/api/mcp-servers/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) throw new Error(`delete MCP -> HTTP ${resp.status}`);
+}
+
+export async function testMcpServer(id: string): Promise<{ name: string; description: string }[]> {
+  const resp = await fetch(`/api/mcp-servers/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => null);
+    throw new Error((body as { detail?: string } | null)?.detail ?? `测试 MCP -> HTTP ${resp.status}`);
+  }
+  const data = (await resp.json()) as { tools: { name: string; description: string }[] };
+  return data.tools;
+}
+
+export async function fetchMcpTools(id: string): Promise<
+  { name: string; description: string; input_schema: Record<string, unknown> }[]
+> {
+  const data = await fetchJson<{
+    tools: { name: string; description: string; input_schema: Record<string, unknown> }[];
+  }>(`/api/mcp-servers/${encodeURIComponent(id)}/tools`);
+  return data.tools;
+}
+
+export async function decideToolApproval(
+  approvalId: string,
+  decision: "approved" | "rejected",
+): Promise<void> {
+  const resp = await fetch(
+    `/api/mcp-tool-approvals/${encodeURIComponent(approvalId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    },
+  );
+  if (!resp.ok) throw new Error(`tool approval -> HTTP ${resp.status}`);
+}
+
+export interface ToolApprovalView {
+  approval_id: string;
+  server: string;
+  tool: string;
+  arguments: string;
 }
 
 export interface AgentConfigEntry {
@@ -157,6 +402,19 @@ export async function fetchSession(): Promise<SessionResponse> {
   return fetchJson<SessionResponse>("/api/session");
 }
 
+export interface PersonaProfileCard {
+  identity?: string;
+  personality?: string;
+  speech?: string;
+  relationship?: string;
+  preferences?: string;
+  boundaries?: string;
+  catchphrases?: string[];
+  flaws?: string[];
+  likes?: string[];
+  dislikes?: string[];
+}
+
 export interface PersonaCard {
   id: string;
   name: string;
@@ -184,7 +442,10 @@ export interface PersonaCard {
   llm?: {
     profile_id?: string;
   };
+  profile?: PersonaProfileCard | null;
   preset?: "work" | "companion" | "service" | null;
+  motion_family?: "human" | "animal" | "anime";
+  art_style?: "realistic" | "anime" | "chibi" | "pixel" | null;
 }
 
 export type ModelProfileCategory = "text" | "multimodal" | "stt" | "tts";
@@ -352,6 +613,24 @@ export async function uploadPersonaAvatar(personaId: string, file: File): Promis
   return (await resp.json()) as { avatar: string };
 }
 
+export interface Import3dResult {
+  persona_id: string;
+  vrm: string;
+  vrma: string[];
+  avatar: string | null;
+}
+
+export async function importPersona3d(personaId: string, file: File): Promise<Import3dResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const resp = await fetch(`/api/personas/${encodeURIComponent(personaId)}/import3d`, {
+    method: "POST",
+    body: form,
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return (await resp.json()) as Import3dResult;
+}
+
 export async function fetchPersonaAssetTasks(limit = 20): Promise<AgentRun[]> {
   const data = await fetchJson<{ items: AgentRun[] }>(`/api/persona-tasks?limit=${limit}`);
   return data.items;
@@ -514,6 +793,7 @@ export interface ChatMessageView {
   content: string;
   created_at: string;
   attachments?: ChatAttachmentView[];
+  skill_id?: string | null;
 }
 
 export interface ChatAttachmentView {
@@ -609,6 +889,9 @@ export interface AgentRun {
   created_at: string;
   updated_at: string;
   finished_at: string | null;
+  task_input?: string;
+  conversation_id?: string | null;
+  project?: string | null;
 }
 
 export type AgentRunMode = "read-only" | "agent" | "agent-full-access";
@@ -691,11 +974,14 @@ export async function streamChat(
   projectName?: string | null,
   attachments?: ChatAttachmentView[],
   mode?: "auto" | "casual" | "work",
+  onToolApproval?: (approval: ToolApprovalView) => void,
 ): Promise<{
   conversation_id: string;
   short: boolean;
   message: string;
   speak_text: string;
+  interaction_kind: InteractionKind;
+  skill_id: string | null;
 }> {
   const resp = await fetch("/api/chat/stream", {
     method: "POST",
@@ -733,6 +1019,12 @@ export async function streamChat(
         conversation_id?: string;
         short?: boolean;
         speak_text?: string;
+        interaction_kind?: InteractionKind;
+        skill_id?: string | null;
+        approval_id?: string;
+        server?: string;
+        tool?: string;
+        arguments?: string;
       };
       try {
         obj = JSON.parse(dataLine.slice(6));
@@ -741,12 +1033,22 @@ export async function streamChat(
       }
       if (obj.type === "delta" && obj.content) onDelta(obj.content);
       else if (obj.type === "error") throw new Error(obj.message ?? "模型调用失败");
+      else if (obj.type === "tool_approval" && obj.approval_id) {
+        onToolApproval?.({
+          approval_id: obj.approval_id,
+          server: obj.server ?? "",
+          tool: obj.tool ?? "",
+          arguments: obj.arguments ?? "",
+        });
+      }
       else if (obj.type === "done") {
         result = {
           conversation_id: obj.conversation_id ?? "",
           short: obj.short ?? true,
           message: obj.message ?? "",
           speak_text: obj.speak_text ?? obj.message ?? "",
+          interaction_kind: obj.interaction_kind ?? "casual",
+          skill_id: obj.skill_id ?? null,
         };
       }
     }
@@ -757,6 +1059,8 @@ export async function streamChat(
     short: boolean;
     message: string;
     speak_text: string;
+    interaction_kind: InteractionKind;
+    skill_id: string | null;
   } | null = null;
   for (;;) {
     const { done, value } = await reader.read();
@@ -879,8 +1183,8 @@ export async function previewVoice(payload: VoicePreviewRequest): Promise<Blob> 
   return await resp.blob();
 }
 
-export async function acquireVoiceLease(): Promise<boolean> {
-  const resp = await fetch("/api/voice/lease", {
+export async function acquireVoiceLease(force = false): Promise<boolean> {
+  const resp = await fetch(`/api/voice/lease${force ? "?force=true" : ""}`, {
     method: "POST",
     headers: { "X-Voice-Client": "web" },
   });
@@ -902,6 +1206,14 @@ export async function releaseVoiceLease(): Promise<void> {
     headers: { "X-Voice-Client": "web" },
     keepalive: true,
   }).catch(() => {});
+}
+
+export async function fetchMainUiVisible(): Promise<boolean> {
+  try {
+    return await invoke<boolean>("main_ui_visible");
+  } catch {
+    return false;
+  }
 }
 
 export interface VoiceIntentResponse {

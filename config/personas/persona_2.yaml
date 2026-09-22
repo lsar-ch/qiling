@@ -1,6 +1,8 @@
 id: persona_2
 name: 蓝猫
 kind: cat
+motion_family: animal
+art_style: anime
 description: 一只毛色亮丽的蓝猫
 personality:
 - 自然

@@ -37,18 +37,19 @@ Obsidian 记忆库：
 - 新架构主线：`apps/`、`services/`、`packages/`、`docs/`
 - 早期原型：`src/`，仅作参考，不作为新架构主运行入口
 - 已完成：Step 1-3、Step 4 语音闭环、Step 4.5 设置与角色配置、Step 5 本地项目记忆/Obsidian 三档模式、Step 6 任务分流主链路；Step 7 执行器目录与 Codex ACP 真实执行已完成，包括 6 个默认执行器的配置驱动目录（`config/agents.yaml`）、`AgentRunManager`、Codex ACP/stdio 真实提交/取消/授权、`/api/agent-runs` 与前端真实运行控件；Step 8 自动化回归与 Codex 真实 `read-only` 任务已通过（`task_eff6a657ae`）
-- 当前阶段：**V1 已收口（2026-09-15）；P1 浏览器窄场景执行已完成；P1 轻量主动性与 P2 发布加固主体已完成（各余 1~2 项部分完成）**。macOS 人工验收、角色化表现、Windows 真机回归（WI-05 复验 T1 3/3 + 18 项回归 18/18）均已完成；第二轮 WI-06/07/08/09/10 已在 macOS 复验通过，详见 `docs/WINDOWS-MIGRATION-2026-09.md`。vite 升级挂 P2
-- 质量基线：`./scripts/check.sh` → **204 passed** + web/desktop typecheck 全绿；改 Rust 另跑 `cargo check`；改 `apps/web` 必须 `npm run build`（主界面加载 `apps/web/dist` 构建产物）
-- 顺序：主线功能已落地，剩余 V2 收尾 6 项；按 `docs/HANDOVER-2026-09-17.md` 第 4 节推进，动手前先清掉第 2 节真机验收
+- 当前阶段：**V2 P1 剩 T4 待讨论实施（T1/T2/T5/T3 已完成，2026-09-18）**；V1 已收口；P1 浏览器窄场景、轻量主动性、P2 发布加固主体已完成。macOS 人工验收、角色化表现、Windows 真机回归（WI-05 复验 T1 3/3 + 18 项回归 18/18）均已完成；第二轮 WI-06/07/08/09/10 已在 macOS 复验通过，详见 `docs/WINDOWS-MIGRATION-2026-09.md`。vite 升级挂 P2
+- 质量基线：`./scripts/check.sh` → **248 passed** + web/desktop typecheck 全绿；改 Rust 另跑 `cargo check`；改 `apps/web` 必须 `npm run build`（主界面加载 `apps/web/dist` 构建产物）
+- 顺序：V2 P1 按 `docs/V2-P1-PROGRESS-2026-09-18.md` 与 `docs/V2-P1-TASK-CARDS.md` 推进（当前唯一剩余 T4）；其余 V2 收尾见 `docs/HANDOVER-2026-09-17.md` 第 4 节
 
 继续工作前优先阅读：
 
-1. `docs/HANDOVER-2026-09-17.md`（**最新交接：昨夜改动、真机待验收清单、进度盘点、推进顺序、环境坑位**）
-2. `docs/PROJECT-ROADMAP.md` 与 `docs/P1-P2-TASK-CARDS.md`
-3. `docs/HANDOVER-2026-09-13.md`（V1 收口过程）
-4. `docs/V1-IMPLEMENTATION-PLAN.md`
-5. `docs/WINDOWS-MIGRATION-2026-09.md`（Windows 迁移主题唯一入口）
-6. 与当前任务相关的专题文档，例如 `docs/STEP9-UI-POLISH.md`、`docs/STEP8-RELEASE-DEGRADATION.md`、`docs/VOICE-ACTIVATION.md`、`docs/TASK-ROUTING.md`、`docs/MAIN-INTERFACE.md`
+1. `docs/V2-P1-PROGRESS-2026-09-18.md`（**V2 P1 唯一进度入口：状态/实现位置/坑位/下一步**）
+2. `docs/HANDOVER-2026-09-17.md`（昨夜交接：真机待验收清单、环境坑位）
+3. `docs/PROJECT-ROADMAP.md` 与 `docs/P1-P2-TASK-CARDS.md`
+4. `docs/HANDOVER-2026-09-13.md`（V1 收口过程）
+5. `docs/V1-IMPLEMENTATION-PLAN.md`
+6. `docs/WINDOWS-MIGRATION-2026-09.md`（Windows 迁移主题唯一入口）
+7. 与当前任务相关的专题文档，例如 `docs/STEP9-UI-POLISH.md`、`docs/STEP8-RELEASE-DEGRADATION.md`、`docs/VOICE-ACTIVATION.md`、`docs/TASK-ROUTING.md`、`docs/MAIN-INTERFACE.md`
 
 ## 工具路由
 

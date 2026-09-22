@@ -185,15 +185,68 @@ def test_provider_error_surfaces_cleanly() -> None:
         assert "供应商余额不足" in resp.json()["detail"]
 
 
-def test_voice_lease_prefers_web_and_allows_widget_after_release() -> None:
+def test_voice_lease_is_exclusive_and_allows_next_client_after_release() -> None:
     with _client() as client:
         web = {"X-Voice-Client": "web"}
         widget = {"X-Voice-Client": "widget"}
+        assert client.post("/api/voice/lease", headers=widget).json()["acquired"] is True
+        assert client.post("/api/voice/lease", headers=web).json()["acquired"] is False
+        assert client.post("/api/voice/lease/heartbeat", headers=widget).json()["renewed"] is True
+        assert client.delete("/api/voice/lease", headers=widget).json()["released"] is True
         assert client.post("/api/voice/lease", headers=web).json()["acquired"] is True
         assert client.post("/api/voice/lease", headers=widget).json()["acquired"] is False
-        assert client.post("/api/voice/lease/heartbeat", headers=web).json()["renewed"] is True
-        assert client.delete("/api/voice/lease", headers=web).json()["released"] is True
-        assert client.post("/api/voice/lease", headers=widget).json()["acquired"] is True
+
+
+def test_synthesize_works_without_lease() -> None:
+    """播报不看租约：未持租约的客户端也能合成音频。"""
+    with _client() as client:
+        resp = client.post(
+            "/api/voice/synthesize",
+            json={"text": "随时可以播报"},
+            headers={"X-Voice-Client": "web"},
+        )
+        assert resp.status_code == 200
+        assert resp.content == b"FAKE-AUDIO:" + "随时可以播报".encode()
+
+
+def test_lease_owner_change_is_broadcast() -> None:
+    """force 抢占与释放都会广播 voice.lease.changed（直接看事件总线历史）。"""
+    with TestClient(create_app(load_settings(), speech=_stack_for_broadcast())) as client:
+        hub = client.app.state.event_hub
+
+        def latest_lease_owner():
+            for item in hub.recent(limit=50):
+                if item["event_type"] == "voice.lease.changed":
+                    return item["payload"]["owner"]
+            return "__missing__"
+
+        assert client.post(
+            "/api/voice/lease",
+            headers={"X-Voice-Client": "widget"},
+        ).json()["acquired"] is True
+        assert latest_lease_owner() == "widget"
+
+        assert client.post(
+            "/api/voice/lease?force=true",
+            headers={"X-Voice-Client": "web"},
+        ).json()["acquired"] is True
+        assert latest_lease_owner() == "web"
+
+        client.delete("/api/voice/lease", headers={"X-Voice-Client": "web"})
+        assert latest_lease_owner() is None
+
+
+def _stack_for_broadcast() -> SpeechStack:
+    return SpeechStack(
+        recognizer=FakeRecognizer(),
+        synthesizer=FakeSynthesizer(),
+        stt_model="paraformer-realtime-v2",
+        tts_model="cosyvoice-v2",
+        tts_voice="longxiaochun_v2",
+        tts_format="wav",
+        tts_sample_rate=24000,
+        params=VoiceParams(),
+    )
 
 
 def test_voices_lists_provider_options() -> None:

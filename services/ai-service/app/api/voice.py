@@ -19,6 +19,7 @@ from deskmate_contracts.events import EventEnvelope
 from deskmate_contracts.voice import VoiceParams
 
 from app.config import is_lite_mode, resolve_tts_provider
+from app.core.emotion_resolver import resolve_emotion
 from app.speech.base import (
     SpeechProviderError,
     SpeechStack,
@@ -78,10 +79,18 @@ async def _require_lease(request: Request) -> str:
     return client
 
 
+async def _broadcast_owner(request: Request, owner: str | None) -> None:
+    await _publish(request, "voice.lease.changed", {"owner": owner})
+
+
 @router.post("/lease")
-async def acquire_voice_lease(request: Request) -> dict:
+async def acquire_voice_lease(request: Request, force: bool = False) -> dict:
     client = _client(request)
-    acquired = await request.app.state.voice_lease.acquire(client)
+    acquired = await request.app.state.voice_lease.acquire(
+        client,
+        force=force,
+        on_change=lambda owner: _broadcast_owner(request, owner),
+    )
     return {"client": client, "acquired": acquired, "ttl_seconds": 12}
 
 
@@ -94,16 +103,25 @@ async def heartbeat_voice_lease(request: Request) -> dict:
 @router.delete("/lease")
 async def release_voice_lease(request: Request) -> dict:
     client = _client(request)
-    await request.app.state.voice_lease.release(client)
+    await request.app.state.voice_lease.release(
+        client,
+        on_change=lambda owner: _broadcast_owner(request, owner),
+    )
     return {"client": client, "released": True}
 
 
-async def _publish(request: Request, event_type: str, payload: dict | None = None) -> None:
+async def _publish(
+    request: Request,
+    event_type: str,
+    payload: dict | None = None,
+    expression: dict | None = None,
+) -> None:
     await request.app.state.event_hub.publish(
         EventEnvelope(
             event_type=event_type,
             source="speech",
             payload=payload or {},
+            expression=expression,
         )
     )
 
@@ -322,7 +340,6 @@ async def synthesize_stream(request: Request, body: SynthesizeRequest):
 
     barge-in 时前端关闭 fetch 即中断后续推送。
     """
-    await _require_lease(request)
     settings = request.app.state.settings
     if is_lite_mode(settings):
         raise HTTPException(status_code=503, detail="轻量模式已禁用语音合成")
@@ -330,7 +347,17 @@ async def synthesize_stream(request: Request, body: SynthesizeRequest):
     if not stack.synthesizer.available:
         raise HTTPException(status_code=503, detail="语音合成未配置：请先配置语音供应商")
 
-    await _publish(request, "conversation.response", {"message": body.text})
+    emotion = resolve_emotion(body.params.emotion if body.params else None)
+    expression = {
+        "state": "speaking",
+        "emotion": emotion,
+    }
+    await _publish(
+        request,
+        "conversation.response",
+        {"message": body.text},
+        expression=expression,
+    )
 
     import base64 as _b64
 
@@ -407,7 +434,6 @@ async def recognize(request: Request, language: str = "zh") -> dict:
 
 @router.post("/synthesize")
 async def synthesize(request: Request, body: SynthesizeRequest) -> Response:
-    await _require_lease(request)
     settings = request.app.state.settings
     if is_lite_mode(settings):
         raise HTTPException(status_code=503, detail="轻量模式已禁用语音合成")

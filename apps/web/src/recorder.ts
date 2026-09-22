@@ -6,6 +6,32 @@ export interface MicRecorder {
   cancel: () => void;
 }
 
+export const MIC_CONSTRAINTS: MediaStreamConstraints["audio"] = {
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+};
+
+// 挂件刚释放麦克风、系统尚未完成回收时，getUserMedia 会抛 NotReadableError
+// （“另一程序在占用”）。权限类错误（NotAllowedError）不重试，立刻交还调用方提示授权。
+export async function getUserMediaWithBusyRetry(
+  constraints: MediaStreamConstraints["audio"],
+  attempts = 6,
+  delayMs = 250,
+): Promise<MediaStream | null> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: constraints });
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : "";
+      if (name === "NotAllowedError" || name === "SecurityError") return null;
+      if (attempt === attempts - 1) return null;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return null;
+}
+
 export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
@@ -37,14 +63,8 @@ export async function startRecording(): Promise<MicRecorder | null> {
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
     return null;
   }
-  let stream: MediaStream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-    });
-  } catch {
-    return null;
-  }
+  const stream = await getUserMediaWithBusyRetry(MIC_CONSTRAINTS);
+  if (!stream) return null;
 
   const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", ""].find((m) =>
     m === "" ? true : MediaRecorder.isTypeSupported(m),

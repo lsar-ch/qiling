@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -67,6 +68,9 @@ def _permission_summary(tool_call: object) -> str:
             if value:
                 return (f"{tool_name}：{value}" if tool_name else value)[:300]
     return f"{tool_name} 操作"[:300] if tool_name else "等待授权"
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentRun(BaseModel):
@@ -144,6 +148,7 @@ class AgentRunManager:
         memory,
         data_dir: Path,
         conversations=None,
+        project_nodes=None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -153,9 +158,12 @@ class AgentRunManager:
         self.data_dir = data_dir
         # 任务进展回流到来源会话（对话页可见）；未注入时静默跳过
         self.conversations = conversations
+        # 项目节点联动；未注入时静默跳过
+        self.project_nodes = project_nodes
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_timers: dict[str, asyncio.Task[None]] = {}  # task_id -> reminder timer
         self._approval_deadlines: dict[str, asyncio.Task[None]] = {}  # task_id -> 超时自动拒绝
+        self._stale_reminded: set[str] = set()  # 已提醒过的 run_id，只提醒一次
 
     def _find_previous_session(self, conversation_id: str | None, exclude_task_id: str) -> str | None:
         """找到同一 conversation 下最近一次已完成的 run 的 session_id。"""
@@ -179,6 +187,28 @@ class AgentRunManager:
             return None
         latest = max(hits, key=lambda run: run.created_at)
         return latest.session_id
+
+    async def _try_office_fallback(
+        self,
+        task: Task,
+        original_adapter: AgentAdapter,
+        original_name: str,
+    ) -> AgentAdapter:
+        """外部 Agent 不可用时，办公任务降级到本地执行器。"""
+        if task.work_kind not in {"word", "excel", "ppt"}:
+            raise AgentExecutionUnsupported(
+                f"{original_name} 当前不可执行；此任务类型不支持本地降级。"
+            )
+        fallback = self.registry.get("local-office")
+        if fallback is None:
+            raise AgentExecutionUnsupported(
+                f"{original_name} 当前不可执行且本地办公执行器未注册。"
+            )
+        logger.info(
+            "办公任务降级：%s 不可用，使用本地办公执行器",
+            original_name,
+        )
+        return fallback
 
     async def _notify_conversation(self, task: Task, text: str) -> None:
         """把任务进展写回来源会话；没有会话或没有存储时跳过。"""
@@ -219,7 +249,66 @@ class AgentRunManager:
             names = [f"- {item.name}" for item in attachments]
             parts.append("本轮附件文件（位于任务工作目录，可用相对路径读取）：\n" + "\n".join(names))
         parts.append(f"当前任务：{task.input}")
+        if task.work_kind == "word":
+            parts.append(
+                "Word 文档处理要求：读取并理解相关文档后再修改；默认不要覆盖原文件，"
+                "请在同一目录生成带 _edited 后缀的新 .docx（旧 .doc 如无法直接编辑，"
+                "请明确说明并保留原文件）；完成后在最终回复中列出输出文件路径和修改摘要。"
+            )
+        elif task.work_kind == "excel":
+            parts.append(
+                "Excel 表格处理要求：先读取并理解工作表结构和数据，再进行清洗、计算、"
+                "分析或图表处理；默认不要覆盖原文件，请在同一目录生成带 _processed 后缀"
+                "的新 .xlsx（旧 .xls 如无法直接编辑，请明确说明并保留原文件）；完成后"
+                "在最终回复中列出输出文件路径、关键统计结果和修改摘要。"
+            )
+        elif task.work_kind == "ppt":
+            parts.append(
+                "PowerPoint 演示文稿处理要求：先读取并理解页面结构、内容层级和视觉样式，"
+                "再进行内容修改、结构调整、排版或美化；默认不要覆盖原文件，请在同一目录"
+                "生成带 _edited 后缀的新 .pptx（旧 .ppt 如无法直接编辑，请明确说明并保留"
+                "原文件）；完成后在最终回复中列出输出文件路径、页面变更摘要和视觉调整摘要。"
+            )
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _file_snapshot(cwd: str) -> dict[str, tuple[int, int]]:
+        """记录目录下文件的 mtime/size，用于识别本次执行产物。"""
+        root = Path(cwd)
+        if not root.is_dir():
+            return {}
+        snapshot: dict[str, tuple[int, int]] = {}
+        for path in root.rglob("*"):
+            if path.is_file():
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                snapshot[str(path)] = (stat.st_mtime_ns, stat.st_size)
+        return snapshot
+
+    @staticmethod
+    def _office_artifacts(
+        cwd: str,
+        before: dict[str, tuple[int, int]],
+        suffixes: set[str],
+    ) -> list[str]:
+        """返回本次新增或变更的办公文件，避免把项目旧文件当成结果。"""
+        root = Path(cwd)
+        if not root.is_dir():
+            return []
+        artifacts: list[str] = []
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in suffixes:
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            current = (stat.st_mtime_ns, stat.st_size)
+            if before.get(str(path)) != current:
+                artifacts.append(str(path))
+        return sorted(artifacts)
     async def execute(
         self,
         task: Task,
@@ -236,18 +325,32 @@ class AgentRunManager:
         adapter = self.registry.get(executor_name)
         if adapter is None:
             raise ValueError(f"执行器不存在：{executor_name}")
+        _is_office = task.work_kind in {"word", "excel", "ppt"}
         if not adapter.executable:
-            raise AgentExecutionUnsupported(f"{executor_name} 尚未接入真实执行")
-        availability = await adapter.detect()
-        if not availability.enabled:
-            raise AgentExecutionUnsupported(
-                f"{executor_name} 已停用：到「我的智能体」页面重新启用后才能运行任务。"
-            )
-        if not availability.available or availability.integration_status != "ready":
-            raise AgentExecutionUnsupported(
-                f"{executor_name} 当前不可执行（{availability.integration_status}）："
-                f"{availability.detail}"
-            )
+            if _is_office:
+                adapter = await self._try_office_fallback(task, adapter, executor_name)
+            else:
+                raise AgentExecutionUnsupported(f"{executor_name} 尚未接入真实执行")
+        else:
+            availability = await adapter.detect()
+            if not availability.enabled:
+                if _is_office:
+                    adapter = await self._try_office_fallback(task, adapter, executor_name)
+                else:
+                    raise AgentExecutionUnsupported(
+                        f"{executor_name} 已停用：到「我的智能体」页面重新启用后才能运行任务。"
+                    )
+            elif not availability.available or availability.integration_status != "ready":
+                if _is_office:
+                    adapter = await self._try_office_fallback(task, adapter, executor_name)
+                else:
+                    raise AgentExecutionUnsupported(
+                        f"{executor_name} 当前不可执行（{availability.integration_status}）："
+                        f"{availability.detail}"
+                    )
+        # 降级后更新执行器名称
+        if adapter.name != executor_name:
+            executor_name = adapter.name
 
         latest = self.store.latest_for_task(task.task_id)
         if latest and latest.status in ("running", "awaiting_approval"):
@@ -301,16 +404,22 @@ class AgentRunManager:
         cwd_override: str | None = None,
     ) -> None:
         try:
+            resolved_cwd = cwd_override or await self._resolve_cwd(task)
+            before = (
+                self._file_snapshot(resolved_cwd)
+                if task.work_kind in {"word", "excel", "ppt"}
+                else {}
+            )
             prompt = task.input if run.executor == "browser" else await self._compose_prompt(task)
             result = await adapter.run(
                 AgentTaskRequest(
                     task_id=task.task_id,
                     prompt=prompt,
-                    cwd=cwd_override or await self._resolve_cwd(task),
+                    cwd=resolved_cwd,
                     conversation_id=task.conversation_id,
                     session_id=previous_session_id,
                     mode=run.mode,
-                    config={"logs_dir": str(self.data_dir / "run_logs")},
+                    config={"logs_dir": str(self.data_dir / "run_logs"), "work_kind": task.work_kind},
                 ),
                 on_update=lambda kind, payload: self._on_update(run, kind, payload),
             )
@@ -327,6 +436,20 @@ class AgentRunManager:
             return
         if result.status not in ("completed", "failed", "cancelled"):
             result.status = "completed"
+        if result.status == "completed" and task.work_kind in {"word", "excel", "ppt"}:
+            suffixes = (
+                {".doc", ".docx"}
+                if task.work_kind == "word"
+                else {".xls", ".xlsx"}
+                if task.work_kind == "excel"
+                else {".ppt", ".pptx"}
+            )
+            artifacts = self._office_artifacts(resolved_cwd, before, suffixes)
+            if artifacts:
+                artifact_lines = "\n".join(f"- {path}" for path in artifacts)
+                result.message = (
+                    f"{result.message.rstrip()}\n\n输出文件：\n{artifact_lines}"
+                ).strip()
         await self._finish(
             run,
             task,
@@ -573,6 +696,83 @@ class AgentRunManager:
         )
         await self._notify_conversation(task, notify)
         self._record_memory(event_type, task, run)
+        await self._advance_project_nodes(task, status, error)
+
+    def start_stale_sweeper(self, interval_s: float = 300.0, threshold_s: float = 900.0) -> None:
+        """ponytail: 全局单轮询循环、每个 run 只提醒一次；提醒时效要求高再换每任务定时器。"""
+
+        async def _loop() -> None:
+            while True:
+                await asyncio.sleep(interval_s)
+                await self._sweep_stale_runs(threshold_s)
+
+        asyncio.create_task(_loop())
+
+    async def _sweep_stale_runs(self, threshold_s: float) -> None:
+        now = datetime.now(timezone.utc)
+        for run in self.store.list_recent(100):
+            if run.status not in ("queued", "running") or run.run_id in self._stale_reminded:
+                continue
+            try:
+                age_s = (now - datetime.fromisoformat(run.updated_at)).total_seconds()
+            except ValueError:
+                continue
+            if age_s < threshold_s:
+                continue
+            self._stale_reminded.add(run.run_id)
+            minutes = max(1, int(age_s // 60))
+            task = self.task_store.get(run.task_id)
+            bubble = f"任务 {minutes} 分钟无进展：{(task.input if task else run.task_id)[:30]}"
+            await self.hub.publish(
+                EventEnvelope(
+                    event_type="task.stale",  # type: ignore[arg-type]
+                    source="task",
+                    conversation_id=task.conversation_id if task else None,
+                    task_id=run.task_id,
+                    payload={"bubble": bubble, "speak_text": bubble},
+                )
+            )
+
+    async def _advance_project_nodes(self, task: Task, status: str, error: str | None) -> None:
+        """任务收口时推进关联的项目节点：完成→completed，失败→blocked。
+
+        取消不改节点状态，用户可能马上重跑。节点联动失败不影响任务本身。
+        阻塞与阶段/项目级完成会发主动事件，挂件气泡与语音消费。
+        """
+        if self.project_nodes is None or not task.project or status not in ("completed", "failed"):
+            return
+        try:
+            for node in self.project_nodes.list_project(task.project):
+                if task.task_id not in node.task_ids:
+                    continue
+                if status == "completed":
+                    node.status = "completed"
+                    node.blocker = None
+                else:
+                    node.status = "blocked"
+                    node.blocker = (error or "任务执行失败")[:300]
+                self.project_nodes.put(node)
+                if status == "failed":
+                    event_type = "project.blocked"
+                    bubble = f"⚠ 节点阻塞：{node.title}"
+                    speak_text = f"项目遇到阻塞。{node.title}"
+                elif node.kind in ("phase", "project"):
+                    event_type = "project.milestone"
+                    bubble = f"★ 里程碑达成：{node.title}"
+                    speak_text = f"里程碑达成。{node.title}"
+                else:
+                    continue
+                await self.hub.publish(
+                    EventEnvelope(
+                        event_type=event_type,  # type: ignore[arg-type]
+                        source="task",
+                        conversation_id=task.conversation_id,
+                        task_id=task.task_id,
+                        payload={"bubble": bubble, "speak_text": speak_text, "node_id": node.node_id},
+                    )
+                )
+        except Exception:
+            logger.warning("项目节点联动失败：task=%s", task.task_id, exc_info=True)
 
     async def _publish(
         self,

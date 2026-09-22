@@ -119,6 +119,11 @@ class Settings:
     volc_voice_type: str | None = None
     interruption_enabled: bool = True
     auto_barge_in: bool = False
+    # ── 主动提醒（久坐 / 长工作 / 定时备忘录）──────────────
+    proactive_enabled: bool = True
+    sedentary_minutes: int = 40
+    long_work_minutes: int = 90
+    reminder_cooldown_minutes: int = 30
     cors_origins: list[str] = field(
         default_factory=lambda: [
             f"http://127.0.0.1:{DEFAULT_WEB_DEV_PORT}",
@@ -491,6 +496,35 @@ def load_settings() -> Settings:
             "VOICE_AUTO_BARGE_IN", _nested(voice_cfg, ("interruption", "auto_barge_in"), False)
         ),
         False,
+    )
+    proactive_cfg = _load_yaml_section(root, "proactive") or {}
+    settings.proactive_enabled = _as_bool(
+        os.environ.get(
+            "PROACTIVE_ENABLED",
+            overrides.get("proactive_enabled", proactive_cfg.get("enabled", True)),
+        ),
+        True,
+    )
+    settings.sedentary_minutes = _as_int(
+        os.environ.get(
+            "PROACTIVE_SEDENTARY_MINUTES",
+            overrides.get("sedentary_minutes", proactive_cfg.get("sedentary_minutes", 40)),
+        ),
+        40,
+    )
+    settings.long_work_minutes = _as_int(
+        os.environ.get(
+            "PROACTIVE_LONG_WORK_MINUTES",
+            overrides.get("long_work_minutes", proactive_cfg.get("long_work_minutes", 90)),
+        ),
+        90,
+    )
+    settings.reminder_cooldown_minutes = _as_int(
+        os.environ.get(
+            "PROACTIVE_REMINDER_COOLDOWN_MINUTES",
+            overrides.get("reminder_cooldown_minutes", proactive_cfg.get("cooldown_minutes", 30)),
+        ),
+        30,
     )
     # 模型档案优先级最高；用户新建/设为默认后无需重启服务。
     from app.model_profiles import apply_default_profiles

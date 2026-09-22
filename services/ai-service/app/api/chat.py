@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import shutil
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Literal
@@ -18,10 +20,15 @@ from pydantic import BaseModel, Field
 from deskmate_contracts import new_event_id
 from deskmate_contracts.conversation import ChatAttachment, ChatMode
 from deskmate_contracts.events import EventEnvelope
+from deskmate_contracts.project import ProjectNode
+from deskmate_contracts.reminder import Reminder
 from app.chat.context import build_llm_messages
 from app.config import repo_root
+from app.core.emotion_resolver import infer_emotion
 from app.core.persona_prompt import compose_system_prompt, load_persona
+from app.core.reminders import parse_reminder_message
 from app.llm import create_provider
+from app.llm.base import ToolSpec
 from app.model_profiles import find_model_profile, load_model_profiles, profile_settings
 from app.routing import classify_task_input
 
@@ -34,6 +41,10 @@ _ALLOWED_ATTACHMENT_SUFFIXES = {
     ".pdf", ".txt", ".csv", ".md", ".png", ".jpg", ".jpeg",
 }
 _MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
+
+MAX_TOOL_TURNS = 5
+TOOL_APPROVAL_TIMEOUT_S = 120
+TOOL_RESULT_MAX_CHARS = 8000
 
 
 def _is_echo_of_reply(message: str, conversation) -> bool:
@@ -208,6 +219,14 @@ async def upload_chat_attachments(
     return {"items": [item.model_dump(mode="json") for item in items]}
 
 
+def _project_memory_key(project: str | None) -> str | None:
+    """项目独立记忆文档 key；未绑定返回 None（回退全局 project 文档）。"""
+    if not project:
+        return None
+    slug = re.sub(r"\W+", "-", Path(project).name).strip("-")[:40] or "proj"
+    return f"proj-{slug}"
+
+
 async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[str]:
     store = request.app.state.conversation_store
     hub = request.app.state.event_hub
@@ -258,8 +277,10 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             payload={"message": body.message},
         )
     )
+    selected_skill = request.app.state.skill_registry.select(body.message)
     task = classify_task_input(body.message, settings.permission_level)
     task.conversation_id = conversation_id
+    task.project = conversation.project
     task = request.app.state.task_store.put(task)
     await hub.publish(
         EventEnvelope(
@@ -300,7 +321,11 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             executor = (
                 "browser" if is_browser_task(body.message) and not web_fetch else None
             )
-            mode = "agent" if web_fetch else "read-only"
+            mode = (
+                "agent"
+                if web_fetch or task.work_kind in {"word", "excel", "ppt"}
+                else "read-only"
+            )
             auto_run = await request.app.state.agent_run_manager.execute(
                 task, mode=mode, executor=executor, cwd=attachment_cwd
             )
@@ -317,6 +342,10 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
     except Exception:
         user_trace_id = ""
 
+    is_casual = (
+        body.mode == "casual"
+        or (body.mode == "auto" and task.interaction_kind == "casual")
+    )
     try:
         if task.category == "request_approval":
             answer = "这类操作需要先确认，我已经挂起等待授权。"
@@ -335,9 +364,10 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             yield _sse({"type": "delta", "content": answer})
         else:
             # 工作模式记忆深度：casual 轻量 / work 完整 / auto 按分流结果
-            is_casual = (
-                body.mode == "casual"
-                or (body.mode == "auto" and task.category == "answer")
+            proj_summary = (
+                request.app.state.project_node_store.summary(conversation.project)
+                if conversation.project
+                else ""
             )
             if is_casual:
                 compiled = memory.recall_context(
@@ -347,20 +377,144 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
                     persona_id=settings.active_persona_id,
                 )
             else:
+                proj_key = _project_memory_key(conversation.project)
                 compiled = memory.recall_context(
                     query=body.message,
                     budget_chars=settings.memory_budget_chars,
-                    surfaces=["conversation", "project"],
+                    surfaces=["conversation", proj_key or "project"],
                     persona_id=settings.active_persona_id,
                 )
             llm_messages = build_llm_messages(
-                _system_prompt(request), conversation, memory_context=compiled.text
+                _system_prompt(request),
+                conversation,
+                memory_context="\n\n".join(p for p in (compiled.text, proj_summary) if p.strip()),
+                skill_context=(
+                    f"技能：{selected_skill.info.name}\n{selected_skill.body}"
+                    if selected_skill is not None
+                    else ""
+                ),
             )
-            buffer: list[str] = []
-            async for chunk in provider.stream_chat(llm_messages):
-                buffer.append(chunk)
-                yield _sse({"type": "delta", "content": chunk})
-            answer = "".join(buffer)
+            mcp_manager = request.app.state.mcp_manager
+            await mcp_manager.reclaim_idle()
+            tool_pairs = await mcp_manager.prepare_tool_specs()
+            tool_lookup = {
+                f"mcp__{server_id}__{tool.name}": (server_id, tool.name)
+                for server_id, tool in tool_pairs
+            }
+            tool_specs = [
+                ToolSpec(
+                    name=f"mcp__{server_id}__{tool.name}",
+                    description=(tool.description or tool.name)[:500],
+                    parameters=tool.input_schema
+                    or {"type": "object", "properties": {}},
+                )
+                for server_id, tool in tool_pairs
+            ]
+            if not tool_specs:
+                # 无可用 MCP 工具：保持原流式路径不变
+                buffer: list[str] = []
+                async for chunk in provider.stream_chat(llm_messages):
+                    buffer.append(chunk)
+                    yield _sse({"type": "delta", "content": chunk})
+                answer = "".join(buffer)
+            else:
+                answer = ""
+                extra_messages: list[dict] = []
+                for _ in range(MAX_TOOL_TURNS):
+                    result = await provider.chat(
+                        [*llm_messages, *extra_messages],
+                        tools=tool_specs,
+                    )
+                    if not result.tool_calls:
+                        answer = result.text or "（模型未返回内容）"
+                        break
+                    extra_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": result.text or "",
+                            "tool_calls": [
+                                {
+                                    "id": call.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": call.name,
+                                        "arguments": json.dumps(
+                                            call.arguments, ensure_ascii=False
+                                        ),
+                                    },
+                                }
+                                for call in result.tool_calls
+                            ],
+                        }
+                    )
+                    for call in result.tool_calls:
+                        parsed = tool_lookup.get(call.name)
+                        tool_content = ""
+                        if parsed is None:
+                            tool_content = f"未知工具：{call.name}"
+                        else:
+                            server_id, tool_name = parsed
+                            yield _sse(
+                                {
+                                    "type": "tool_call",
+                                    "server": server_id,
+                                    "tool": tool_name,
+                                }
+                            )
+                            access = mcp_manager.get_access(server_id) or "read"
+                            denied = False
+                            if access == "write":
+                                approval_id = f"approve_{uuid4().hex[:12]}"
+                                yield _sse(
+                                    {
+                                        "type": "tool_approval",
+                                        "approval_id": approval_id,
+                                        "server": server_id,
+                                        "tool": tool_name,
+                                        "arguments": json.dumps(
+                                            call.arguments, ensure_ascii=False
+                                        )[:500],
+                                    }
+                                )
+                                future = asyncio.get_running_loop().create_future()
+                                request.app.state.tool_approvals[approval_id] = future
+                                try:
+                                    decision = await asyncio.wait_for(
+                                        future, TOOL_APPROVAL_TIMEOUT_S
+                                    )
+                                except asyncio.TimeoutError:
+                                    decision = "rejected"
+                                request.app.state.tool_approvals.pop(
+                                    approval_id, None
+                                )
+                                if decision != "approved":
+                                    denied = True
+                                    tool_content = (
+                                        f"用户拒绝执行 {server_id}.{tool_name}"
+                                    )
+                            if not denied:
+                                try:
+                                    tool_content = await mcp_manager.call_tool(
+                                        server_id, tool_name, call.arguments
+                                    )
+                                except Exception as exc:
+                                    tool_content = f"工具执行失败：{exc}"
+                                if len(tool_content) > TOOL_RESULT_MAX_CHARS:
+                                    tool_content = (
+                                        tool_content[:TOOL_RESULT_MAX_CHARS]
+                                        + "\n…（结果过长已截断）"
+                                    )
+                        extra_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call.id,
+                                "content": tool_content,
+                            }
+                        )
+                else:
+                    answer = "（工具调用轮数超限，已停止；请换个说法或手动执行）"
+                if answer:
+                    yield _sse({"type": "delta", "content": answer})
         await store.append_message(
             conversation_id, "assistant", answer, modality="text"
         )
@@ -371,8 +525,20 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
         )
         yield _sse({"type": "error", "message": str(exc)})
 
+    reminder_note = ""
+    parsed_reminder = parse_reminder_message(body.message)
+    if parsed_reminder is not None:
+        reminder_text, remind_at = parsed_reminder
+        request.app.state.reminder_store.put(
+            Reminder(kind="memo", text=reminder_text, remind_at=remind_at)
+        )
+        reminder_note = f"⏰ 已设置提醒：{reminder_text}"
+    if reminder_note:
+        answer = f"{reminder_note}\n{answer}"
+
     is_short = len(answer) <= settings.short_reply_chars
     speak_text = build_speak_text(answer, settings.short_reply_chars)
+    reply_emotion = infer_emotion(speak_text or answer, casual=is_casual)
     try:
         assistant_trace_id = memory.record_event(
             "conversation",
@@ -385,7 +551,24 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
         if user_trace_id:
             memory.upsert_entry("L3", "recent", "近期对话", body.message[:300], [user_trace_id])
         if "决定" in body.message or "方向" in body.message or "项目" in body.message:
-            memory.upsert_entry("L2", "project", "项目线索", body.message[:500], [user_trace_id])
+            memory.upsert_entry(
+                "L2",
+                _project_memory_key(conversation.project) or "project",
+                "项目线索",
+                body.message[:500],
+                [user_trace_id],
+            )
+        if conversation.project and ("决定" in body.message or "采用" in body.message):
+            request.app.state.project_node_store.put(
+                ProjectNode(
+                    project=conversation.project,
+                    title=body.message[:60],
+                    kind="decision",
+                    status="completed",
+                    decision=body.message[:500],
+                    source="conversation",
+                )
+            )
         if assistant_trace_id and ("完成" in answer or "已" in answer):
             memory.upsert_entry("L3", "recent", "最近结果", speak_text[:300] or answer[:300], [assistant_trace_id])
     except Exception:
@@ -395,6 +578,12 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             event_type="conversation.completed",
             source="conversation",
             conversation_id=conversation_id,
+            expression={
+                "state": "completed",
+                "task_id": task.task_id if task else None,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "emotion": reply_emotion,
+            },
             payload={
                 "message": answer,
                 "speak_text": speak_text,
@@ -402,6 +591,8 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
                 "expand_ui": not is_short,
                 "task_id": task.task_id if task else None,
                 "task_category": task.category if task else "answer",
+                "interaction_kind": task.interaction_kind if task else "casual",
+                "skill_id": selected_skill.info.id if selected_skill else None,
             },
         )
     )
@@ -412,8 +603,11 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             "short": is_short,
             "message": answer,
             "speak_text": speak_text,
+            "emotion": reply_emotion,
             "task_id": task.task_id if task else None,
             "task_category": task.category if task else "answer",
+            "interaction_kind": task.interaction_kind if task else "casual",
+            "skill_id": selected_skill.info.id if selected_skill else None,
             "model_profile_id": active_profile.id if active_profile else None,
             "model_name": active_profile.name if active_profile else provider.display_name,
         }

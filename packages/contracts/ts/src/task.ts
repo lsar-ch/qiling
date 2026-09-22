@@ -4,6 +4,15 @@ export type TaskCategory =
   | "execute_frontend"
   | "delegate_backend"
   | "request_approval";
+export type WorkKind =
+  | "general"
+  | "code"
+  | "browser"
+  | "word"
+  | "excel"
+  | "ppt"
+  | "project";
+export type InteractionKind = "casual" | "project" | "work";
 export type RiskLevel = "low" | "medium" | "high";
 export type TaskStatus =
   | "queued"
@@ -16,8 +25,11 @@ export type TaskStatus =
 export interface Task {
   task_id: string;
   conversation_id: string | null;
+  project: string | null;
   input: string;
   category: TaskCategory;
+  work_kind: WorkKind;
+  interaction_kind: InteractionKind;
   risk_level: RiskLevel;
   complexity: "simple" | "medium" | "complex";
   estimated_duration: "short" | "medium" | "long";

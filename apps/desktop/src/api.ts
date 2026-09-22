@@ -1,7 +1,11 @@
 // 桌面前端：事件连接 + 服务健康探测
+import { invoke } from "@tauri-apps/api/core";
+
 export type WidgetState =
   | "idle" | "listening" | "thinking" | "speaking"
   | "executing" | "awaiting_approval" | "completed" | "interrupted";
+
+export type InteractionKind = "work" | "casual" | "project";
 
 export interface WidgetStatusReport {
   state: string;
@@ -15,7 +19,8 @@ export interface WidgetStatusReport {
 
 export type ExpressionEmotion =
   | "neutral" | "attentive" | "thinking"
-  | "confused" | "success" | "error";
+  | "confused" | "success" | "error"
+  | "happy" | "sad" | "surprised";
 
 export interface ExpressionBubble {
   text: string;
@@ -31,10 +36,15 @@ export interface ExpressionEvent {
   bubble?: ExpressionBubble | null;
 }
 
+export type MotionFamily = "human" | "animal" | "anime";
+export type ArtStyle = "realistic" | "anime" | "chibi" | "pixel";
+
 export interface PersonaPresentation {
   persona_id: string;
   persona_name: string;
-  style: "human" | "animal";
+  style: MotionFamily;
+  motion_family: MotionFamily;
+  art_style?: ArtStyle | null;
   theme: {
     primary: string;
     aura: string;
@@ -55,6 +65,8 @@ export interface PersonaPresentation {
     avatar_url?: string;
     width?: number;
     height?: number;
+    /** VRM 模型相对 persona 资产目录的路径；存在时挂件走 3D 渲染 */
+    vrm_path?: string;
   } | null;
 }
 
@@ -76,6 +88,31 @@ export async function pollHealth(url: string): Promise<boolean> {
   }
 }
 
+export interface PersonaLayer {
+  id: string;
+  file: string;
+  z: number;
+  role: string;
+  /** 按状态名切换的多帧序列，state_name → 相对文件路径列表 */
+  frames?: Record<string, string[]>;
+  /** 各状态帧率（帧/秒），缺失时使用 8 */
+  frame_fps?: Record<string, number>;
+}
+
+export interface PersonaSpriteSheet {
+  state_name: string;
+  file: string;
+  frame_width: number;
+  frame_height: number;
+  frames: number;
+  fps: number;
+}
+
+export interface PersonaAssetManifest {
+  layers: PersonaLayer[] | null;
+  spritesheets: PersonaSpriteSheet[];
+}
+
 export interface PersonaAssetMetrics {
   personaId: string;
   /** 归一化画布尺寸（contentBbox 以此为坐标系） */
@@ -87,7 +124,8 @@ export interface PersonaAssetMetrics {
 
 export async function fetchActivePersonaAsset(): Promise<{
   avatar: string;
-  style: "human" | "animal";
+  style: MotionFamily;
+  motion_family?: MotionFamily;
 } & PersonaAssetMetrics> {
   const settingsResp = await fetch(`${SERVICE_BASE}/api/settings`);
   if (!settingsResp.ok) throw new Error(await readDetail(settingsResp));
@@ -95,15 +133,103 @@ export async function fetchActivePersonaAsset(): Promise<{
   const personasResp = await fetch(`${SERVICE_BASE}/api/personas`);
   if (!personasResp.ok) throw new Error(await readDetail(personasResp));
   const personas = await personasResp.json() as {
-    items: Array<{ id: string; avatar?: string; kind?: string }>;
+    items: Array<{ id: string; avatar?: string; kind?: string; motion_family?: string }>;
   };
   const persona = personas.items.find((item) => item.id === settings.active_persona_id);
   const animalKinds = new Set(["cat", "dog", "bird", "rabbit", "animal"]);
+  const rawMotion = persona?.motion_family;
+  const motionFamily =
+    rawMotion === "human" || rawMotion === "animal" || rawMotion === "anime"
+      ? rawMotion
+      : undefined;
   return {
     avatar: persona?.avatar ?? "",
     style: animalKinds.has(persona?.kind?.toLowerCase() ?? "") ? "animal" : "human",
+    motion_family: motionFamily,
     ...(await fetchPersonaAssetMetrics(settings.active_persona_id)),
   };
+}
+
+export function personaAssetUrl(personaId: string, file: string): string {
+  const encoded = file.split("/").map(encodeURIComponent).join("/");
+  return `${SERVICE_BASE}/api/personas/${encodeURIComponent(personaId)}/asset/${encoded}`;
+}
+
+/** 读取分层 + 多帧/spritesheet 资产清单；无 layers.json 时返回空清单。 */
+export async function fetchPersonaAssetManifest(personaId: string): Promise<PersonaAssetManifest> {
+  const empty: PersonaAssetManifest = { layers: null, spritesheets: [] };
+  if (!personaId) return empty;
+  try {
+    const resp = await fetch(personaAssetUrl(personaId, "layers.json"));
+    if (!resp.ok) return empty;
+    const raw = (await resp.json()) as { layers?: unknown; spritesheets?: unknown };
+    const layers = Array.isArray(raw.layers) ? raw.layers : [];
+    const parsed = (layers as Array<Record<string, unknown>>)
+      .filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          typeof item.id === "string" &&
+          typeof item.file === "string" &&
+          typeof item.z === "number",
+      )
+      .map((item) => ({
+        id: String(item.id),
+        file: String(item.file),
+        z: Number(item.z),
+        role: typeof item.role === "string" ? item.role : "",
+        frames: parseFrameMap(item.frames),
+        frame_fps: parseFrameFps(item.frame_fps),
+      }))
+      .sort((a, b) => a.z - b.z);
+    const spritesheets = Array.isArray(raw.spritesheets)
+      ? (raw.spritesheets as Array<Record<string, unknown>>)
+          .filter(
+            (item) =>
+              item &&
+              typeof item === "object" &&
+              typeof item.state_name === "string" &&
+              typeof item.file === "string" &&
+              typeof item.frame_width === "number" &&
+              typeof item.frame_height === "number" &&
+              typeof item.frames === "number",
+          )
+          .map((item) => ({
+            state_name: String(item.state_name),
+            file: String(item.file),
+            frame_width: Number(item.frame_width),
+            frame_height: Number(item.frame_height),
+            frames: Number(item.frames),
+            fps: typeof item.fps === "number" && item.fps > 0 ? Number(item.fps) : 8,
+          }))
+      : [];
+    return { layers: parsed.length > 0 ? parsed : null, spritesheets };
+  } catch {
+    return empty;
+  }
+}
+
+function parseFrameMap(value: unknown): Record<string, string[]> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [stateName, files] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(files)) {
+      const cleaned = files
+        .filter((file): file is string => typeof file === "string" && !!file)
+        .map(String);
+      if (cleaned.length) out[stateName] = cleaned;
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function parseFrameFps(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [stateName, fps] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof fps === "number" && fps > 0) out[stateName] = fps;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**
@@ -220,6 +346,7 @@ export interface ChatStreamDone {
   short: boolean;
   message: string;
   speak_text: string;
+  emotion: ExpressionEmotion;
 }
 
 export async function fetchVoiceStatus(): Promise<VoiceEndpointStatus> {
@@ -251,6 +378,14 @@ export async function releaseVoiceLease(): Promise<void> {
     headers: { "X-Voice-Client": "widget" },
     keepalive: true,
   }).catch(() => {});
+}
+
+export async function fetchMainUiVisible(): Promise<boolean> {
+  try {
+    return await invoke<boolean>("main_ui_visible");
+  } catch {
+    return false;
+  }
 }
 
 export async function apiVoiceIntent(text: string, client: "web" | "widget" = "widget"): Promise<VoiceIntentResponse> {
@@ -299,11 +434,15 @@ export async function synthesizeSpeechStream(
   text: string,
   client: "web" | "widget" = "widget",
   signal?: AbortSignal,
+  emotion?: ExpressionEmotion,
 ): Promise<AsyncGenerator<AudioChunk>> {
   const resp = await fetch(`${SERVICE_BASE}/api/voice/synthesize/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Voice-Client": client },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({
+      text,
+      ...(emotion ? { params: { emotion } } : {}),
+    }),
     signal,
   });
   if (!resp.ok) {
@@ -385,6 +524,7 @@ export async function streamChat(
         conversation_id?: string;
         short?: boolean;
         speak_text?: string;
+        emotion?: ExpressionEmotion;
       };
       try {
         obj = JSON.parse(dataLine.slice(6)) as typeof obj;
@@ -401,6 +541,7 @@ export async function streamChat(
           short: obj.short ?? true,
           message: obj.message ?? "",
           speak_text: obj.speak_text ?? obj.message ?? "",
+          emotion: obj.emotion ?? "neutral",
         };
       }
     }

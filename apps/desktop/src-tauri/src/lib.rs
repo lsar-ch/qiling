@@ -290,6 +290,8 @@ fn start_service(shared: &mut Shared) {
             "127.0.0.1",
             "--port",
             &port,
+            // 开发模式：改 Python 保存后自动重启服务，配合前端 HMR 实现边改边看。
+            "--reload",
         ])
         .current_dir(&service_dir)
         .stdin(Stdio::null())
@@ -300,6 +302,13 @@ fn start_service(shared: &mut Shared) {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::os::unix::process::CommandExt;
+        // 让 uvicorn reloader 与 worker 同属一个新进程组（PGID=子进程PID），
+        // 退出时按整组回收，避免孤儿 worker 残留继续占用端口/麦克风。
+        command.process_group(0);
     }
 
     match command.spawn() {
@@ -319,22 +328,42 @@ fn start_service(shared: &mut Shared) {
 fn open_main_ui_window(app: &AppHandle, page: Option<String>) -> Result<(), String> {
     let url = format!("http://127.0.0.1:{SERVICE_PORT}/{}", page_fragment(page));
     if let Some(window) = app.get_webview_window("main_ui") {
-        window
-            .navigate(url.parse().map_err(|e| format!("主界面地址无效: {e}"))?)
-            .map_err(|e| format!("切换主界面页面失败: {e}"))?;
+        let target: tauri::Url = url.parse().map_err(|e| format!("主界面地址无效: {e}"))?;
+        // 目标地址与当前一致时只显示不导航：避免重载杀掉刚建立的租约心跳。
+        let same_url = window
+            .url()
+            .map(|current| current.as_str() == target.as_str())
+            .unwrap_or(false);
+        if !same_url {
+            window
+                .navigate(target)
+                .map_err(|e| format!("切换主界面页面失败: {e}"))?;
+        }
         let _ = window.show();
         let _ = window.set_focus();
         let _ = app.emit(MAIN_UI_VISIBILITY, true);
         return Ok(());
     }
-    WebviewWindowBuilder::new(app, "main_ui", WebviewUrl::External(url.parse().map_err(|e| format!("主界面地址无效: {e}"))?))
+    let target: tauri::Url = url.parse().map_err(|e| format!("主界面地址无效: {e}"))?;
+    let window = WebviewWindowBuilder::new(app, "main_ui", WebviewUrl::External(target))
         .title("DeskMate 主界面")
         .inner_size(1200.0, 800.0)
         .min_inner_size(900.0, 640.0)
         .center()
         .build()
-        .map(|_| ())
-        .map_err(|e| format!("创建主界面窗口失败: {e}"))
+        .map_err(|e| format!("创建主界面窗口失败: {e}"))?;
+    let _ = window.show();
+    let _ = window.set_focus();
+    let _ = app.emit(MAIN_UI_VISIBILITY, true);
+    Ok(())
+}
+
+/// 查询主界面窗口当前是否真实可见（权威状态，供挂件/主页自愈漏接事件）。
+#[tauri::command]
+fn main_ui_visible(app: AppHandle) -> bool {
+    app.get_webview_window("main_ui")
+        .map(|window| window.is_visible().unwrap_or(false))
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -396,10 +425,38 @@ fn kill_child(app: &AppHandle) {
     if let Some(state) = app.try_state::<ChildState>() {
         if let Ok(mut shared) = state.0.lock() {
             if let Some(mut child) = shared.child.take() {
+                #[cfg(not(target_os = "windows"))]
+                {
+                    // 服务以新进程组启动（含 uvicorn reloader + worker）；
+                    // 对负 PID（= 整个进程组）发 TERM，再回收主进程，避免孤儿 worker 残留。
+                    let group = format!("-{}", child.id());
+                    let _ = Command::new("/bin/kill")
+                        .args(["-TERM", &group])
+                        .output();
+                }
                 let _ = child.kill();
                 let _ = child.wait();
+                #[cfg(not(target_os = "windows"))]
+                kill_listeners_on_port(SERVICE_PORT);
             }
         }
+    }
+}
+
+/// 端口兜底：回收仍在监听本项目服务端口的进程（uvicorn worker 偶发漏网时）。
+/// 只作用于 127.0.0.1 的该端口，不触碰其它程序。
+#[cfg(not(target_os = "windows"))]
+fn kill_listeners_on_port(port: u16) {
+    let endpoint = format!("TCP:127.0.0.1:{port}");
+    let output = match Command::new("/usr/sbin/lsof")
+        .args(["-t", "-i", &endpoint, "-sTCP:LISTEN"])
+        .output()
+    {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    for pid in String::from_utf8_lossy(&output.stdout).split_whitespace() {
+        let _ = Command::new("/bin/kill").args(["-TERM", pid]).output();
     }
 }
 
@@ -482,6 +539,7 @@ pub fn run() {
             ensure_service,
             service_status,
             open_main_ui,
+            main_ui_visible,
             widget::get_widget_preferences,
             widget::set_widget_auto_hide,
             widget::set_widget_scale,
@@ -491,6 +549,7 @@ pub fn run() {
             widget::cancel_widget_drag,
             widget::finish_widget_drag,
             widget::resize_widget_height,
+            widget::system_idle_seconds,
             quit_app
         ])
         .on_window_event(|window, event| match event {

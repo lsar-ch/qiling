@@ -98,6 +98,35 @@ def test_search_action_routes_to_browser_executor(tmp_path: Path, monkeypatch) -
         body = resp.json()
         assert body["task"]["category"] == "delegate_backend"
         assert body["task"]["preferred_executor"] == "browser"
+        assert body["task"]["work_kind"] == "browser"
+
+
+def test_office_tasks_get_work_kind_without_new_executor(tmp_path: Path, monkeypatch) -> None:
+    with make_client(tmp_path, monkeypatch) as client:
+        cases = [
+            ("帮我把这个 Word 文档重新排版", "word"),
+            ("分析这个 Excel 数据并生成图表", "excel"),
+            ("把这个 PPT 美化一下", "ppt"),
+            ("请整理一下报告.docx", "word"),
+            ("请整理这个 Excel 文档", "excel"),
+        ]
+        for text, work_kind in cases:
+            resp = client.post("/api/tasks", json={"input": text})
+            assert resp.status_code == 200
+            task = resp.json()["task"]
+            assert task["category"] == "delegate_backend", text
+            assert task["work_kind"] == work_kind, text
+            assert task["preferred_executor"] is None, text
+
+
+def test_work_kind_preserves_existing_risk_gate(tmp_path: Path, monkeypatch) -> None:
+    with make_client(tmp_path, monkeypatch) as client:
+        resp = client.post("/api/tasks", json={"input": "删除这个 Excel 文件"})
+        assert resp.status_code == 200
+        task = resp.json()["task"]
+        assert task["category"] == "request_approval"
+        assert task["work_kind"] == "excel"
+        assert task["required_approval"] is True
 
 
 def test_backend_work_routes_to_delegate_backend(tmp_path: Path, monkeypatch) -> None:
@@ -127,6 +156,21 @@ def test_short_chitchat_is_not_a_task(tmp_path: Path, monkeypatch) -> None:
             resp = client.post("/api/tasks", json={"input": text})
             assert resp.status_code == 200
             assert resp.json()["task"]["category"] == "answer", text
+
+
+def test_interaction_kind_distinguishes_casual_project_and_work() -> None:
+    casual = classify_task_input("你今天怎么样")
+    assert casual.category == "answer"
+    assert casual.interaction_kind == "casual"
+
+    project = classify_task_input("这个项目现在进行到哪一步了")
+    assert project.category == "answer"
+    assert project.work_kind == "project"
+    assert project.interaction_kind == "project"
+
+    work = classify_task_input("帮我检查这个项目的代码结构")
+    assert work.category == "delegate_backend"
+    assert work.interaction_kind == "work"
 
 
 def test_plain_command_routes_to_expected_executor(tmp_path: Path, monkeypatch) -> None:
@@ -235,3 +279,23 @@ def test_chat_auto_routes_and_replies_to_browser_task(tmp_path: Path, monkeypatc
         conversation_id = conversations[0]["conversation_id"]
         messages = client.get(f"/api/conversations/{conversation_id}").json()["messages"]
         assert "后台执行" in messages[-1]["content"]
+
+
+def test_chat_done_exposes_interaction_kind(tmp_path: Path, monkeypatch) -> None:
+    with make_client(tmp_path, monkeypatch, llm_provider=DummyProvider()) as client:
+        resp = client.post("/api/chat/stream", json={"message": "你今天怎么样"})
+        assert resp.status_code == 200
+        assert '"interaction_kind": "casual"' in resp.text
+
+
+def test_chat_task_keeps_project_binding(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    with make_client(tmp_path, monkeypatch, llm_provider=DummyProvider()) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "你今天怎么样", "project": str(project)},
+        )
+        assert resp.status_code == 200
+        task = client.get("/api/tasks").json()["items"][0]
+        assert task["project"] == str(project)

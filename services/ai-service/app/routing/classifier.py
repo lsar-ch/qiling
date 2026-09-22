@@ -73,6 +73,19 @@ _ANSWER_HINTS = (
     r"hey",
 )
 
+_PROJECT_QUERY_HINTS = (
+    r"项目进度",
+    r"项目节点",
+    r"项目状态",
+    r"项目进展",
+    r"做到哪一步",
+    r"进行到哪",
+    r"里程碑",
+    r"下一步",
+    r"历史决策",
+    r"哪里阻塞",
+)
+
 _FRONTEND_HINTS = (
     r"打开(网页|浏览器|链接)",
     r"点击",
@@ -144,6 +157,91 @@ _ACTION_HINTS = (
     r"修复",
     r"优化",
 )
+
+_WORK_KIND_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "word",
+        (
+            r"\b(docx?|word)\b",
+            r"排版",
+            r"段落",
+            r"页眉",
+            r"页脚",
+        ),
+    ),
+    (
+        "excel",
+        (
+            r"\b(xlsx?|excel)\b",
+            r"表格",
+            r"数据清洗",
+            r"数据分析",
+            r"透视表",
+            r"图表",
+        ),
+    ),
+    (
+        "ppt",
+        (
+            r"\b(pptx?|powerpoint)\b",
+            r"演示文稿",
+            r"幻灯片",
+            r"幻灯片美化",
+        ),
+    ),
+    (
+        "browser",
+        (r"浏览器", r"网页", r"网站", r"页面", r"链接", r"url"),
+    ),
+    (
+        "code",
+        (r"代码", r"编程", r"脚本", r"仓库", r"\b(api|sdk|bug)\b"),
+    ),
+    (
+        "project",
+        (r"项目", r"工程", r"任务", r"里程碑", r"技术方案"),
+    ),
+)
+
+_OFFICE_ACTION_HINTS = (
+    r"编辑",
+    r"排版",
+    r"格式",
+    r"美化",
+    r"生成",
+    r"创建",
+    r"制作",
+    r"修改",
+    r"调整",
+    r"清洗",
+    r"计算",
+    r"统计",
+    r"图表",
+    r"读取",
+    r"解析",
+    r"提取",
+    r"总结",
+    r"整理",
+)
+
+
+def infer_work_kind(text: str) -> str:
+    """从用户输入推断工作领域，具体执行仍由后台执行器决定。"""
+    for work_kind, patterns in _WORK_KIND_HINTS:
+        if _matches_any(text, patterns):
+            return work_kind
+    if re.search(r"文档", text, re.I):
+        return "word"
+    return "general"
+
+
+def _is_office_task(work_kind: str, text: str) -> bool:
+    return work_kind in {"word", "excel", "ppt"} and (
+        _matches_any(text, _OFFICE_ACTION_HINTS)
+        or bool(re.search(r"\.(docx?|xlsx?|pptx?)\b", text, re.I))
+    )
+
+
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip()).lower()
 
@@ -161,11 +259,32 @@ def _guess_permission_gate(permission_level: str, category: str, risk_level: str
     return category != "answer"
 
 
+def _interaction_kind(category: str, work_kind: str, text: str) -> str:
+    if category != "answer":
+        return "work"
+    if work_kind == "project" or _matches_any(
+        text,
+        (
+            r"项目进度",
+            r"项目节点",
+            r"项目状态",
+            r"阻塞",
+            r"里程碑",
+            r"下一步",
+            r"历史决策",
+        ),
+    ):
+        return "project"
+    return "casual"
+
+
 def classify_task_input(text: str, permission_level: str = "confirm_risky") -> Task:
     """把输入分到 answer / execute_frontend / delegate_backend / request_approval。"""
     normalized = normalize_text(text)
     compact = normalized.replace(" ", "")
     force_web = bool(_URL_HINTS.search(normalized))
+    work_kind = infer_work_kind(normalized)
+    office_task = _is_office_task(work_kind, normalized)
 
     if _matches_any(normalized, _HIGH_RISK_PATTERNS):
         category = "request_approval"
@@ -182,9 +301,17 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         complexity = "simple"
         estimated_duration = "short"
         preferred_executor = "browser"
+        work_kind = "browser"
+    elif office_task:
+        category = "delegate_backend"
+        risk_level = "medium"
+        complexity = "medium"
+        estimated_duration = "medium"
+        preferred_executor = None
     elif (
         not force_web
         and _matches_any(normalized, _ANSWER_HINTS)
+        or _matches_any(normalized, _PROJECT_QUERY_HINTS)
         or "?" in normalized
         or "？" in normalized
         or (
@@ -230,9 +357,12 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         estimated_duration = "long" if estimated_duration == "long" else "medium"
         preferred_executor = None
 
+    interaction_kind = _interaction_kind(category, work_kind, normalized)
     return Task(
         input=text,
         category=category,  # type: ignore[arg-type]
+        work_kind=work_kind,  # type: ignore[arg-type]
+        interaction_kind=interaction_kind,  # type: ignore[arg-type]
         risk_level=risk_level,  # type: ignore[arg-type]
         complexity=complexity,  # type: ignore[arg-type]
         estimated_duration=estimated_duration,  # type: ignore[arg-type]

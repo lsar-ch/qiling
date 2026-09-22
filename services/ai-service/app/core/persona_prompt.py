@@ -47,9 +47,13 @@ PERSONA_PRESETS: dict[str, dict[str, str]] = {
 PROFILE_SECTIONS: tuple[tuple[str, str], ...] = (
     ("identity", "身份"),
     ("personality", "性格"),
+    ("flaws", "缺点"),
     ("speech", "说话风格"),
+    ("catchphrases", "口头禅"),
     ("relationship", "与用户的关系"),
     ("preferences", "偏好"),
+    ("likes", "喜好"),
+    ("dislikes", "不喜"),
     ("boundaries", "边界"),
 )
 
@@ -83,6 +87,8 @@ def _section_text(
     label: str,
 ) -> str | None:
     value = profile.get(key)
+    if isinstance(value, list):
+        value = "、".join(str(item).strip() for item in value if str(item).strip())
     if isinstance(value, str) and value.strip():
         return f"### {label}\n{value.strip()}"
     legacy_key = _LEGACY_FALLBACK.get(key)
@@ -110,7 +116,13 @@ def build_system_prompt(persona: dict[str, Any] | None) -> str:
         overrides = {
             key: value
             for key, value in profile.items()
-            if isinstance(value, str) and value.strip()
+            if (
+                (isinstance(value, str) and value.strip())
+                or (
+                    isinstance(value, list)
+                    and any(str(item).strip() for item in value)
+                )
+            )
         }
         profile = {**PERSONA_PRESETS[preset_name], **overrides}
     sections: list[str] = []

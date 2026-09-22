@@ -18,8 +18,20 @@ class ApprovalAction(BaseModel):
 
 @router.get("")
 async def list_runs(request: Request, limit: int = 50) -> dict:
-    items = _manager(request).store.list_recent(limit=max(1, min(limit, 200)))
-    return {"items": [run.model_dump(mode="json") for run in items]}
+    manager = _manager(request)
+    items = manager.store.list_recent(limit=max(1, min(limit, 200)))
+    enriched = []
+    for run in items:
+        item = run.model_dump(mode="json")
+        task = request.app.state.task_store.get(run.task_id)
+        if task:
+            item.update(
+                task_input=task.input,
+                conversation_id=task.conversation_id,
+                project=task.project,
+            )
+        enriched.append(item)
+    return {"items": enriched}
 
 
 @router.get("/awaiting")

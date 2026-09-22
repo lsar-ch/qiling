@@ -23,6 +23,7 @@ class FakeProvider:
     def __init__(self, answer: str, chunk: int = 3) -> None:
         self._answer = answer
         self._chunk = chunk
+        self.last_messages: list[dict[str, str]] | None = None
 
     async def stream_chat(
         self,
@@ -31,6 +32,7 @@ class FakeProvider:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
+        self.last_messages = messages
         for i in range(0, len(self._answer), self._chunk):
             yield self._answer[i : i + self._chunk]
 
@@ -245,3 +247,30 @@ def test_chitchat_uses_light_memory_context() -> None:
     assert calls, "闲聊应走 LLM 回复（触发 recall_context）"
     assert calls[0]["budget_chars"] <= 800
     assert calls[0]["surfaces"] == []
+
+
+def test_project_memory_continuity_and_decision_node(tmp_path: Path) -> None:
+    """T5：决策语句建 decision 节点；新对话继承项目进度摘要；记忆按项目隔离。"""
+    proj = tmp_path / "proj-a"
+    proj.mkdir()
+    provider = FakeProvider("好")
+    with make_client(provider) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "我们决定采用方案 B 推进", "project": str(proj)},
+        )
+        parse_sse(resp.text)
+        nodes = client.get("/api/projects/nodes", params={"project": str(proj)}).json()["items"]
+        assert any(n["kind"] == "decision" and "方案 B" in n["title"] for n in nodes)
+
+        mem = Path(os.environ["DESKMATE_HOME"]) / "data" / "memory"
+        assert "方案 B" in (mem / "L2" / "proj-proj-a.md").read_text(encoding="utf-8")
+        assert "方案 B" not in (mem / "L2" / "project.md").read_text(encoding="utf-8")
+
+        resp2 = client.post(
+            "/api/chat/stream",
+            json={"message": "现在进度如何", "project": str(proj)},
+        )
+        parse_sse(resp2.text)
+        system = provider.last_messages[0]["content"]
+        assert "进度：" in system and "方案 B" in system

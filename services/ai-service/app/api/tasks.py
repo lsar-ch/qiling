@@ -76,6 +76,9 @@ def get_task(task_id: str, request: Request) -> dict:
 async def route_task(payload: RouteRequest, request: Request) -> dict:
     task = classify_task_input(payload.input, request.app.state.settings.permission_level)
     task.conversation_id = payload.conversation_id
+    if payload.conversation_id:
+        conversation = await request.app.state.conversation_store.get(payload.conversation_id)
+        task.project = conversation.project if conversation else None
     task = task_store(request).put(task)
     await request.app.state.event_hub.publish(
         EventEnvelope(

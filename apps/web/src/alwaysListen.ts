@@ -1,7 +1,7 @@
 // 常开语音监听：能量 VAD 自动断句 → 16k 单声道 WAV。
 // 说明：说话起音/结束由音量阈值判断；参数需真机试听后微调。
 
-import { encodeWav } from "./recorder";
+import { encodeWav, getUserMediaWithBusyRetry } from "./recorder";
 
 export interface AlwaysListenSegment {
   wav: Blob;
@@ -71,18 +71,14 @@ export async function startAlwaysListener(
     return null;
   }
 
-  let stream: MediaStream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
-  } catch {
-    cb.onError?.("无法访问麦克风（常开监听需要授权）");
+  const stream = await getUserMediaWithBusyRetry({
+    channelCount: 1,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  });
+  if (!stream) {
+    cb.onError?.("无法访问麦克风（常开监听需要授权，或麦克风被占用）");
     return null;
   }
 

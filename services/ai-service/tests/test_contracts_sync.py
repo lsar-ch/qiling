@@ -14,7 +14,12 @@ TS_DIR = REPO_ROOT / "packages" / "contracts" / "ts" / "src"
 # py 模型名 → TS 接口名（同名镜像）
 MIRROR_MAP: dict[str, tuple[str, str]] = {
     "AgentInfo": ("agent", "AgentInfo"),
+    "SkillInfo": ("extension", "SkillInfo"),
+    "SkillDetail": ("extension", "SkillDetail"),
+    "McpServerInfo": ("extension", "McpServerInfo"),
+    "McpToolInfo": ("extension", "McpToolInfo"),
     "CharacterConfig": ("character", "CharacterConfig"),
+    "PersonaPresentation": ("widget", "PersonaPresentation"),
     "EventEnvelope": ("events", "EventEnvelope"),
     "WidgetStatusReport": ("widget", "WidgetStatusReport"),
     "Task": ("task", "Task"),
@@ -24,6 +29,7 @@ MIRROR_MAP: dict[str, tuple[str, str]] = {
     "RecordingSession": ("recording", "RecordingSession"),
     "VoiceParams": ("voice", "VoiceParams"),
     "VoiceSettings": ("voice", "VoiceSettings"),
+    "ProjectNode": ("project", "ProjectNode"),
 }
 
 _PROP_RE = re.compile(r"^\s{2}([A-Za-z_][A-Za-z0-9_]*)\??:", re.MULTILINE)

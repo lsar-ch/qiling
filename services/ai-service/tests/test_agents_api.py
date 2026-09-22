@@ -122,7 +122,7 @@ def test_agents_api_lists_all_default_agents(tmp_path, monkeypatch) -> None:
         body = resp.json()
         assert body["default_executor"] == DEFAULT_EXECUTOR
         items = {item["name"]: item for item in body["items"]}
-        assert len(items) == 7
+        assert len(items) == 8
         assert set(items) == {
             "codex",
             "claude-code",
@@ -131,6 +131,7 @@ def test_agents_api_lists_all_default_agents(tmp_path, monkeypatch) -> None:
             "reasonix",
             "workbuddy",
             "browser",
+            "local-office",
         }
         claude_status, claude_available = _expected_pending_status(["claude"])
         assert items["claude-code"]["integration_status"] == claude_status
@@ -397,7 +398,7 @@ def test_agents_api_enable_and_disable_executor(tmp_path, monkeypatch) -> None:
         assert client.put("/api/agents/codex/config", json={"enabled": False}).status_code == 200
         body = client.get("/api/agents").json()
         items = {item["name"]: item for item in body["items"]}
-        assert len(items) == 7
+        assert len(items) == 8
         assert items["codex"]["enabled"] is False
         assert "codex" not in client.get("/api/health").json()["capabilities"]["agents"]["ready"]
 

@@ -11,6 +11,7 @@ import asyncio
 from typing import AsyncIterator
 
 from app.config import Settings
+from app.llm.base import ChatResult, ToolSpec
 
 _CHUNK = 8
 
@@ -22,6 +23,14 @@ class EchoProvider:
     @property
     def display_name(self) -> str:
         return "echo（演示，未配置模型 API）"
+
+    async def chat(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[ToolSpec] | None = None,
+    ) -> ChatResult:
+        return ChatResult(text=self._build(messages))
 
     def _build(self, messages: list[dict[str, str]]) -> str:
         user_text = ""

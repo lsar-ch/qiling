@@ -79,6 +79,15 @@ class DashScopeRecognizer(SpeechRecognizer):
         except Exception as exc:
             raise SpeechProviderError(f"DashScope 语音识别失败：{exc}") from exc
 
+        status_code = getattr(result, "status_code", None)
+        if status_code is not None and int(status_code) != 200:
+            code = getattr(result, "code", "")
+            message = getattr(result, "message", "") or "识别服务返回非成功状态"
+            raise SpeechProviderError(
+                f"DashScope 语音识别鉴权/服务异常（HTTP {status_code}"
+                f"{f'，code={code}' if code else ''}）：{message}"
+            )
+
         sentence = result.get_sentence()
         if not sentence:
             return ""

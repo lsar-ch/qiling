@@ -43,6 +43,13 @@ EventType = Literal[
     "task.cancelled",
     "task.approval_reminder",
     "task.timed_out",
+    "task.stale",
+    # 项目监督
+    "project.blocked",
+    "project.milestone",
+    # 主动提醒
+    "reminder.triggered",
+    "widget.activity",
     # 记忆
     "memory.created",
     "memory.updated",
@@ -50,6 +57,7 @@ EventType = Literal[
     # 系统
     "system.health",
     "system.error",
+    "voice.lease.changed",
     # 角色呈现
     "persona.presentation",
 ]
@@ -71,6 +79,11 @@ KNOWN_EVENT_TYPES: tuple[str, ...] = (
     "task.cancelled",
     "task.approval_reminder",
     "task.timed_out",
+    "task.stale",
+    "project.blocked",
+    "project.milestone",
+    "reminder.triggered",
+    "widget.activity",
     "memory.created",
     "memory.updated",
     "memory.entry.deleted",

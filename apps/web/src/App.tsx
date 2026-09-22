@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { CompiledMemory, DocOverview, EventEnvelope, MemoryDoc, SearchHit } from "@deskmate/contracts";
 import type { AgentInfo, AgentIntegrationStatus, Task } from "@deskmate/contracts";
 import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import {
   connectEvents,
@@ -36,6 +37,7 @@ import {
   fetchMemoryVaultStatus,
   checkObsidianPath,
   fetchWidgetState,
+  fetchMainUiVisible,
   publishEvent,
   saveMemoryDoc,
   updateSettings,
@@ -50,10 +52,13 @@ import {
 import { DEMO_ACTIONS, STATE_LABEL_ZH } from "./state";
 import ChatPage from "./ChatPage";
 import CharacterPage from "./CharacterPage";
+import ExtensionsPage from "./ExtensionsPage";
 import AboutPage from "./AboutPage";
 import ModelProfilesSection from "./ModelProfilesSection";
+import ProjectNodesPage from "./ProjectNodesPage";
+import RemindersPage from "./RemindersPage";
 
-type PageKey = "home" | "chat" | "character" | "memory" | "kb" | "agents" | "settings" | "about";
+type PageKey = "home" | "chat" | "character" | "memory" | "project" | "reminders" | "kb" | "agents" | "extensions" | "settings" | "about";
 
 type TaskActionStatus = "running" | "awaiting_approval" | "completed" | "failed";
 
@@ -125,10 +130,13 @@ const AGENT_DISABLED_PILL = {
 const NAV: { key: PageKey; label: string }[] = [
   { key: "home", label: "主页" },
   { key: "chat", label: "对话" },
+  { key: "project", label: "项目" },
+  { key: "reminders", label: "提醒" },
   { key: "character", label: "角色卡" },
   { key: "memory", label: "记忆" },
   { key: "kb", label: "知识库" },
   { key: "agents", label: "我的智能体" },
+  { key: "extensions", label: "技能扩展" },
   { key: "settings", label: "设置" },
   { key: "about", label: "关于" },
 ];
@@ -1942,7 +1950,7 @@ export default function App() {
   const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   // 主界面被隐藏（关闭按钮走 hide）时让出语音租约，挂件自动接管「听」。
   // 只有真隐藏/真显示会翻这个值：最小化、失焦、被遮挡都不算，语音留在主界面。
-  const [mainUiVisible, setMainUiVisible] = useState(true);
+  const [mainUiVisible, setMainUiVisible] = useState(() => !isTauri());
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [wsOpen, setWsOpen] = useState(false);
@@ -1959,6 +1967,14 @@ export default function App() {
   const everOnlineRef = useRef(false);
   // 连续探活失败次数：单次超时/瞬时拒绝不算退出，避免误报
   const failStreakRef = useRef(0);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    void getCurrentWindow()
+      .isVisible()
+      .then(setMainUiVisible)
+      .catch(() => {});
+  }, []);
 
   const onEvent = useCallback((env: EventEnvelope) => {
     setEvents((prev) => [...prev.slice(-14), env]);
@@ -2010,15 +2026,23 @@ export default function App() {
     if (!isTauri()) return; // 浏览器直开 5173 时恒为可见，行为不变
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<boolean>("main-ui-visibility", (event) => setMainUiVisible(event.payload)).then(
-      (stop) => {
-        if (disposed) stop();
-        else unlisten = stop;
-      },
-    );
+    const syncVisible = async (): Promise<void> => {
+      const visible = await fetchMainUiVisible();
+      if (!disposed) setMainUiVisible(visible);
+    };
+    void syncVisible();
+    const pollTimer = window.setInterval(() => void syncVisible(), 2000);
+    void listen<boolean>("main-ui-visibility", (event) => {
+      setMainUiVisible(event.payload);
+      window.setTimeout(() => void syncVisible(), 300);
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
     return () => {
       disposed = true;
       unlisten?.();
+      window.clearInterval(pollTimer);
     };
   }, []);
 
@@ -2033,11 +2057,11 @@ export default function App() {
     let retryTimer: number | undefined;
 
     const acquire = async (): Promise<void> => {
-      const acquired = await acquireVoiceLease();
+      const acquired = await acquireVoiceLease(true);
       if (!alive) return;
       setVoiceLeaseOwned(acquired);
       if (!acquired) {
-        retryTimer = window.setTimeout(() => void acquire(), 4000);
+        retryTimer = window.setTimeout(() => void acquire(), 1000);
         return;
       }
       heartbeatTimer = window.setInterval(async () => {
@@ -2227,10 +2251,16 @@ export default function App() {
                 ? "角色卡决定 DeskMate 的身份、声音与唤醒方式；启用一张卡即整套切换生效。"
                 : page === "memory"
                 ? "用户画像、偏好、项目进度与长期事实的分层管理；配置本地仓库后自动归档。"
+                : page === "project"
+                ? "项目统一工作区：集中查看项目概览、对话、节点、任务和产物。"
+                : page === "reminders"
+                ? "管理备忘录与任务提醒；到点后由挂件气泡 + 语音主动提醒。"
                 : page === "kb"
                 ? "本地知识库（Obsidian）只读检索与库路径配置；记忆会自动归档到库内独立目录。"
                 : page === "agents"
                 ? "执行器状态、任务队列与运行控制；Codex ACP 真实执行已就绪。"
+                : page === "extensions"
+                ? "技能与 MCP 扩展：轻任务本地直办，按需接入更多可调用能力。"
                 : page === "settings"
                 ? "模型与权限、语音能力总开关、性能模式、外观与系统维护。"
                 : "版本信息、更新日志、运行环境与本地优先说明。"}
@@ -2412,9 +2442,15 @@ export default function App() {
 
         {page === "memory" && <MemoryPage />}
 
+        {page === "project" && <ProjectNodesPage onOpenChat={() => setPage("chat")} />}
+
+        {page === "reminders" && <RemindersPage />}
+
         {page === "kb" && <KnowledgeBasePage />}
 
         {page === "agents" && <MyAgentsPage />}
+
+        {page === "extensions" && <ExtensionsPage />}
 
         {page === "settings" && (
           <SettingsPage />
