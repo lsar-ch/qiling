@@ -3,49 +3,67 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f6f7fb;
-  --panel: #ffffff;
-  --line: #e6e8f0;
-  --text: #1f2333;
-  --muted: #7a7f94;
-  --brand: #4f6ef7;
-  --ok: #1fa971;
-  --bad: #d6483f;
-  --radius: 14px;
+  color-scheme: light;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  font-family: theme("fontFamily.sans");
+  background: #f7f5f0;
+  color: #201e1b;
+  font-feature-settings: "tnum" 1, "cv03" 1;
 }
 
-/* 统一键盘焦点：品牌色描边，覆盖默认 outline */
+::selection {
+  background: rgba(194, 55, 50, 0.16);
+  color: #201e1b;
+}
+
 :focus-visible {
-  outline: 2px solid rgba(79, 110, 247, 0.55);
+  outline: 2px solid rgba(79, 91, 213, 0.55);
   outline-offset: 2px;
+  border-radius: 4px;
 }
 
-/* 长文本 / 代码 / 错误信息安全折行，避免横向溢出 */
+a {
+  text-underline-offset: 3px;
+}
+
+input,
+textarea,
+select {
+  caret-color: #4f5bd5;
+}
+
 .break-anywhere {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-/* 密集面板的细滚动条（webkit + firefox） */
 .scroll-thin {
   scrollbar-width: thin;
-  scrollbar-color: rgba(122, 127, 148, 0.35) transparent;
+  scrollbar-color: rgba(112, 106, 95, 0.32) transparent;
 }
 .scroll-thin::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 .scroll-thin::-webkit-scrollbar-thumb {
-  background: rgba(122, 127, 148, 0.28);
+  background: rgba(112, 106, 95, 0.26);
   border-radius: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(112, 106, 95, 0.42);
 }
 .scroll-thin::-webkit-scrollbar-track {
   background: transparent;

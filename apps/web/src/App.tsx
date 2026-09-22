@@ -45,11 +45,10 @@ import {
   type AppSettings,
   type MemoryVaultStatus,
   type HealthResponse,
-  type DiagnosticItem,
   type SessionResponse,
   type WidgetStatusReport,
 } from "./api";
-import { DEMO_ACTIONS, STATE_LABEL_ZH } from "./state";
+import { DEMO_ACTIONS } from "./state";
 import ChatPage from "./ChatPage";
 import CharacterPage from "./CharacterPage";
 import ExtensionsPage from "./ExtensionsPage";
@@ -57,6 +56,21 @@ import AboutPage from "./AboutPage";
 import ModelProfilesSection from "./ModelProfilesSection";
 import ProjectNodesPage from "./ProjectNodesPage";
 import RemindersPage from "./RemindersPage";
+import HomePage from "./HomePage";
+import {
+  Home,
+  MessagesSquare,
+  FolderKanban,
+  Bell,
+  IdCard,
+  Brain,
+  Library,
+  Bot,
+  Puzzle,
+  Settings,
+  Info,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 type PageKey = "home" | "chat" | "character" | "memory" | "project" | "reminders" | "kb" | "agents" | "extensions" | "settings" | "about";
 
@@ -127,18 +141,28 @@ const AGENT_DISABLED_PILL = {
   noteCls: "text-muted",
 };
 
-const NAV: { key: PageKey; label: string }[] = [
-  { key: "home", label: "主页" },
-  { key: "chat", label: "对话" },
-  { key: "project", label: "项目" },
-  { key: "reminders", label: "提醒" },
-  { key: "character", label: "角色卡" },
-  { key: "memory", label: "记忆" },
-  { key: "kb", label: "知识库" },
-  { key: "agents", label: "我的智能体" },
-  { key: "extensions", label: "技能扩展" },
-  { key: "settings", label: "设置" },
-  { key: "about", label: "关于" },
+type NavItem = { key: PageKey; label: string; icon: LucideIcon };
+
+const NAV: NavItem[] = [
+  { key: "home", label: "主页", icon: Home },
+  { key: "chat", label: "对话", icon: MessagesSquare },
+  { key: "project", label: "项目", icon: FolderKanban },
+  { key: "reminders", label: "提醒", icon: Bell },
+  { key: "character", label: "角色卡", icon: IdCard },
+  { key: "memory", label: "记忆", icon: Brain },
+  { key: "kb", label: "知识库", icon: Library },
+  { key: "agents", label: "我的智能体", icon: Bot },
+  { key: "extensions", label: "技能扩展", icon: Puzzle },
+  { key: "settings", label: "设置", icon: Settings },
+  { key: "about", label: "关于", icon: Info },
+];
+
+const NAV_GROUPS: { items: PageKey[] }[] = [
+  { items: ["home"] },
+  { items: ["chat", "project", "reminders"] },
+  { items: ["character", "memory", "kb"] },
+  { items: ["agents", "extensions"] },
+  { items: ["settings", "about"] },
 ];
 
 /** URL 片段 → 页面：`#/chat` → chat，未知或缺失回落主页。 */
@@ -193,10 +217,6 @@ function fmtUptime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`;
-}
-
-function stateLabel(state: string): string {
-  return STATE_LABEL_ZH[state as keyof typeof STATE_LABEL_ZH] ?? state;
 }
 
 function HighlightMatch({ text, query }: { text: string; query: string }) {
@@ -1524,7 +1544,7 @@ function SettingsPage() {
             <span className="text-xs text-muted">自动播报回复</span>
             <input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.auto_speak} disabled={liteMode || !settings.voice.enabled} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, auto_speak: e.target.checked } })} />
           </label>
-          <small className="text-[11px] text-muted -mt-1">关闭后语音输入仍可用，回复不自动朗读（任务待确认提醒的语音播报一并关闭）；消息下方 🔊 仍可手动播报。</small>
+          <small className="text-[11px] text-muted -mt-1">关闭后语音输入仍可用，回复不自动朗读（任务待确认提醒的语音播报一并关闭）；消息下方播报按钮仍可手动播报。</small>
           <label className="flex flex-row items-center justify-between gap-3">
             <span className="text-xs text-muted">启用语音激活（唤醒与静默）</span>
             <input type="checkbox" className="w-4 h-4 accent-brand" checked={settings.voice.activation_enabled} disabled={liteMode || !settings.voice.enabled} onChange={(e) => setSettings({ ...settings, voice: { ...settings.voice, activation_enabled: e.target.checked } })} />
@@ -1583,241 +1603,6 @@ function SettingsPage() {
         </section>
       </div>
     </div>
-  );
-}
-
-function fmtClock(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return iso;
-  }
-}
-
-function performanceInfo(mode: HealthResponse["performance_mode"] | undefined): { label: string; cls: string; hint: string } {
-  switch (mode) {
-    case "quality":
-      return { label: "高质量", cls: "bg-brand-100 text-brand", hint: "全功能：语音、动画与录制均启用。" };
-    case "balanced":
-      return { label: "均衡", cls: "bg-ok-50 text-ok", hint: "默认模式：语音启用，动画使用简单状态切换。" };
-    case "lite":
-      return { label: "轻量", cls: "bg-line-subtle text-muted", hint: "仅文字，关闭语音与动画。" };
-    default:
-      return { label: "—", cls: "bg-line-subtle text-muted", hint: "服务未返回性能模式信息。" };
-  }
-}
-
-function HomeStatusSection({ health, serviceOk, onNavigate }: { health: HealthResponse | null; serviceOk: boolean; onNavigate: (key: PageKey) => void }) {
-  const vp = health?.voice_pipeline;
-  const mem = health?.memory_stats;
-  const activity = health?.recent_activity ?? [];
-  const perf = performanceInfo(health?.performance_mode);
-  const dataOk = serviceOk && !!vp && !!mem;
-  const dotCls = (ok: boolean | undefined, neutralOff = false): string => {
-    if (ok === undefined) return "bg-muted";
-    return ok ? "bg-ok" : neutralOff ? "bg-muted" : "bg-bad";
-  };
-  const rowValue = (ok: boolean | undefined, onLabel: string, offLabel: string): string => {
-    if (ok === undefined) return "—";
-    return ok ? onLabel : offLabel;
-  };
-
-  const diagnostics = health?.diagnostics ?? [];
-  const diagStyle: Record<DiagnosticItem["status"], { dot: string; pill: string; label: string }> = {
-    ok: { dot: "bg-ok", pill: "bg-ok-50 text-ok", label: "正常" },
-    degraded: { dot: "bg-warn", pill: "bg-warn-50 text-warn", label: "部分可用" },
-    error: { dot: "bg-bad", pill: "bg-bad-50 text-bad", label: "不可用" },
-  };
-  const fixTarget: Record<string, PageKey> = { open_settings: "settings", open_agents: "agents" };
-
-  return (
-    <>
-      {diagnostics.length > 0 && (
-        <section className="rounded-lg border border-line bg-white shadow-card overflow-hidden mb-4">
-          <div className="px-5 pt-5 pb-4">
-            <h3 className="text-sm font-semibold text-ink mb-3">能力诊断</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {diagnostics.map((item) => {
-                const st = diagStyle[item.status];
-                const target = item.fix_action ? fixTarget[item.fix_action] : undefined;
-                return (
-                  <div key={item.name} className="rounded-lg bg-surface-secondary p-3.5 flex flex-col">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
-                        <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                        {item.label}
-                      </span>
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${st.pill}`}>{st.label}</span>
-                    </div>
-                    <p className="text-[11px] text-muted leading-relaxed flex-1">{item.detail}</p>
-                    {item.fix_hint && (
-                      <p className="text-[11px] text-warn leading-relaxed mt-1.5">{item.fix_hint}</p>
-                    )}
-                    {target && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigate(target)}
-                        className="mt-2 self-start text-[11px] font-medium text-brand hover:underline"
-                      >
-                        去修复 →
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
-    <section className="rounded-lg border border-line bg-white shadow-card overflow-hidden">
-      <div className="px-5 pt-5 pb-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-ink">系统状态</h3>
-          <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${serviceOk ? "bg-ok-50 text-ok" : "bg-bad-50 text-bad"}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${serviceOk ? "bg-ok" : "bg-bad"}`} />
-            {serviceOk ? "运行中" : "离线"}
-          </span>
-        </div>
-        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 ${dataOk ? "" : "opacity-60"}`}>
-          <div className="rounded-lg bg-surface-secondary p-3.5">
-            <div className="text-xs font-semibold text-ink mb-2.5">本地服务</div>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-muted">状态</span>
-                <span className="inline-flex items-center gap-1.5 font-medium text-ink">
-                  <span className={`w-1.5 h-1.5 rounded-full ${serviceOk ? "bg-ok" : "bg-bad"}`} />
-                  {serviceOk ? "运行中" : "离线"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted">运行时长</span>
-                <span className="font-medium text-ink">{health ? fmtUptime(health.uptime_s) : "—"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted">版本</span>
-                <span className="font-medium text-ink">v{health?.version ?? "—"}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-surface-secondary p-3.5">
-            <div className="text-xs font-semibold text-ink mb-2.5">语音链路</div>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-muted"><span className={`w-1.5 h-1.5 rounded-full ${dotCls(vp?.stt_ready)}`} />STT</span>
-                <span className="font-medium text-ink">{rowValue(vp?.stt_ready, "就绪", "不可用")}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-muted"><span className={`w-1.5 h-1.5 rounded-full ${dotCls(vp?.tts_ready)}`} />TTS</span>
-                <span className="font-medium text-ink">{rowValue(vp?.tts_ready, "就绪", "不可用")}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-muted"><span className={`w-1.5 h-1.5 rounded-full ${dotCls(vp?.vad_working, true)}`} />VAD</span>
-                <span className="font-medium text-ink">{rowValue(vp?.vad_working, "监听中", "未监听")}</span>
-              </div>
-            </div>
-            {vp?.degradation_reason && <div className="mt-2 text-[11px] text-warn leading-relaxed">降级原因：{vp.degradation_reason}</div>}
-          </div>
-
-          <div className="rounded-lg bg-surface-secondary p-3.5">
-            <div className="text-xs font-semibold text-ink mb-2.5">记忆</div>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-muted"><span className={`w-1.5 h-1.5 rounded-full ${dotCls(mem?.obsidian_linked, true)}`} />Obsidian</span>
-                <span className="font-medium text-ink">{rowValue(mem?.obsidian_linked, "已连接", "未连接")}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted">记忆条目</span>
-                <span className="font-medium text-ink">{mem?.total_entries != null ? `${mem.total_entries} 条` : "—"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted">上次编译</span>
-                <span className="font-medium text-ink">{mem?.last_compile ? fmtClock(mem.last_compile) : "—"}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-surface-secondary p-3.5">
-            <div className="text-xs font-semibold text-ink mb-2.5">性能模式</div>
-            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${perf.cls}`}>{perf.label}</span>
-            <p className="text-[11px] text-muted mt-2 leading-relaxed">{perf.hint}</p>
-          </div>
-        </div>
-
-        <div className="mt-4 border-t border-line pt-3.5">
-          <div className="text-xs font-semibold text-ink mb-2">最近活动</div>
-          {activity.length === 0 ? (
-            <p className="text-xs text-muted">{serviceOk ? "暂无活动" : "服务离线，暂无活动"}</p>
-          ) : (
-            <ul className="space-y-1.5">
-              {activity.slice(0, 5).map((item, i) => (
-                <li key={`${item.timestamp}-${i}`} className="flex items-center gap-3 px-3 py-1.5 rounded-md bg-surface-tertiary min-w-0">
-                  <span className="text-[11px] text-muted font-mono shrink-0">{fmtClock(item.timestamp)}</span>
-                  <span className="text-xs font-semibold text-brand font-mono shrink-0">{item.event_type}</span>
-                  <span className="flex-1 min-w-0 text-xs text-ink truncate">{item.summary}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </section>
-    </>
-  );
-}
-
-function ExecutorStatusSection({ agents }: { agents: AgentInfo[] }) {
-  if (!agents || agents.length === 0) {
-    return null;
-  }
-
-  const readyCount = agents.filter(a => a.integration_status === 'ready').length;
-  const totalCount = agents.length;
-
-  return (
-    <section className="rounded-lg border border-line bg-white shadow-card overflow-hidden">
-      <div className="px-5 pt-5 pb-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-ink">执行器状态</h3>
-          <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
-            readyCount > 0 ? 'bg-ok-50 text-ok' : 'bg-warn-50 text-warn'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${readyCount > 0 ? 'bg-ok' : 'bg-warn'}`} />
-            {readyCount}/{totalCount} 可用
-          </span>
-        </div>
-        <div className="space-y-2">
-          {agents.map((agent) => {
-            const statusInfo = AGENT_PILL[agent.integration_status];
-            return (
-              <div key={agent.name} className="flex items-center justify-between py-2 border-b border-line-subtle last:border-b-0">
-                <div className="flex items-center gap-2">
-                  <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dot}`} />
-                  <span className="text-sm font-medium text-ink">{agent.label}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs ${statusInfo.noteCls}`}>
-                    {AGENT_STATUS_ZH[agent.integration_status]}
-                  </span>
-                  {agent.version && (
-                    <span className="text-xs text-muted font-mono">v{agent.version}</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {readyCount === 0 && (
-          <div className="mt-3 p-3 rounded-lg bg-warn-50 border border-warn/20">
-            <p className="text-xs text-warn leading-relaxed">
-              没有可用的执行器。请在「我的智能体」页面配置并启用至少一个执行器。
-            </p>
-          </div>
-        )}
-      </div>
-    </section>
   );
 }
 
@@ -2191,43 +1976,95 @@ export default function App() {
         />
       )}
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-56 bg-white border-r border-line px-3 py-5 shrink-0">
-        <div className="flex items-center gap-2 px-3 mb-6">
-          <span className="w-3 h-3 rounded-full bg-brand shadow-[0_0_0_4px_rgba(79,110,247,0.16)]" />
-          <span className="text-lg font-semibold text-ink">DeskMate</span>
-          <span className="text-xs text-muted">桌面助理</span>
-        </div>
-        <nav className="flex flex-col gap-0.5">
-          {NAV.map((item) => (
-            <button
-              key={item.key}
-              className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-                page === item.key
-                  ? "bg-brand-100 text-brand font-semibold"
-                  : "text-ink hover:bg-brand-50"
-              }`}
-              onClick={() => setPage(item.key)}
-            >
-              <span>{item.label}</span>
-            </button>
+      <aside className="hidden md:flex flex-col w-60 bg-surface border-r border-line px-4 py-6 shrink-0">
+        <button
+          type="button"
+          className="flex items-center gap-2.5 px-2 mb-7 text-left cursor-pointer"
+          onClick={() => setPage("home")}
+        >
+          <span className="relative flex items-center justify-center w-8 h-8 rounded-[10px] bg-ink text-white">
+            <span className="text-[13px] font-bold tracking-tightish">DM</span>
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-accent border-2 border-surface" />
+          </span>
+          <span className="flex flex-col leading-tight">
+            <span className="text-[15px] font-semibold text-ink tracking-tightish">DeskMate</span>
+            <span className="text-[11px] text-muted">桌面工作伙伴</span>
+          </span>
+        </button>
+        <nav className="flex flex-col gap-4">
+          {NAV_GROUPS.map((group, gi) => (
+            <div key={gi} className="flex flex-col gap-0.5">
+              {group.items.map((key) => {
+                const item = NAV.find((n) => n.key === key)!;
+                const Icon = item.icon;
+                const active = page === key;
+                return (
+                  <button
+                    key={key}
+                    className={`group relative flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] transition-all duration-200 ease-expo cursor-pointer ${
+                      active
+                        ? "bg-brand-50 text-brand font-semibold"
+                        : "text-ink/80 hover:bg-surface-secondary hover:text-ink"
+                    }`}
+                    onClick={() => setPage(key)}
+                  >
+                    <span
+                      className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-full bg-brand transition-all duration-200 ease-expo ${
+                        active ? "h-5 opacity-100" : "h-0 opacity-0"
+                      }`}
+                    />
+                    <Icon
+                      size={16}
+                      strokeWidth={active ? 2.2 : 1.8}
+                      className={active ? "text-brand" : "text-muted group-hover:text-ink"}
+                    />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           ))}
         </nav>
-        <div className="mt-auto px-3 pt-4 text-[11px] text-muted">Step 9 · V1 打磨</div>
+        <div className="mt-auto">
+          <div className="flex items-center gap-2 rounded-md bg-surface-secondary px-3 py-2.5">
+            <span className="relative flex w-2 h-2">
+              <span
+                className={`absolute inline-flex w-full h-full rounded-full ${
+                  serviceLost ? "bg-warn" : serviceOk ? "bg-ok" : "bg-bad"
+                } ${serviceOk ? "animate-pulse-ring" : "opacity-80"}`}
+              />
+              <span
+                className={`relative inline-flex w-2 h-2 rounded-full ${
+                  serviceLost ? "bg-warn" : serviceOk ? "bg-ok" : "bg-bad"
+                }`}
+              />
+            </span>
+            <span className="text-[11px] text-muted">
+              {serviceLost ? "本地服务已退出" : serviceOk ? "本地服务运行中" : "本地服务离线"}
+            </span>
+          </div>
+        </div>
       </aside>
 
       {/* Mobile top bar */}
-      <div className="md:hidden flex items-center gap-2 px-3 py-2.5 bg-white border-b border-line overflow-x-auto w-full shrink-0">
-        <span className="flex items-center gap-1.5 mr-2 whitespace-nowrap">
-          <span className="w-2.5 h-2.5 rounded-full bg-brand" />
-          <b className="text-sm">DeskMate</b>
-        </span>
+      <div className="md:hidden flex items-center gap-2 px-4 py-3 bg-surface border-b border-line overflow-x-auto w-full shrink-0">
+        <button
+          type="button"
+          className="flex items-center gap-1.5 mr-1 whitespace-nowrap cursor-pointer"
+          onClick={() => setPage("home")}
+        >
+          <span className="w-6 h-6 rounded-lg bg-ink flex items-center justify-center text-white text-[10px] font-bold">
+            DM
+          </span>
+          <b className="text-sm text-ink">DeskMate</b>
+        </button>
         {NAV.map((item) => (
           <button
             key={item.key}
-            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${
+            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors cursor-pointer ${
               page === item.key
-                ? "bg-brand-100 text-brand font-semibold"
-                : "text-ink hover:bg-brand-50"
+                ? "bg-brand-50 text-brand font-semibold"
+                : "text-ink/70 hover:bg-surface-secondary"
             }`}
             onClick={() => setPage(item.key)}
           >
@@ -2236,16 +2073,15 @@ export default function App() {
         ))}
       </div>
 
-      <main className="w-full md:flex-1 px-5 py-7 md:px-8 min-w-0">
-        <header className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 pb-6 mb-6 border-b border-line">
-          <div>
-            <h1 className="text-2xl font-bold text-ink mb-1.5">
-              {page === "home" ? "主页" : NAV.find((n) => n.key === page)?.label}
+      <main className="w-full md:flex-1 px-5 py-7 md:px-10 md:py-9 min-w-0 max-w-[1200px]">
+        {page !== "home" && (
+        <header className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 pb-6 mb-7">
+          <div className="max-w-2xl">
+            <h1 className="text-[26px] font-bold text-ink mb-2 tracking-tightish">
+              {NAV.find((n) => n.key === page)?.label}
             </h1>
-            <p className="text-sm text-muted leading-relaxed">
-              {page === "home"
-                ? "本地优先的桌面 AI 工作伙伴 —— 挂件即时反馈，主界面承载项目和配置。"
-                : page === "chat"
+            <p className="text-[13px] text-muted leading-relaxed">
+              {page === "chat"
                 ? "文字与语音对话，长回复自动展开；支持语音播报与打断。"
                 : page === "character"
                 ? "角色卡决定 DeskMate 的身份、声音与唤醒方式；启用一张卡即整套切换生效。"
@@ -2266,12 +2102,14 @@ export default function App() {
                 : "版本信息、更新日志、运行环境与本地优先说明。"}
             </p>
           </div>
-          <span className={`inline-flex items-center self-start md:self-auto rounded-full px-3.5 py-1.5 text-xs font-medium ${
+          <span className={`inline-flex items-center gap-1.5 self-start md:self-auto rounded-full px-3 py-1.5 text-xs font-medium ${
             serviceLost ? "bg-warn-50 text-warn" : serviceOk ? "bg-ok-50 text-ok" : "bg-bad-50 text-bad"
           }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${serviceLost ? "bg-warn" : serviceOk ? "bg-ok" : "bg-bad"}`} />
             {serviceLost ? "服务已退出" : serviceOk ? "服务正常" : "服务离线"}
           </span>
         </header>
+        )}
 
         {serviceLost ? (
           <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-warn-50 text-warn px-4 py-3 text-sm">
@@ -2289,145 +2127,21 @@ export default function App() {
         ) : null}
 
         {page === "home" && (
-          <div className="flex flex-col gap-5">
-            {/* Top row: Widget state + Service info */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {/* Widget status card */}
-              <div className="rounded-lg border border-line bg-white shadow-card overflow-hidden">
-                <div className="px-5 pt-5 pb-3">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-ink">挂件状态</h3>
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-brand-100 text-brand">
-                      {current}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4 bg-surface-secondary rounded-lg p-4 mb-4">
-                    <div className="relative">
-                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-brand to-purple-500 flex items-center justify-center text-white text-2xl font-bold shadow-md">
-                        DM
-                      </div>
-                      <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white ${current === "executing" ? "bg-amber-400 animate-pulse" : current === "completed" ? "bg-ok" : current === "listening" ? "bg-blue-500 animate-breathe" : current === "awaiting_approval" ? "bg-orange-500 animate-pulse" : "bg-muted"}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-base font-semibold text-ink">{stateLabel(current)}</div>
-                      <div className="text-sm text-muted truncate mt-0.5">{widgetState?.message ?? "等待中"}</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="border-t border-line px-5 py-3">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <div className="text-xs text-muted mb-1">WebSocket</div>
-                      <div className={`text-sm font-semibold ${wsOpen ? "text-ok" : "text-muted"}`}>
-                        {wsOpen ? "已连接" : "未连接"}
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-xs text-muted mb-1">任务</div>
-                      <div className="text-sm font-semibold text-ink truncate">
-                        {widgetState?.task_id ?? "—"}
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-xs text-muted mb-1">会话</div>
-                      <div className="text-sm font-semibold text-ink font-mono truncate text-xs leading-6">
-                        {session?.session_id?.slice(0, 8) ?? "—"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Service info card */}
-              <div className="rounded-lg border border-line bg-white shadow-card">
-                <div className="px-5 pt-5 pb-3">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-ink">本地服务</h3>
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${serviceOk ? "bg-ok-50 text-ok" : "bg-bad-50 text-bad"}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${serviceOk ? "bg-ok" : "bg-bad"}`} />
-                      {serviceOk ? "运行中" : "离线"}
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted">版本</span>
-                      <span className="text-sm font-semibold text-ink">v{health?.version ?? "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted">运行时长</span>
-                      <span className="text-sm font-semibold text-ink">{health ? fmtUptime(health.uptime_s) : "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted">运行时</span>
-                      <span className="text-sm font-semibold text-ink">Python {health?.python ?? "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted">会话 ID</span>
-                      <span className="text-xs font-mono text-muted text-right break-all max-w-[65%] min-w-0">{session?.session_id ?? "—"}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="border-t border-line px-5 py-3 bg-surface-tertiary">
-                  <div className="text-xs text-muted">
-                    本地优先 · 数据不离开设备
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* System status dashboard */}
-            <ExecutorStatusSection agents={agents} />
-            <HomeStatusSection health={health} serviceOk={serviceOk} onNavigate={setPage} />
-
-            {/* Demo controls */}
-            <div className="rounded-lg border border-line bg-white shadow-card">
-              <div className="px-5 pt-4 pb-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-ink">状态演练</h3>
-                  <span className="text-xs text-muted">Step 2 验证</span>
-                </div>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
-                  {DEMO_ACTIONS.map((a) => (
-                    <button
-                      key={a.eventType}
-                      className="px-3 py-2 text-xs font-medium rounded-lg border border-line bg-surface-tertiary text-ink hover:border-brand hover:text-brand hover:bg-brand-50 transition-colors cursor-pointer"
-                      onClick={() => void runDemo(a)}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    className="px-4 py-2 text-xs font-medium rounded-lg bg-brand text-white hover:bg-brand-600 transition-colors cursor-pointer"
-                    onClick={() => void runSequence()}
-                  >
-                    演示完整流程
-                  </button>
-                  {demoMsg && <span className="text-sm text-ok">{demoMsg}</span>}
-                </div>
-              </div>
-            </div>
-
-            {/* Event log */}
-            <div className="rounded-lg border border-line bg-white shadow-card">
-              <div className="px-5 pt-4 pb-4">
-                <h3 className="text-sm font-semibold text-ink mb-3">最近事件</h3>
-                {events.length === 0 ? (
-                  <p className="text-sm text-muted">暂无事件。点击上方按钮发布一次状态演练。</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {[...events].reverse().map((ev, i) => (
-                      <div key={`${ev.event_id}-${i}`} className="flex items-center justify-between px-3 py-2 rounded-md bg-surface-tertiary hover:bg-surface-secondary transition-colors">
-                        <span className="text-xs font-semibold text-brand font-mono">{ev.event_type}</span>
-                        <span className="text-xs text-muted">{ev.task_id ?? ""}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <HomePage
+            current={current}
+            widgetMessage={widgetState?.message ?? undefined}
+            wsOpen={wsOpen}
+            serviceOk={serviceOk}
+            serviceLost={serviceLost}
+            health={health}
+            agents={agents}
+            session={session}
+            events={events}
+            runDemo={runDemo}
+            runSequence={runSequence}
+            demoMsg={demoMsg}
+            onNavigate={setPage}
+          />
         )}
 
         {page === "chat" && (

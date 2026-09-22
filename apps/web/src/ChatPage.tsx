@@ -39,6 +39,7 @@ import {
   type AlwaysListenSegment,
 } from "./alwaysListen";
 import ModelProfileSelect from "./ModelProfileSelect";
+import { Volume2, Save, Mic, Square, Paperclip, LoaderCircle } from "lucide-react";
 
 // 语音模式：off（未监听）/ listening（聆听中）/ sleeping（静默，仅唤醒词可打断）
 type VoiceMode = "off" | "listening" | "sleeping";
@@ -434,10 +435,10 @@ export default function ChatPage({
       }
       setAttachments([]);
       if (speakReply && voiceStatus?.enabled && voiceStatus.auto_speak) {
-        // 短回复朗读全文；长回复朗读摘要（全文保留在消息里，可点 🔊 听全文）
+        // 短回复朗读全文；长回复朗读摘要（全文保留在消息里，可点播报听全文）
         stopSpeaking();
         void speak(done.speak_text || done.message);
-        setNotice(done.short ? "" : "已自动播报摘要，点消息下方 🔊 可朗读全文");
+        setNotice(done.short ? "" : "已自动播报摘要，点消息下方播报可朗读全文");
       } else if (!done.short) {
         setNotice("回复较长已展示在上方消息中");
       } else {
@@ -750,7 +751,7 @@ export default function ChatPage({
     }
     recorderRef.current = recorder;
     setRecording(true);
-    setNotice("聆听中… 说完后再次点击🎤结束");
+    setNotice("聆听中… 说完后再次点击麦克风按钮结束");
   };
 
   async function enableAlwaysListen(): Promise<void> {
@@ -1182,7 +1183,8 @@ export default function ChatPage({
                 }}
                 title="播报这段回复"
               >
-                🔊 播报
+                <Volume2 size={12} strokeWidth={2} className="inline mr-1 -mt-0.5" />
+                播报
               </button>
             )}
           </div>
@@ -1264,7 +1266,8 @@ export default function ChatPage({
       {/* 记忆写入气泡（ponytail：简单 toast，5s 自动消失） */}
       {memoryBubble && (
         <div className="px-4 py-2 text-xs bg-blue-50 text-blue-700 border-t border-blue-200 transition-opacity">
-          💾 {memoryBubble}
+          <Save size={12} className="inline mr-1 -mt-0.5" />
+          {memoryBubble}
         </div>
       )}
 
@@ -1347,11 +1350,16 @@ export default function ChatPage({
                 : "语音未配置"
           }
         >
-          {recording ? "■" : "🎤"}
+          {recording ? (
+            <Square size={18} strokeWidth={2.2} fill="currentColor" />
+          ) : (
+            <Mic size={18} strokeWidth={2} />
+          )}
         </button>
         {speaking && (
           <button className="h-[46px] px-3.5 rounded-xl border border-bad text-bad text-sm hover:bg-bad-50 transition-colors" onClick={stopSpeaking} title="停止播报（打断）">
-            ⏹ 停止
+            <Square size={13} strokeWidth={2.2} fill="currentColor" className="inline mr-1.5 -mt-0.5" />
+            停止
           </button>
         )}
         <button
@@ -1361,7 +1369,11 @@ export default function ChatPage({
           disabled={busy || uploadingFiles}
           title="添加附件（Excel / Word / PPT / PDF / 图片）"
         >
-          {uploadingFiles ? "⏳" : "📎"}
+          {uploadingFiles ? (
+            <LoaderCircle size={18} className="animate-spin" />
+          ) : (
+            <Paperclip size={18} strokeWidth={2} />
+          )}
         </button>
         <div className="flex-1 min-w-0 flex flex-col gap-1.5">
           {attachments.length > 0 && (
