@@ -120,7 +120,8 @@ class MiniMaxTTSSynthesizer:
         """合成并立即播放。"""
         if output_path is None:
             import tempfile
-            output_path = Path(tempfile.mktemp(suffix=".mp3"))
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                output_path = Path(tmp.name)
         
         self.synthesize(text, output_path)
         return output_path

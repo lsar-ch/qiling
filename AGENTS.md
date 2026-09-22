@@ -71,6 +71,7 @@ Obsidian 记忆库：
 - 手工编辑文件使用 `apply_patch`
 - 修改后用最低成本的权威信号验证，例如 `./scripts/check.sh`、类型检查、接口健康检查或页面状态
 - API key、音频样本、运行数据和缓存不入库
+- 代码审查与安全规则见 `CODE-REVIEW-RULES.md`
 
 ## 常用命令
 

@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -221,7 +222,7 @@ class CodexAdapter(AgentAdapter):
         self._outputs[request.task_id] = []
         self._run_errors[request.task_id] = []
         self._cancel_events[request.task_id] = asyncio.Event()
-        logs_dir = Path(str(request.config.get("logs_dir") or "/tmp/deskmate-acp-logs"))
+        logs_dir = Path(str(request.config.get("logs_dir") or Path(tempfile.gettempdir()) / "deskmate-acp-logs"))
         client = await AcpClient.spawn(
             acp_bin,
             cwd=request.cwd,

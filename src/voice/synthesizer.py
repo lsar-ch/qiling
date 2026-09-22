@@ -109,6 +109,7 @@ class TTSSynthesizer:
         """合成并立即播放（流式播放，不等全部生成完）。"""
         if output_path is None:
             import tempfile
-            output_path = Path(tempfile.mktemp(suffix=".mp3"))
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                output_path = Path(tmp.name)
         self.synthesize(text, output_path)
         return output_path

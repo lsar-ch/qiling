@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -504,7 +505,7 @@ class WorkBuddyAdapter(AgentAdapter):
         self._cancel_events[request.task_id] = asyncio.Event()
         # 与 codex.py 一致默认落 /tmp/deskmate-acp-logs；按 task 分目录，
         # 否则多次运行的 stderr 日志会互相覆盖，出问题时没有证据可查。
-        raw_logs_dir = request.config.get("logs_dir") or "/tmp/deskmate-acp-logs"
+        raw_logs_dir = request.config.get("logs_dir") or Path(tempfile.gettempdir()) / "deskmate-acp-logs"
         logs_dir = Path(str(raw_logs_dir)).expanduser() / request.task_id
         client = await self._spawn(
             runtime,
