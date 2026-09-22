@@ -60,3 +60,10 @@ data/settings.local.json
 # 测试缓存
 .pytest_cache/
 .playwright-mcp/
+
+# 本地备份 / 临时审查产物
+*.bak
+*.bak-*
+*.backup
+data/tmp_seethrough/
+vrm-spike-lows-power.png

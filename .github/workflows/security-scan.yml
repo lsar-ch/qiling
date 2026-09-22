@@ -1,0 +1,91 @@
+name: security-scan
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install scanners
+        run: |
+          python -m pip install --upgrade pip
+          pip install semgrep bandit pip-audit
+          cargo install cargo-audit --locked
+
+      - name: Semgrep scan
+        continue-on-error: true
+        run: |
+          semgrep scan --config auto --sarif --output "$GITHUB_WORKSPACE/semgrep.sarif" services/ai-service/app src apps || true
+
+      - name: Bandit scan
+        continue-on-error: true
+        run: |
+          bandit -r services/ai-service/app src -f json -o "$GITHUB_WORKSPACE/bandit.json" || true
+
+      - name: Python dependency audit
+        continue-on-error: true
+        run: |
+          pip-audit -r services/ai-service/requirements.txt -f json -o "$GITHUB_WORKSPACE/pip-audit.json" || true
+
+      - name: Web dependency audit
+        continue-on-error: true
+        run: |
+          npm audit --json --prefix apps/web > "$GITHUB_WORKSPACE/npm-audit-web.json" || true
+
+      - name: Desktop dependency audit
+        continue-on-error: true
+        run: |
+          npm audit --json --prefix apps/desktop > "$GITHUB_WORKSPACE/npm-audit-desktop.json" || true
+
+      - name: Rust dependency audit
+        continue-on-error: true
+        run: |
+          cd apps/desktop/src-tauri
+          cargo audit --json > "$GITHUB_WORKSPACE/cargo-audit.json" || true
+
+      - name: Detect secrets
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-reports
+          path: |
+            semgrep.sarif
+            bandit.json
+            pip-audit.json
+            npm-audit-web.json
+            npm-audit-desktop.json
+            cargo-audit.json
+          if-no-files-found: ignore
