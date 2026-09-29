@@ -232,7 +232,7 @@ k81 / komano 的骨架本来就是 Chest → Neck，中间没有 upperChest 骨
 **动作**：导出后跑一遍归一化，别手改 JSON：
 
 ```bash
-python3 scripts/vrm/normalize_vrma.py --source /tmp/idle_original.vrma <导出文件>
+python3 scripts/vrm/normalize_vrma.py --source data/motion-library/female/idle.vrma <导出文件>
 ```
 
 它删掉眼骨/jaw 槽位，并把 `upperChest` 的节点与通道从源片段搬回来（时间轴按目标
@@ -252,9 +252,9 @@ python3 scripts/vrm/normalize_vrma.py --source /tmp/idle_original.vrma <导出�
 ```bash
 blender --background --python scripts/vrm/roundtrip_vrma.py -- \
     --model data/persona-assets/k81/model.vrm \
-    --motion /tmp/idle_original.vrma --out build/vrma/idle_edited.vrma \
+    --motion data/motion-library/female/idle.vrma --out build/vrma/idle_edited.vrma \
     --amplitude 1.5 --duration 1.4
-python3 scripts/vrm/normalize_vrma.py --source /tmp/idle_original.vrma build/vrma/idle_edited.vrma
+python3 scripts/vrm/normalize_vrma.py --source data/motion-library/female/idle.vrma build/vrma/idle_edited.vrma
 ```
 
 ### 9.3 模型缺 upperChest 不影响挂件播放
