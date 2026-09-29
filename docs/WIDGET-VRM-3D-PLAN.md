@@ -158,5 +158,41 @@ presentation:
 
 ### 素材现状
 
-`male` / `female` 目前内容相同（均来自 Mixamo 13 条转换结果），差异要等 Blender 重制后分别落库。
+20 个片段里目前只有 `project_alt` 真不同（male = Bboy Hip Hop Move，female = Arms Hip Dance），其余 19 个两个库完全一致。差异化方案见 §8。
 已配多候选并实测生效的 trigger：`idle`（+`idle_yawn`）、`speaking`（+`speak_alt`）、`success`（+`success_happy`）、`click`（+`error`）。
+
+## 8. 动作素材工具调研（2026-09-29）
+
+目标：让 `male` / `female` 库有可分辨的内容差异。
+
+**本机已具备的条件**
+
+- Blender 4.5.14 LTS + VRM Add-on（扩展装在 `~/Library/Application Support/Blender/4.5/extensions/blender_org/vrm`）
+- 无头 VRMA 往返链路已实测可用：`import_scene.vrma` → 改 F-curve → `export_scene.vrma`
+  （54 骨 / 207 条曲线 / 帧范围 1-345 往返成功）。注意 `wm.read_factory_settings` 会重置扩展启用状态，
+  顺序必须是「先清场、再启用」。
+- `~/Downloads/fbx2vrma-converter`（MIT，tk256ailab）与 19 个 Mixamo FBX 源、20 个已转 VRMA
+
+**GitHub 候选（按价值排序）**
+
+| 工具 | ★ | 许可 | 能力 | 本机可行性 |
+| --- | --- | --- | --- | --- |
+| [Kirakun0328/text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) | 183 | MIT | 文字 → VRMA；LLM 关键帧引擎走 OpenAI/Claude/兼容 API；ARDY 本地引擎是 NVIDIA GPU 方案 | 浏览器版 `npm install && npm run dev`，用 OpenAI 兼容 key 即可，**不需要 GPU**；ARDY 在本机 Intel Mac 不可用（约 20GB + CUDA） |
+| [YuBan834/vrma-lab](https://github.com/YuBan834/vrma-lab) | 6 | Apache-2.0 | 浏览器 VRMA 工作台；**Agent 模式**暴露 `window.vrmaLab` 结构化 SDK：`inspect → edit → review → validate → exportVrma`，自带 FBX→VRMA 快速转换 | 纯前端静态站，`npm ci && npm run dev`；用 Playwright 驱动其 SDK |
+| [vrm-c/bvh2vrma](https://github.com/vrm-c/bvh2vrma) | 86 | MIT | BVH → VRMA（web） | 可用，但要自备 BVH 源动作；仓库 2024 年后停更 |
+| [Meringue-Rouge/VRM-Spacing-Animation-Baking](https://github.com/Meringue-Rouge/VRM-Spacing-Animation-Baking) | 10 | 见仓库 | Blender 插件：Mixamo 风格手臂/腿部间距调整 + spring bone 烘焙与循环 | 与现有 Blender 管线互补，「站姿宽窄」这类性别化微调最省 |
+
+**排除**
+
+- `test157t/VRM-Assets-Pack-For-Silly-Tavern`（89★，112 个现成动作）与 `reminjp/vrm-dance`：
+  仓库**无 LICENSE**，不可用。
+- `malaybaku/AnimationClipToVrmaSample`、`saori-eth/vrm-mixamo-retargeter`：分别依赖 Unity、
+  Three.js 运行时，能力被上面两条覆盖。
+
+**路径判断**
+
+- 要「造新动作」→ `text-to-vrma`（原创内容，同时服务后续自制资产换掉第三方模型）。
+- 要「批量改现有动作」→ `vrma-lab` Agent 模式（比自写 Blender 脚本稳，且带四宫格视觉复核）。
+- 只差站姿宽窄这类微调 → Blender 间距插件。
+
+安装任一工具前需先取得用户批准（项目规则：新增依赖须先询问）。

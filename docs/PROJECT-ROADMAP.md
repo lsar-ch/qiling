@@ -17,6 +17,20 @@ DeskMate 当前收敛为：
 
 ## 当前进度
 
+**2026-09-29：3D 挂件线（VRM）落地并推送。** 挂件在
+`avatar_driver: vrm_3d` 时走 three-vrm（VRM 模型 + VRMA 动作），原 2D 分层路线保留为并行回退；
+角色卡 `presentation.vrm` 声明动作库（`male` / `female` 共享库）与候选
+（`weight` / `cooldownMs` 加权随机），新增 `#/motion-lab` 动作实验室做预览与调参，
+3D 资产导入有结构闸门 `vrm_validator`。三个 VRM 角色（`k81` / `komano` / `vrm_demo`）已入库并推送
+（`0d9c4f7`），`./scripts/check.sh` → **286 passed** + web/desktop typecheck 全绿。3D 线设计见
+`docs/WIDGET-VRM-3D-PLAN.md`。
+
+**3D 线仍未完成**：macOS 交互验收（拖动 / 置顶 / 双击 / 动作反馈 / 口型同步）；
+Windows 真机 WebView2 透明 + WebGL（已知风险项）；打包 `.app` 后表现；`male` / `female`
+动作库除 `project_alt` 外内容仍相同（工具选型见 `docs/WIDGET-VRM-3D-PLAN.md` §8）。
+授权与体积两项按用户 2026-09-29 决定：三个第三方 VRM 均 `allowRedistribution: false`，
+后续换自制资产；`komano/model.vrm` 64MB 触发 GitHub LFS 建议，转 LFS 延后。
+
 **截至 2026-09-17：V1 已收口。P1 浏览器执行器已完成；P1 轻量主动性 T1-T4 已完成；P2 发布加固 T1-T6 已完成，V2 六项收尾也已完成。主线与收尾全部落地。本轮验证：`./scripts/check.sh` 全绿 —— pytest **211 passed**、`apps/web` 与 `apps/desktop` typecheck 均 RC=0、`cargo check` 通过、`apps/web/dist` 已重建（`assets/index-CE1ebdZE.js`，vite 6）。**
 
 **2026-09-17 傍晚追加**：真机 9 项复验全部通过；修掉 `window.prompt` 在 Tauri 窗口静默失效（连带两处无提示删除）、新增角色卡删除、vite 升 6.4.3 清掉 dev-server 漏洞、修掉 Intel Mac 干净安装必挂的 `cryptography` wheel 缺失。细节与剩余待办见 `docs/HANDOVER-2026-09-17.md` 第 7 节。
