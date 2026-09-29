@@ -233,3 +233,34 @@ presentation:
 - [squall01337/mixamo-llm-mocap](https://github.com/squall01337/mixamo-llm-mocap)（323★，许可证 NOASSERTION）：
   视频 → Mixamo 骨架动画。是**动作来源**不是编辑器，依赖 GVHMR 推理（重 GPU），本机跑不动。
 
+### 实际安装状态（2026-09-29）
+
+已装完，`~/.codex/config.toml` 语义比对结果：只新增 `+mcp_servers.blender.command`，
+唯一删除是 `node_repl` 的空 `args = []`（等价），其余键值零变化。
+
+1. `uv` 0.12.20 → `~/.local/bin/uv`
+2. Blender 插件 → `~/Library/Application Support/Blender/4.5/scripts/addons/blender_mcp.py`（protocol 11）
+3. MCP server 注册：`codex mcp add blender -- /Users/lxb/.local/bin/mcp-for-blender`
+   （用**全路径**：GUI 启动的 Codex 不继承 shell PATH）
+
+**Intel Mac 必踩的坑**：`mcp-for-blender` → `mcp` → `pyjwt[crypto]` → `cryptography`，会解析到
+50.0.1；该版本起不再发 x86_64 macOS wheel，退化成源码编译再因缺 OpenSSL 失败（与 `dashscope`
+那次同一根因）。解法是先写约束再装：
+
+```bash
+printf 'cryptography<49\n' > /tmp/uv-constraints.txt
+uv tool install --constraints /tmp/uv-constraints.txt mcp-for-blender
+```
+
+用 `uv tool install` 而非 `uvx`，是为了把工具落成独立 venv，运行时不再解析依赖；
+`uv tool upgrade` 时要重新带上同一约束。
+
+**尚未做的两步（需人工）**
+
+1. Blender → Edit → Preferences → Add-ons → 启用「Interface: MCP for Blender」，在 3D 视图侧栏
+   按 N 打开 **MCP for Blender** 面板，点 **Start MCP Server**
+2. 重启 Codex，新的 MCP 工具才会加载
+
+**安全**：`execute_blender_code` 是任意 Python 执行；需要收紧时给 server 加
+`BLENDER_MCP_SAFE_MODE=1` 环境变量。
+
