@@ -34,9 +34,12 @@ DeskMate 当前收敛为：
 73 个 VRMA 全部合规，三个模型的人骨映射差异属源骨架固有（k81 / komano 无 upperChest 骨），
 运行时不构成可见损失。判据见 `docs/VRM-ASSET-NOTES.md` §9。
 
-**3D 线仍未完成**：macOS 交互验收（拖动 / 置顶 / 双击 / 动作反馈 / 口型同步）；
-Windows 真机 WebView2 透明 + WebGL（已知风险项）；打包 `.app` 后表现；`male` / `female`
-动作库除 `project_alt` 外内容仍相同（工具选型见 `docs/WIDGET-VRM-3D-PLAN.md` §8）。
+**2026-09-29（续 2）：3D 挂件 macOS 人工验收 6/6 通过。** 透明背景、拖动、常驻置顶、
+双击打开对话、动作反馈、口型随播报变化，六项全部符合预期（用户实机确认）。至此 3D 线的
+功能闸门关闭，剩下的是平台验证（Windows / 打包）与素材内容。
+
+**3D 线仍未完成**：Windows 真机 WebView2 透明 + WebGL（已知风险项）；打包 `.app` 后表现；
+`male` / `female` 动作库除 `project_alt` 外内容仍相同（工具选型见 `docs/WIDGET-VRM-3D-PLAN.md` §8）。
 授权与体积两项按用户 2026-09-29 决定：三个第三方 VRM 均 `allowRedistribution: false`，
 后续换自制资产；`komano/model.vrm` 64MB 触发 GitHub LFS 建议，转 LFS 延后。
 

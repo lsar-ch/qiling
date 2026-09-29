@@ -16,10 +16,22 @@
 
 ### A. 只微调现有动作
 
-1. `File > Import > VRM`，导入角色的 `model.vrm`。
-2. 导入现有 `.vrma`（VRM Add-on 的 VRM Animation Import）。
-3. 在 Dope Sheet / Graph Editor / NLA 里改关键帧和曲线。
-4. `File > Export > VRM Animation (.vrma)` 导出，文件名保持对应 trigger。
+走脚本，别手点「导入 → 导出」——手点会踩两个静默坑（判据见 `docs/VRM-ASSET-NOTES.md` §9）：
+导出的 `humanBones` 按**模型**的人骨映射重建（模型没绑的骨会丢、模型挂的眼骨会多出来），
+以及场景默认 `frame_end=250` 会把长动作截断（345 帧 → 250 帧）。
+
+```bash
+blender --background --python scripts/vrm/roundtrip_vrma.py -- \
+    --model data/persona-assets/<id>/model.vrm \
+    --motion <原片段.vrma> --out <导出.vrma> \
+    --amplitude 1.5 --duration 1.4      # 不改参数就都填 1.0
+
+# 导出后收口：删规范外槽位、把 upperChest 从源片段搬回
+python3 scripts/vrm/normalize_vrma.py --source <原片段.vrma> <导出.vrma>
+node scripts/vrm/check_vrma.mjs <导出.vrma>     # 必须是 52 骨
+```
+
+要在 GUI 里手改关键帧也行，改完仍按上面两步收口（帧范围在脚本里只负责设定，手改时自己把 `frame_end` 撑到动作末尾）。
 
 ### B. Mixamo FBX 重定向到角色 VRM
 
@@ -62,6 +74,24 @@
 - 循环交给引擎（`loop_triggers`），不要在 VRMA 里做多圈循环，避免文件膨胀和首尾卡顿。
 - 先跑 `check_vrma.mjs` 确认结构，再进动作实验室看实机效果；穿模/脚滑问题回 Blender 调根位移和脚部接触。
 
-## 当前缺口
+## 非语义片段的映射（不是缺口，是设计）
 
-`listening` / `error` / `click` / `hover` 目前是复用凑合动作。建议用上面的 B 工作流替换为语义精确的 Mixamo 源，导出后直接覆盖同名 `.vrma`。
+`listening` / `error` / `click` / `hover` 用的是**别的名字**的动作，这是有意的：
+Mixamo 上按语义搜到的动作不满意，所以先把动作做成片段，再挑一个合适的挂到 trigger 上。
+片段文件名不必等于 trigger，映射靠角色卡 `presentation.vrm.actions`：
+
+```yaml
+vrm:
+  actions:
+    listening:
+    - clip: idle_happy      # 任意片段名，不必叫 listening
+      weight: 1
+```
+
+动作实验室 `#/motion-lab` 就是干这个的：预览区「VRMA 素材（3D）」下拉列出该库**全部**
+片段（直接读目录，不用先写进角色卡），选好保存即写回角色卡。
+
+两个边界：
+
+- 多候选数组**只换第一条**，要加第 2、3 条候选得手改 YAML。
+- 保存走 `yaml.safe_dump` 整份重写，**会丢注释**，动之前先备份角色卡。

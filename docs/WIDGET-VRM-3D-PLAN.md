@@ -96,7 +96,7 @@ html/body/canvas 背景全透明。首帧 shader 编译卡 0.5-1.9s → 必须�
 - `./scripts/check.sh` 全绿 + `apps/desktop` `npm run build`（已完成：244 passed + 构建通过）
 - 浏览器冒烟已通过：`?deskmate=widget` 下 canvas 渲染 Klee、idle VRMA 循环播放、占位图按预期撤下
 - 2D persona 回归：现有角色表现与之前完全一致
-- macOS 人工验收：透明、拖动、置顶、双击、动作、口型
+- macOS 人工验收：透明、拖动、置顶、双击、动作、口型 —— **2026-09-29 实机 6/6 通过**
 
 ## 5. 风险与未验证项
 
