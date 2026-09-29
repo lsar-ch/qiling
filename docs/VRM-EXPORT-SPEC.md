@@ -40,6 +40,11 @@ VRoid Studio / Blender 按本规范导出
 `idle` `listening` `thinking` `speaking` `executing` `awaiting_approval`
 `success` `error` `click` `project` `hover`
 
+**VRMA 的骨骼集**：52 根规范骨（VRM 1.0 全集去掉 `leftEye` / `rightEye` / `jaw`），
+名单在 `scripts/vrm/humanoid-bones.json`。用 Blender 改过动作再导出的片段，导出后
+必须跑 `scripts/vrm/normalize_vrma.py` 收口——导出的骨骼集按模型的人骨映射重建，
+会静默丢工具没绑的骨、多出模型挂的眼骨，见 `VRM-ASSET-NOTES.md` §9。
+
 ## 3. spring bone 的关节怎么数（最容易踩的坑）
 
 VRM 1.0 的 `springs[].joints` 是**骨链**，不是骨列表：相邻两项配对成一个

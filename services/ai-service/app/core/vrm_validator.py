@@ -42,6 +42,16 @@ _DISALLOWED_USAGE_FLAGS = (
 
 VRMA_EXTENSION = "VRMC_vrm_animation"
 
+# VRM 1.0 必备人骨。VRMA 靠 humanoid 映射重定向到模型，缺一根就有一路动作
+# 静默丢掉（Blender 往返导出按模型骨集重建，最容易丢的就是这些）。
+REQUIRED_VRMA_BONES = (
+    "hips", "spine", "head",
+    "leftUpperArm", "leftLowerArm", "leftHand",
+    "rightUpperArm", "rightLowerArm", "rightHand",
+    "leftUpperLeg", "leftLowerLeg", "leftFoot",
+    "rightUpperLeg", "rightLowerLeg", "rightFoot",
+)
+
 
 class GlbFormatError(ValueError):
     """字节流不是可解析的 GLB 容器。"""
@@ -230,17 +240,20 @@ def validate_vrm(data: bytes) -> VrmReport:
     rx = _node_world_x(doc, bones.get("rightUpperArm")) \
         if bones.get("rightUpperArm") is not None else None
     stats["upper_arm_x"] = {"left": lx, "right": rx}
+    # 低于这个量级（1mm）说明横向偏移不在 translation 这一层，判不出方向
+    epsilon = 1e-3
     if lx is None or rx is None:
         check(False, "左右肩臂几何可判定（缺 leftUpperArm/rightUpperArm）",
               blocking=False)
+    elif min(abs(lx), abs(rx)) < epsilon:
+        # 有一侧 x≈0：vrm_demo 的右肩横向偏移在旋转里、translation 只给 0，
+        # 这时乘积的符号没有意义，判「同侧」是误报，只能提示。
+        check(False, "左右肩臂几何可判定（x 过小判不出方向 left=%.4f right=%.4f）"
+              % (lx, rx), blocking=False)
     elif lx * rx > 0:
         # 两臂落在中轴同一侧（含两臂完全重合）= 真的左右颠倒，必须拦
         check(False, "左右肩臂分居两侧（left x=%.4f right x=%.4f 同侧）"
               % (lx, rx))
-    elif abs(lx - rx) < 1e-4:
-        # 两臂都在 x=0：transform 不在 translation 里，无法判方向，只提示
-        check(False, "左右肩臂几何可判定（两臂 x 重合于 0，无法判方向）",
-              blocking=False)
     else:
         check(True, "左右肩臂分居两侧（left x=%.4f right x=%.4f）" % (lx, rx))
 
@@ -310,4 +323,15 @@ def validate_vrma(data: bytes) -> list[str]:
         errors.append(f"缺少 {VRMA_EXTENSION} 扩展，不是 VRM 动画文件")
     if not doc.get("animations"):
         errors.append("不含任何 animation")
+    # 逐层判类型：这个扩展来自用户上传的文件，不能假定它一定是对象
+    extension = doc.get("extensions")
+    extension = extension.get(VRMA_EXTENSION) if isinstance(extension, dict) else None
+    humanoid = extension.get("humanoid") if isinstance(extension, dict) else None
+    human_bones = humanoid.get("humanBones") if isinstance(humanoid, dict) else None
+    if not isinstance(human_bones, dict) or not human_bones:
+        errors.append("缺少 humanoid.humanBones，无法重定向到模型")
+    else:
+        absent = [name for name in REQUIRED_VRMA_BONES if name not in human_bones]
+        if absent:
+            errors.append("humanBones 缺少 VRM 1.0 必备骨：%s" % "、".join(absent))
     return errors

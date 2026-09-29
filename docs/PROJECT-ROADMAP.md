@@ -25,6 +25,15 @@ DeskMate 当前收敛为：
 （`0d9c4f7`），`./scripts/check.sh` → **286 passed** + web/desktop typecheck 全绿。3D 线设计见
 `docs/WIDGET-VRM-3D-PLAN.md`。
 
+**2026-09-29（续）：VRMA 往返编辑收口 + 全量资产体检。** 用 Blender 改动作参数再导出
+会踩两个静默坑：导出的 `humanBones` 按**模型**映射重建（k81 / komano 没绑 upperChest 就丢、
+模型挂着眼骨就多出来），以及场景默认 `frame_end=250` 把长动作截断（345 帧 → 250 帧）。
+新增 `scripts/vrm/normalize_vrma.py`（归一化 + `--check` + 自检）与
+`scripts/vrm/roundtrip_vrma.py`（Blender 侧往返，自动撑开帧范围、支持幅度/时长倍数），
+`check_vrma.mjs` 与导入闸门 `validate_vrma` 都按 52 骨规范集卡死。体检结论：动作库
+73 个 VRMA 全部合规，三个模型的人骨映射差异属源骨架固有（k81 / komano 无 upperChest 骨），
+运行时不构成可见损失。判据见 `docs/VRM-ASSET-NOTES.md` §9。
+
 **3D 线仍未完成**：macOS 交互验收（拖动 / 置顶 / 双击 / 动作反馈 / 口型同步）；
 Windows 真机 WebView2 透明 + WebGL（已知风险项）；打包 `.app` 后表现；`male` / `female`
 动作库除 `project_alt` 外内容仍相同（工具选型见 `docs/WIDGET-VRM-3D-PLAN.md` §8）。

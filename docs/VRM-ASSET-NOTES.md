@@ -216,3 +216,50 @@ body 的 56 个一个都没用。
 - `neutral` 空绑定在当前壳子里合法；若将来有壳子严格要求非空，
   需要挂一个空的 Basis 绑定
 - 缩略图渲染里 MToon 背面法线靠临时改节点树模拟，未在真实三维查看器复核
+
+## 9. VRMA 往返编辑（拿 Blender 改动作参数）
+
+### 9.1 导出的骨骼集跟着模型漂，不跟着源片段
+
+**现象**：拿 k81 / komano 的 VRM 导一条动作库的 `idle.vrma` 再导回去，
+文件从 52 骨变成 53 骨：`upperChest` 没了，多出 `leftEye` / `rightEye`。
+
+**判据**：导出的 `humanBones` 是按**当前模型**的人骨映射重建的，不是照源片段。
+k81 / komano 的骨架本来就是 Chest → Neck，中间没有 upperChest 骨
+（`optimize_vrm.py:ensure_upper_chest` 的 BFS 探过，确属真缺失，不是脚本没跑），
+而模型的映射里挂着 eye.left / eye.right，于是导出就带眼骨。
+
+**动作**：导出后跑一遍归一化，别手改 JSON：
+
+```bash
+python3 scripts/vrm/normalize_vrma.py --source /tmp/idle_original.vrma <导出文件>
+```
+
+它删掉眼骨/jaw 槽位，并把 `upperChest` 的节点与通道从源片段搬回来（时间轴按目标
+时长缩放）。`--check` 只体检。校验脚本 `check_vrma.mjs` 已按 52 骨规范集卡死，
+少了或多了一根都 FAIL。
+
+### 9.2 场景帧范围会静默截断长动作
+
+**现象**：345 帧（14.33s）的 `idle.vrma` 导入后导回去只剩 250 帧 / 10.38s，
+动作被砍掉四分之一，没有任何报错。
+
+**判据**：Blender 场景默认 `frame_end = 250`，导出只覆盖场景帧范围。
+
+**动作**：导出前按导入后的动作长度撑开帧范围，或直接用
+`scripts/vrm/roundtrip_vrma.py`（它同时处理帧范围与幅度/时长倍数）：
+
+```bash
+blender --background --python scripts/vrm/roundtrip_vrma.py -- \
+    --model data/persona-assets/k81/model.vrm \
+    --motion /tmp/idle_original.vrma --out build/vrma/idle_edited.vrma \
+    --amplitude 1.5 --duration 1.4
+python3 scripts/vrm/normalize_vrma.py --source /tmp/idle_original.vrma build/vrma/idle_edited.vrma
+```
+
+### 9.3 模型缺 upperChest 不影响挂件播放
+
+**判据**：`createVRMAnimationClip` 按**模型**的人骨建轨道：拿 k81 跑 52 骨和
+53 骨的片段都只出 52 条轨道，`upperChest` 那路被丢掉不报错；换成带 upperChest 的
+`vrm_demo` 才有 `Normalized_Upper_Chest.quaternion`。所以骨骼集漂移是**文件卫生**
+问题（库要统一、闸门要拦得住），不是 k81 上看得见的动作缺失。

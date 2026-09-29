@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from fastapi.testclient import TestClient
 
 from app.config import load_settings
+from app.core.vrm_validator import REQUIRED_VRMA_BONES
 from app.main import create_app
 
 
@@ -457,6 +458,23 @@ def _minimal_glb(doc: dict, bin_bytes: bytes = b"") -> bytes:
     return struct.pack("<4sII", b"glTF", 2, total) + chunks
 
 
+def _vrma_doc() -> dict:
+    """最小合规 VRMA：闸门要求 humanoid.humanBones 带 VRM 1.0 必备骨。"""
+    return {
+        "extensionsUsed": ["VRMC_vrm_animation"],
+        "animations": [{"channels": []}],
+        "extensions": {
+            "VRMC_vrm_animation": {
+                "humanoid": {
+                    "humanBones": {
+                        name: {"node": 0} for name in REQUIRED_VRMA_BONES
+                    }
+                }
+            }
+        },
+    }
+
+
 def _spec_vrm_doc() -> dict:
     """符合 §3 规格的最小 VRM 1.0 文档（含 15 表情 / 人骨 / spring）。"""
     bones = [
@@ -545,9 +563,7 @@ def test_import3d_zip_applies_assets_and_yaml(tmp_path: Path, monkeypatch) -> No
         encoding="utf-8",
     )
     model_bytes = _minimal_glb(_spec_vrm_doc())
-    idle_bytes = _minimal_glb(
-        {"extensionsUsed": ["VRMC_vrm_animation"], "animations": [{"channels": []}]}
-    )
+    idle_bytes = _minimal_glb(_vrma_doc())
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("pack/model.vrm", model_bytes)
@@ -607,9 +623,7 @@ def test_import3d_rejects_non_spec_vrm(tmp_path: Path, monkeypatch) -> None:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("pack/model.vrm", _minimal_glb(bad))
-        zf.writestr("pack/vrma/idle.vrma",
-                    _minimal_glb({"extensionsUsed": ["VRMC_vrm_animation"],
-                                  "animations": [{"channels": []}]}))
+        zf.writestr("pack/vrma/idle.vrma", _minimal_glb(_vrma_doc()))
     buf.seek(0)
     with TestClient(create_app(load_settings())) as client:
         resp = client.post(

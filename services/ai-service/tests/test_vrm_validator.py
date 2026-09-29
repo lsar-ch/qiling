@@ -9,6 +9,7 @@ from app.core.vrm_validator import (
     MAX_MATERIALS,
     MAX_SPRING_JOINTS,
     MAX_TRIS,
+    REQUIRED_VRMA_BONES,
     validate_vrm,
     validate_vrma,
 )
@@ -97,6 +98,16 @@ def test_mirrored_arms_flagged() -> None:
     assert any("分居两侧" in e for e in report.errors), report.errors
 
 
+def test_one_arm_x_near_zero_is_advisory() -> None:
+    """一侧 x≈0 时乘积符号没意义（vrm_demo 右肩偏移在旋转里），不能误判成颠倒。"""
+    doc = spec_doc()
+    doc["nodes"][2] = {"name": "LeftUpperArm", "translation": [0.0336, 0.0, 0.0]}
+    doc["nodes"][3] = {"name": "RightUpperArm", "translation": [8e-8, 0.0, 0.0]}
+    report = validate_vrm(glb(doc))
+    assert report.ok, report.errors
+    assert any("判不出方向" in w for w in report.warnings), report.warnings
+
+
 def test_missing_upper_chest_is_advisory() -> None:
     """upperChest 是 VRM1 可选骨，缺失只提示，不拦导入。"""
     doc = spec_doc()
@@ -150,9 +161,48 @@ def test_garbage_bytes_do_not_raise() -> None:
     assert "GLB" in report.errors[0]
 
 
+def vrma_doc(bones: dict | None = None) -> bytes:
+    bones = bones if bones is not None else {
+        name: {"node": 0} for name in REQUIRED_VRMA_BONES
+    }
+    return glb({
+        "extensionsUsed": ["VRMC_vrm_animation"],
+        "animations": [{"channels": []}],
+        "extensions": {"VRMC_vrm_animation": {"humanoid": {"humanBones": bones}}},
+    })
+
+
 def test_vrma_requires_extension_and_animation() -> None:
-    good = glb({"extensionsUsed": ["VRMC_vrm_animation"], "animations": [{"channels": []}]})
-    assert validate_vrma(good) == []
+    assert validate_vrma(vrma_doc()) == []
     assert validate_vrma(glb({"animations": [{"channels": []}]}))
     assert validate_vrma(glb({"extensionsUsed": ["VRMC_vrm_animation"]}))
     assert validate_vrma(b"junk")
+
+
+def test_vrma_missing_required_bone_is_blocking() -> None:
+    """Blender 往返导出会按模型骨集重建 humanBones，静默丢掉槽位；必须拦住。"""
+    thin = vrma_doc({
+        name: {"node": 0} for name in REQUIRED_VRMA_BONES if name != "head"
+    })
+    errors = validate_vrma(thin)
+    assert len(errors) == 1
+    assert "必备骨" in errors[0] and "head" in errors[0]
+
+
+def test_vrma_with_malformed_extension_does_not_raise() -> None:
+    """扩展字段来自用户上传，形状不可信；畸形结构要报错不能抛异常。"""
+    malformed = glb({
+        "extensionsUsed": ["VRMC_vrm_animation"],
+        "animations": [{"channels": []}],
+        "extensions": {"VRMC_vrm_animation": "not-an-object"},
+    })
+    errors = validate_vrma(malformed)
+    assert len(errors) == 1 and "humanBones" in errors[0]
+
+
+def test_vrma_without_humanoid_is_blocking() -> None:
+    bare = glb({"extensionsUsed": ["VRMC_vrm_animation"],
+                "animations": [{"channels": []}],
+                "extensions": {"VRMC_vrm_animation": {}}})
+    errors = validate_vrma(bare)
+    assert len(errors) == 1 and "humanBones" in errors[0]
