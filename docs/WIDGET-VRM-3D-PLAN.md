@@ -196,3 +196,40 @@ presentation:
 - 只差站姿宽窄这类微调 → Blender 间距插件。
 
 安装任一工具前需先取得用户批准（项目规则：新增依赖须先询问）。
+
+## 9. Blender MCP 调研（2026-09-29）
+
+需求：让 Codex 直接开 Blender 改模型格式、改模型、改动作。
+
+### 首选：[ahujasid/mcp-for-blender](https://github.com/ahujasid/mcp-for-blender)（29.6k★，MIT，2026-09-27 仍在更新）
+
+- 组成：Blender 内插件（在 Blender 里起 socket server）+ 一个 MCP server（`uvx mcp-for-blender`）。
+- 官方文档直接给了 Codex 的接法：`codex mcp add blender -- uvx mcp-for-blender`；Codex 桌面版走
+  **Settings → MCP servers → Add server**（STDIO，命令 `uvx mcp-for-blender`）。
+- 关键能力：`execute_blender_code`（在 Blender 里跑任意 Python）、场景/对象查询、材质、
+  `export_scene`（导出 GLB/FBX）、Poly Haven CC0 资产、Hyper3D / Hunyuan3D 生成模型、视口截图。
+- 对本项目的意义：本机已装 VRM Add-on for Blender，所以「导入 VRM / VRMA → 改骨骼与关键帧 →
+  导出 VRM / VRMA」可以全部用 Python 驱动；视口截图让改动能肉眼复核，正好补上纯无头脚本
+  「改了看不见」的短板。
+
+### 本机安装前置（三项都需要用户批准）
+
+1. `uv` 未安装，且本机没有 brew → 用官方脚本 `curl -LsSf https://astral.sh/uv/install.sh | sh`
+2. `uvx mcp-for-blender install-addon`，然后在 Blender 里启用插件并点 **Start MCP Server**
+   （Blender GUI 必须开着；它不是无头方案）
+3. `codex mcp add blender -- uvx mcp-for-blender` → 会写入 `~/.codex/config.toml`（全局配置）
+
+### 注意
+
+- `execute_blender_code` 是真·任意代码执行；`BLENDER_MCP_SAFE_MODE=1` 可拦文件 / 网络 / 拉起外部进程。
+- 遥测默认只上报匿名使用记录（工具名、耗时、版本、系统），提示词、代码、截图、场景数据默认不上报。
+- 它让 Blender「可被操作」，但不自己产生动作内容；动作素材仍要靠源素材或 text-to-motion（见 §8）。
+
+### 备选
+
+- [arjun988/blender-skills](https://github.com/arjun988/blender-skills)（245★，MIT）：94 个 Blender 技能包，明确支持 Codex。
+- [dcc-mcp/dcc-mcp-blender](https://github.com/dcc-mcp/dcc-mcp-blender)（41★，MIT）：DCC MCP 生态的 Blender 插件。
+- [sandraschi/blender-mcp](https://github.com/sandraschi/blender-mcp)（51★，MIT）：无头 Blender + FastMCP，41 个工具。
+- [squall01337/mixamo-llm-mocap](https://github.com/squall01337/mixamo-llm-mocap)（323★，许可证 NOASSERTION）：
+  视频 → Mixamo 骨架动画。是**动作来源**不是编辑器，依赖 GVHMR 推理（重 GPU），本机跑不动。
+
