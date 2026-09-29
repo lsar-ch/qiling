@@ -1,29 +1,8 @@
-import type { ExpressionEmotion, MotionFamily, WidgetState } from "../api";
+import type { ExpressionEmotion, MotionFamily, MotionOverrides, WidgetState } from "../api";
+import { DEFAULT_ACTIONS } from "@deskmate/contracts";
+import type { ActionSpec, ActionTrigger, FxKind } from "@deskmate/contracts";
 
-export type ActionTrigger =
-  | "idle"
-  | "listening"
-  | "thinking"
-  | "speaking"
-  | "executing"
-  | "awaiting_approval"
-  | "success"
-  | "error"
-  | "click"
-  | "project"
-  | "hover";
-
-export type FxKind = "sparkle" | "magic" | "speed" | "thought" | "question" | "note";
-
-export interface ActionSpec {
-  id: string;
-  className: string;
-  durationMs: number;
-  loop?: boolean;
-  cooldownMs: number;
-  weight: number;
-  fx?: FxKind;
-}
+export type { ActionSpec, ActionTrigger, FxKind } from "@deskmate/contracts";
 
 export interface ActionSelection {
   id: string;
@@ -33,68 +12,45 @@ export interface ActionSelection {
   fx?: FxKind;
 }
 
-const spec = (
-  id: string,
-  className: string,
-  durationMs: number,
-  cooldownMs: number,
-  weight = 1,
-  fx?: FxKind,
-): ActionSpec => ({ id, className, durationMs, cooldownMs, weight, fx });
+export const ACTIONS: Record<MotionFamily, Record<ActionTrigger, ActionSpec[]>> = DEFAULT_ACTIONS;
 
-export const ACTIONS: Record<MotionFamily, Record<ActionTrigger, ActionSpec[]>> = {
-  human: {
-    idle: [
-      spec("human-breathe", "act-breath", 3600, 4000, 2),
-      spec("human-look", "act-human-look", 2200, 9000, 1),
-      spec("human-stretch", "act-human-stretch", 1800, 14000, 0.6),
-    ],
-    listening: [spec("human-attend", "act-human-attend", 1100, 4000, 1)],
-    thinking: [spec("human-think", "act-human-think", 2000, 5000, 1)],
-    speaking: [spec("human-speak", "act-speak", 1200, 2000, 1)],
-    executing: [spec("human-execute", "act-execute", 1500, 2000, 1)],
-    awaiting_approval: [spec("human-question", "act-question", 1600, 3000, 1, "question")],
-    success: [spec("human-wave", "act-human-wave", 1400, 6000, 1, "sparkle")],
-    project: [spec("human-project", "act-human-wave", 1400, 7000, 1, "sparkle")],
-    error: [spec("human-shrug", "act-error-shake", 900, 5000, 1)],
-    click: [spec("human-nod", "act-human-nod", 900, 3000, 1)],
-    hover: [spec("human-lean", "act-human-lean", 700, 1500, 1)],
-  },
-  animal: {
-    idle: [
-      spec("animal-breathe", "act-breath", 3600, 4000, 2),
-      spec("animal-tail", "act-animal-tail", 2000, 8000, 1),
-      spec("animal-ear", "act-animal-ear", 1200, 6000, 1),
-    ],
-    listening: [spec("animal-attend", "act-animal-attend", 1000, 4000, 1)],
-    thinking: [spec("animal-tilt", "act-animal-tilt", 1800, 5000, 1, "thought")],
-    speaking: [spec("animal-speak", "act-speak", 1200, 2000, 1)],
-    executing: [spec("animal-scurry", "act-animal-scurry", 1400, 2000, 1, "speed")],
-    awaiting_approval: [spec("animal-question", "act-question", 1600, 3000, 1, "question")],
-    success: [spec("animal-jump", "act-animal-jump", 1200, 6000, 1, "sparkle")],
-    project: [spec("animal-project", "act-animal-jump", 1200, 7000, 1, "sparkle")],
-    error: [spec("animal-crouch", "act-animal-crouch", 1100, 5000, 1)],
-    click: [spec("animal-hop", "act-animal-hop", 800, 3000, 1)],
-    hover: [spec("animal-head", "act-animal-head", 700, 1500, 1)],
-  },
-  anime: {
-    idle: [
-      spec("anime-breathe", "act-breath", 3600, 4000, 2),
-      spec("anime-float", "act-anime-float", 2600, 8000, 1, "sparkle"),
-      spec("anime-turn", "act-anime-turn", 1400, 9000, 0.8),
-    ],
-    listening: [spec("anime-attend", "act-human-attend", 1000, 4000, 1)],
-    thinking: [spec("anime-think", "act-anime-think", 2000, 5000, 1, "thought")],
-    speaking: [spec("anime-speak", "act-speak", 1200, 2000, 1, "note")],
-    executing: [spec("anime-magic", "act-anime-magic", 1600, 2500, 1, "magic")],
-    awaiting_approval: [spec("anime-question", "act-question", 1600, 3000, 1, "question")],
-    success: [spec("anime-flash", "act-anime-flash", 1300, 6000, 1, "magic")],
-    project: [spec("anime-project", "act-anime-flash", 1300, 7000, 1, "magic")],
-    error: [spec("anime-dizzy", "act-anime-dizzy", 1200, 5000, 1)],
-    click: [spec("anime-spark", "act-anime-turn", 900, 3000, 1, "sparkle")],
-    hover: [spec("anime-look", "act-anime-look", 700, 1500, 1)],
-  },
-};
+// 动作实验室调参覆盖：persona 级，motion_family → trigger → 动作列表。
+let overrides: MotionOverrides = {};
+
+export function setMotionOverrides(next: MotionOverrides | undefined): void {
+  overrides = next ?? {};
+}
+
+/** 合并内置 ACTIONS 与 persona 覆盖；覆盖按 id 补全缺省字段。 */
+export function effectiveActions(): Record<MotionFamily, Record<ActionTrigger, ActionSpec[]>> {
+  if (Object.keys(overrides).length === 0) return ACTIONS;
+  const merged: Record<MotionFamily, Record<ActionTrigger, ActionSpec[]>> = { ...ACTIONS };
+  for (const [family, triggers] of Object.entries(overrides)) {
+    const fam = family as MotionFamily;
+    if (!merged[fam]) continue;
+    for (const [trigger, specs] of Object.entries(triggers)) {
+      const trig = trigger as ActionTrigger;
+      if (!merged[fam][trig]) continue;
+      const base = merged[fam][trig];
+      merged[fam] = {
+        ...merged[fam],
+        [trig]: specs.map((s) => {
+          const existing = base.find((b) => b.id === s.id);
+          return {
+            id: s.id,
+            className: s.className ?? existing?.className ?? "",
+            durationMs: s.durationMs ?? existing?.durationMs ?? 1000,
+            cooldownMs: s.cooldownMs ?? existing?.cooldownMs ?? 1000,
+            weight: s.weight ?? existing?.weight ?? 1,
+            loop: s.loop ?? existing?.loop,
+            fx: (s.fx as ActionSpec["fx"]) ?? existing?.fx,
+          };
+        }),
+      };
+    }
+  }
+  return merged;
+}
 
 export function triggerFor(state: WidgetState, emotion: ExpressionEmotion): ActionTrigger {
   if (emotion === "success") return "success";
@@ -132,15 +88,24 @@ export function pickAction(
   playedAt: Record<string, number>,
   now: number,
   random: () => number = Math.random,
+  weightMultiplier: (actionId: string) => number = () => 1.0,
 ): ActionSelection | null {
-  const candidates = (ACTIONS[family] ?? {})[trigger] ?? [];
+  const table = effectiveActions();
+  const candidates = (table[family] ?? {})[trigger] ?? [];
   const available = candidates.filter(
     (item) => now - (playedAt[item.id] ?? Number.NEGATIVE_INFINITY) >= item.cooldownMs,
   );
   if (available.length === 0) return null;
-  const total = available.reduce((sum, item) => sum + item.weight, 0);
+  
+  // Phase 4: 应用时间权重调整
+  const adjustedAvailable = available.map(item => ({
+    ...item,
+    weight: item.weight * weightMultiplier(item.id),
+  }));
+  
+  const total = adjustedAvailable.reduce((sum, item) => sum + item.weight, 0);
   let roll = Math.max(0, Math.min(total - Number.EPSILON, random() * total));
-  for (const item of available) {
+  for (const item of adjustedAvailable) {
     roll -= item.weight;
     if (roll < 0) {
       return {
@@ -152,7 +117,7 @@ export function pickAction(
       };
     }
   }
-  const last = available[available.length - 1];
+  const last = adjustedAvailable[adjustedAvailable.length - 1];
   return {
     id: last.id,
     className: last.className,
@@ -181,4 +146,31 @@ export function demo(): void {
   const blocked = pickAction("human", "idle", { [first.id]: 1000 }, 1100, () => 0);
   if (blocked?.id === first.id) throw new Error("cooldown must block the same action");
   if (triggerFor("completed", "neutral") !== "success") throw new Error("trigger mapping broken");
+}
+
+// Phase 2: 动画过渡平滑
+// 在两个动作之间插入中性位过渡，避免"跳切"感
+export const TRANSITION_MS = 250;
+
+export function smoothTransition(
+  el: HTMLElement,
+  fromClass: string,
+  toClass: string,
+  transitionMs: number = TRANSITION_MS,
+): Promise<void> {
+  return new Promise((resolve) => {
+    // 先移除当前动作，进入中性位（data-action 设为空）
+    if (fromClass && fromClass !== toClass) {
+      el.dataset.action = "";
+    }
+
+    // 等待过渡时长后设置新动作
+    const timer = setTimeout(() => {
+      el.dataset.action = toClass;
+      resolve();
+    }, transitionMs);
+
+    // 如果组件卸载，清理定时器（通过 Promise.race 模式）
+    // 这里简化处理：假设调用方会在卸载时取消 Promise
+  });
 }

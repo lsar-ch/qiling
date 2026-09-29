@@ -1,5 +1,4 @@
 // 主界面与 ai-service 通信（同源 /api；开发模式由 Vite 代理转发）。
-import { invoke } from "@tauri-apps/api/core";
 
 import type { AgentInfo, AgentIntegrationStatus } from "@deskmate/contracts";
 import type { EventEnvelope } from "@deskmate/contracts";
@@ -506,6 +505,28 @@ export async function deleteModelProfile(id: string): Promise<void> {
   if (!resp.ok) throw new Error(await readDetail(resp));
 }
 
+export interface ProviderModelList {
+  available: boolean;
+  models: string[];
+  reason: string | null;
+}
+
+/** 拉取供应商的可用模型列表，供「模型名称」做下拉选择。
+
+    编辑态可能还没保存，所以直接带上 base_url / api_key；
+    传 profile_id 时后端退回该档案已存的地址与 Key。 */
+export async function fetchProviderModels(params: {
+  baseUrl?: string;
+  apiKey?: string;
+  profileId?: string;
+}): Promise<ProviderModelList> {
+  const query = new URLSearchParams();
+  if (params.baseUrl?.trim()) query.set("base_url", params.baseUrl.trim());
+  if (params.apiKey?.trim()) query.set("api_key", params.apiKey.trim());
+  if (params.profileId) query.set("profile_id", params.profileId);
+  return fetchJson<ProviderModelList>(`/api/model-profiles/models?${query.toString()}`, 20000);
+}
+
 export async function testModelProfile(id: string): Promise<{ ok: boolean; message: string }> {
   const resp = await fetch(`/api/model-profiles/${encodeURIComponent(id)}/test`, { method: "POST" });
   if (!resp.ok) throw new Error(await readDetail(resp));
@@ -603,6 +624,75 @@ export async function updatePersona(persona: PersonaCard): Promise<PersonaCard> 
   return (await resp.json()) as PersonaCard;
 }
 
+export interface MotionActionOverride {
+  id: string;
+  className?: string;
+  durationMs?: number;
+  cooldownMs?: number;
+  weight?: number;
+  loop?: boolean;
+  fx?: string;
+}
+
+export type MotionOverrides = Record<string, Record<string, MotionActionOverride[]>>;
+
+export type VrmClipRef =
+  | string
+  | {
+      clip: string;
+      repeat?: number;
+      timeScale?: number;
+      /** 同一 trigger 多候选时的相对权重，缺省 1。 */
+      weight?: number;
+      /** 同一 trigger 多候选时的冷却毫秒，缺省 0。 */
+      cooldownMs?: number;
+    };
+
+export interface VrmMotionConfig {
+  loop_triggers?: string[];
+  crossfade_ms?: number;
+  /** 共享动作库（male / female）：配了先从库里解析，库里没有才回退角色自己的 vrma/。 */
+  library?: string;
+  /**
+   * trigger → VRMA 候选。字符串即文件基名（缺省同名）；给数组即多候选，
+   * 按 weight 加权随机挑一条，cooldownMs 挡刚播过的。
+   */
+  actions?: Record<string, VrmClipRef | VrmClipRef[]>;
+}
+
+export interface MotionConfig {
+  actions: MotionOverrides | null;
+  vrm: VrmMotionConfig | null;
+  /** presentation.animations：idle_action_interval_ms / transition_ms / breath_rate / blink_interval_ms */
+  animations?: Record<string, number> | null;
+}
+
+export async function fetchMotions(personaId: string): Promise<MotionConfig> {
+  return fetchJson<MotionConfig>(`/api/personas/${encodeURIComponent(personaId)}/motions`);
+}
+
+export async function saveMotions(personaId: string, motions: MotionConfig): Promise<MotionConfig> {
+  const resp = await fetch(`/api/personas/${encodeURIComponent(personaId)}/motions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(motions),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return (await resp.json()) as MotionConfig;
+}
+
+/** 角色资产文件地址（layers.json / vrma / model.vrm）。 */
+export function personaAssetUrl(personaId: string, file: string): string {
+  const encoded = file.split("/").map(encodeURIComponent).join("/");
+  return `/api/personas/${encodeURIComponent(personaId)}/asset/${encoded}`;
+}
+
+/** 共享动作库（male / female）只读地址。 */
+export function motionLibraryUrl(variant: string, file: string): string {
+  const encoded = file.split("/").map(encodeURIComponent).join("/");
+  return `/api/motion-library/${encodeURIComponent(variant)}/${encoded}`;
+}
+
 export async function uploadPersonaAvatar(personaId: string, file: File): Promise<{ avatar: string }> {
   const resp = await fetch(`/api/personas/${encodeURIComponent(personaId)}/avatar`, {
     method: "PUT",
@@ -618,6 +708,8 @@ export interface Import3dResult {
   vrm: string;
   vrma: string[];
   avatar: string | null;
+  /** 非阻断的规格建议（缺缩略图、体积偏大、材质非双面等） */
+  warnings?: string[];
 }
 
 export async function importPersona3d(personaId: string, file: File): Promise<Import3dResult> {
@@ -1206,14 +1298,6 @@ export async function releaseVoiceLease(): Promise<void> {
     headers: { "X-Voice-Client": "web" },
     keepalive: true,
   }).catch(() => {});
-}
-
-export async function fetchMainUiVisible(): Promise<boolean> {
-  try {
-    return await invoke<boolean>("main_ui_visible");
-  } catch {
-    return false;
-  }
 }
 
 export interface VoiceIntentResponse {

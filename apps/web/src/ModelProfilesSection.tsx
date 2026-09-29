@@ -4,6 +4,7 @@ import {
   createModelProfile,
   deleteModelProfile,
   fetchModelProfiles,
+  fetchProviderModels,
   fetchVoiceOptions,
   previewVoice,
   testModelProfile,
@@ -13,6 +14,7 @@ import {
   type ModelProfilePayload,
   type VoiceOption,
 } from "./api";
+import ModelSelect from "./ModelSelect";
 import VoiceSelect from "./VoiceSelect";
 
 const CATEGORY_META: Record<
@@ -122,6 +124,10 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
   const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
   const [voiceProvider, setVoiceProvider] = useState("");
   const [voiceReason, setVoiceReason] = useState<string | null>(null);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelReason, setModelReason] = useState<string | null>(null);
+  const [modelBusy, setModelBusy] = useState(false);
+  const [modelOpenRequest, setModelOpenRequest] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -161,6 +167,30 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
     }
   };
 
+  const loadModelOptions = async (target: Draft | null = draft): Promise<void> => {
+    if (!target) return;
+    if (target.provider === "echo") {
+      setModelOptions([]);
+      setModelReason("本地演示模式没有模型列表，直接填任意名称即可。");
+      return;
+    }
+    setModelBusy(true);
+    try {
+      const list = await fetchProviderModels({
+        baseUrl: target.baseUrl,
+        apiKey: target.apiKey,
+        profileId: savedProfileIds.has(target.id) ? target.id : undefined,
+      });
+      setModelOptions(list.models);
+      setModelReason(list.reason);
+    } catch (e) {
+      setModelOptions([]);
+      setModelReason(e instanceof Error ? e.message : "模型列表获取失败，可直接手填");
+    } finally {
+      setModelBusy(false);
+    }
+  };
+
   const preview = async (): Promise<void> => {
     if (!draft) return;
     setPreviewing(true);
@@ -188,6 +218,8 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
 
   const openEditor = (nextDraft: Draft): void => {
     setDraft(nextDraft);
+    setModelOptions([]);
+    setModelReason(null);
     setEditorRequest((current) => current + 1);
     if (nextDraft.category === "tts") {
       void loadVoiceOptions(savedProfileIds.has(nextDraft.id) ? nextDraft.id : undefined);
@@ -293,8 +325,53 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
               </label>
             ) : null}
             <label className="flex flex-col gap-1.5 text-xs text-muted">
-              模型名称
-              <input className={inputCls} value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })} placeholder={draft.category === "stt" ? "paraformer-realtime-v2" : draft.category === "tts" ? "speech-2.8-hd" : "qwen-plus"} />
+              <span className="flex items-center justify-between gap-2">
+                <span>模型名称</span>
+                {draft.category === "text" || draft.category === "multimodal" ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md border border-line px-2 py-0.5 text-[11px] text-ink hover:border-brand hover:text-brand disabled:opacity-50"
+                    onClick={() => {
+                      void loadModelOptions();
+                      setModelOpenRequest((current) => current + 1);
+                    }}
+                    disabled={modelBusy}
+                    title="从供应商拉取可用模型"
+                  >
+                    {modelBusy ? "获取中…" : "获取"}
+                  </button>
+                ) : null}
+              </span>
+              {draft.category === "text" || draft.category === "multimodal" ? (
+                <>
+                  <small className="text-[11px] text-muted break-words">
+                    {draft.category === "text"
+                      ? "推荐使用纯文本对话类模型（如 qwen-flash、qwen-plus），不建议选图像、视频或向量嵌入类模型。"
+                      : "推荐使用支持图像理解的多模态模型（如 qwen-vl 系列）；需要处理视频时，请确认模型本身支持视频输入。"}
+                  </small>
+                  <ModelSelect
+                    value={draft.model}
+                    onChange={(next) => setDraft({ ...draft, model: next })}
+                    models={modelOptions}
+                    loading={modelBusy}
+                    reason={modelReason}
+                    openRequest={modelOpenRequest}
+                    placeholder="qwen-flash"
+                  />
+                  <small className="text-[11px] text-muted break-words">
+                    {modelOptions.length > 0
+                      ? `共 ${modelOptions.length} 个可用模型，点选即填入；也可直接手填。`
+                      : "点击「获取」可从供应商拉取可用模型列表，也可直接手填。"}
+                  </small>
+                </>
+              ) : (
+                <input
+                  className={inputCls}
+                  value={draft.model}
+                  onChange={(event) => setDraft({ ...draft, model: event.target.value })}
+                  placeholder={draft.category === "stt" ? "paraformer-realtime-v2" : "speech-2.8-hd"}
+                />
+              )}
             </label>
             <label className="flex flex-col gap-1.5 text-xs text-muted">
               API Key

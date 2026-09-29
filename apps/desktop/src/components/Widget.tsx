@@ -39,9 +39,57 @@ import { lipSyncBus } from "../widget/lipSync";
 import {
   pickAction,
   triggerFor,
+  smoothTransition,
+  TRANSITION_MS,
+  setMotionOverrides,
   type ActionSelection,
   type ActionTrigger,
 } from "../widget/actions";
+import { attachMouseFollow, detachMouseFollow } from "../widget/mouseFollow";
+import { attachBeatDetect, detachBeatDetect } from "../widget/beatDetect";
+import {
+  advanceDrive,
+  clampWeight,
+  createDriveState,
+  driveWeightMultiplier,
+  noteStateChange,
+  type DriveState,
+} from "../widget/internalState";
+
+
+// Phase 4: 时间感知 - 根据时间段调整待机动作权重
+type TimePeriod = "morning" | "afternoon" | "evening" | "night";
+
+function getTimePeriod(): TimePeriod {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 18) return "afternoon";
+  if (hour >= 18 && hour < 23) return "evening";
+  return "night";
+}
+
+/**
+ * 上下文权重：时间段 + 内在驱动。收在一处，避免两套乘数各算各的。
+ * 内在驱动只在低优先级动作（idle/hover/click）上生效，任务类动作权重不受影响；
+ * 结果统一夹在 [0.5, 3]，防刷仍由动作表里的 cooldownMs 负责。
+ */
+function getContextWeightMultiplier(
+  actionId: string,
+  timePeriod: TimePeriod,
+  drive: DriveState,
+  lowPriority: boolean,
+): number {
+  let multiplier = 1;
+  if (timePeriod === "night" && actionId.includes("yawn")) {
+    multiplier *= 2.0; // 深夜更容易打哈欠
+  } else if (timePeriod === "morning" && actionId.includes("glance")) {
+    multiplier *= 2.0; // 早晨更容易左右看看
+  }
+  if (lowPriority) {
+    multiplier *= driveWeightMultiplier(actionId, drive);
+  }
+  return clampWeight(multiplier);
+}
 
 // three 依赖较重（~600KB），仅 VRM persona 才动态加载
 const VrmStage = lazy(() => import("../widget/VrmStage"));
@@ -63,15 +111,25 @@ const ERROR_STATES = new Set<WidgetState>(["interrupted"]);
 
 type VoiceMode = "off" | "starting" | "listening" | "sleeping";
 
-// 一次性情绪动画的停留时长：动画播完由前端回落 neutral。
-// 后端只在事件到达时下发情绪、不自动复位，长驻情绪会让弹跳/抖动停不下来。
-const EMOTION_HOLD_MS: Partial<Record<ExpressionEmotion, number>> = {
-  attentive: 1100,
-  success: 1900,
-  error: 1400,
-  happy: 1900,
-  sad: 1700,
-  surprised: 1200,
+// 情绪衰减：先满强度停留 holdMs，再进入 fading 淡化 fadeMs，最后回落 neutral。
+// 覆盖全部非 neutral 情绪——thinking / confused 的动画是 infinite，
+// 原先没有停留时长会一直浮动，状态回到 idle 也停不下来。
+const EMOTION_DECAY_MS: Record<Exclude<ExpressionEmotion, "neutral">, { holdMs: number; fadeMs: number }> = {
+  attentive: { holdMs: 1100, fadeMs: 600 },
+  thinking: { holdMs: 1800, fadeMs: 900 },
+  confused: { holdMs: 2400, fadeMs: 900 },
+  success: { holdMs: 1900, fadeMs: 800 },
+  error: { holdMs: 1400, fadeMs: 900 },
+  happy: { holdMs: 1900, fadeMs: 800 },
+  sad: { holdMs: 1700, fadeMs: 1000 },
+  surprised: { holdMs: 1200, fadeMs: 600 },
+};
+
+// 这三个情绪同时也是某个持续状态的视觉代理：状态还在就续期，别让长任务中途动画消失。
+const EMOTION_STATE_PAIR: Partial<Record<ExpressionEmotion, WidgetState>> = {
+  attentive: "listening",
+  thinking: "thinking",
+  confused: "awaiting_approval",
 };
 
 type WidgetPreferences = {
@@ -221,16 +279,23 @@ function SpriteSheetStage({
 
 export default function Widget() {
   const [state, setState] = useState<WidgetState>("idle");
+  const stateRef = useRef<WidgetState>("idle");
   const [emotion, setEmotion] = useState<ExpressionEmotion>("neutral");
+  const [emotionDecaying, setEmotionDecaying] = useState(false);
   const [action, setAction] = useState<ActionSelection | null>(null);
   const [motionFamily, setMotionFamily] = useState<MotionFamily>("human");
   const [idleActionIntervalMs, setIdleActionIntervalMs] = useState(8000);
+  const [transitionMs, setTransitionMs] = useState(TRANSITION_MS);
   const [projectName, setProjectName] = useState<string | null>(null);
   const [interactionKind, setInteractionKind] = useState<InteractionKind>("casual");
   const [layers, setLayers] = useState<PersonaLayer[] | null>(null);
   const [spritesheets, setSpritesheets] = useState<PersonaSpriteSheet[]>([]);
   const [layersPersonaId, setLayersPersonaId] = useState<string | null>(null);
-  const [vrmReady, setVrmReady] = useState(false);
+  // 当前角色走 VRM：avatar 是 T-pose 占位图，不能用它当立绘显示
+  const [vrmDriven, setVrmDriven] = useState(false);
+  // VRM 一次性反馈动作（点击/悬停）：seq 递增触发重播，不参与状态机
+  const [vrmOneShot, setVrmOneShot] = useState<{ trigger: ActionTrigger; seq: number } | null>(null);
+  const oneShotSeqRef = useRef(0);
   const [presentation, setPresentation] = useState<PersonaPresentation | null>(null);
   const [mascotArt, setMascotArt] = useState(defaultMascotArt);
   const [bubble, setBubble] = useState("");
@@ -262,6 +327,9 @@ export default function Widget() {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emotionFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const driveRef = useRef<DriveState>(createDriveState());
+  const driveLastStateRef = useRef<WidgetState>("idle");
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playedActionsRef = useRef<Record<string, number>>({});
   const actionActiveRef = useRef(false);
@@ -305,6 +373,7 @@ export default function Widget() {
   // 供 window.resize 监听拿到最新一版同步函数（闭包里要用最新的 assetMetrics）。
   const syncOverlayRef = useRef<() => void>(() => {});
 
+  stateRef.current = state;
   busyRef.current = busy;
   voiceModeRef.current = voiceMode;
   voiceStatusRef.current = voiceStatus;
@@ -342,6 +411,18 @@ export default function Widget() {
     motionFamilyRef.current = motionFamily;
   }, [motionFamily]);
 
+  // Phase 1: 鼠标视线跟随
+  useEffect(() => {
+    attachMouseFollow();
+    return () => detachMouseFollow();
+  }, []);
+
+  // Phase 5: 音乐感知→节奏动画
+  useEffect(() => {
+    attachBeatDetect();
+    return () => detachBeatDetect();
+  }, []);
+
   // Step C: 统一动作播放；低优先级（idle/hover/click）不打断状态动作
   const playTrigger = useCallback((trigger: ActionTrigger): void => {
     const now = Date.now();
@@ -350,23 +431,55 @@ export default function Widget() {
       if (low && !actionLowRef.current) return;
       if (trigger === "idle") return;
     }
+    // Phase 4: 传入时间段；内在驱动只调制空闲类动作（low），任务类动作权重不变
+    const timePeriod = getTimePeriod();
     const selection = pickAction(
       motionFamilyRef.current,
       trigger,
       playedActionsRef.current,
       now,
+      undefined,
+      (actionId) => getContextWeightMultiplier(actionId, timePeriod, driveRef.current, low),
     );
     if (!selection) return;
     playedActionsRef.current[selection.id] = now;
     actionActiveRef.current = true;
     actionLowRef.current = low;
-    setAction(selection);
-    if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
-    actionTimerRef.current = setTimeout(() => {
-      actionActiveRef.current = false;
-      actionLowRef.current = false;
-      setAction((current) => (current?.id === selection.id ? null : current));
-    }, selection.durationMs);
+
+    // Phase 2: 动画过渡平滑 - 先回中性位，再设置新动作
+    const hasCurrentAction = action !== null && action.className !== "";
+    if (hasCurrentAction) {
+      setAction(null); // 进入中性位
+      setTimeout(() => {
+        setAction(selection);
+        if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
+        actionTimerRef.current = setTimeout(() => {
+          actionActiveRef.current = false;
+          actionLowRef.current = false;
+          setAction((current) => (current?.id === selection.id ? null : current));
+        }, selection.durationMs);
+      }, transitionMs);
+    } else {
+      setAction(selection);
+      if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
+      actionTimerRef.current = setTimeout(() => {
+        actionActiveRef.current = false;
+        actionLowRef.current = false;
+        setAction((current) => (current?.id === selection.id ? null : current));
+      }, selection.durationMs);
+    }
+  }, [action, transitionMs]);
+
+  /**
+   * VRM 一次性反馈动作：仅空闲、非播报时推给 3D。
+   * 播报中点击=打断语音，不该顺带做动作；非空闲态（思考/执行）不加花。
+   */
+  const vrmOneShotFeedback = useCallback((trigger: ActionTrigger): void => {
+    if (trigger !== "click" && trigger !== "hover") return;
+    if (speakingRef.current) return;
+    if (trigger === "click" && stateRef.current !== "idle") return;
+    oneShotSeqRef.current += 1;
+    setVrmOneShot({ trigger, seq: oneShotSeqRef.current });
   }, []);
 
   // 分层资产：每个 persona 只加载一次，失败或缺失时回退单图
@@ -391,6 +504,23 @@ export default function Widget() {
   useEffect(() => {
     playTrigger(triggerFor(state, emotion));
   }, [emotion, motionFamily, playTrigger, state]);
+
+  // 内在驱动：状态切换的瞬时效应（开始互动清零无聊，任务完成回一点精力）
+  useEffect(() => {
+    noteStateChange(driveRef.current, driveLastStateRef.current, state);
+    driveLastStateRef.current = state;
+  }, [state]);
+
+  // 内在驱动：按真实经过时间缓慢推进，定时器被节流也不会算错
+  useEffect(() => {
+    let last = Date.now();
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      advanceDrive(driveRef.current, now - last, stateRef.current);
+      last = now;
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // 空闲调度器：只在 idle 且无动作时播放，间隔按 presentation 配置加随机抖动
   useEffect(() => {
@@ -435,20 +565,34 @@ export default function Widget() {
     setBubble(text);
   };
 
-  /** 设置情绪；一次性情绪播完自动回落 neutral。 */
+  /** 设置情绪；停留期满后先进入 fading 淡化，再回落 neutral。 */
   const applyEmotion = (next: ExpressionEmotion): void => {
     if (emotionTimerRef.current) {
       window.clearTimeout(emotionTimerRef.current);
       emotionTimerRef.current = null;
     }
-    setEmotion(next);
-    const hold = EMOTION_HOLD_MS[next];
-    if (hold) {
-      emotionTimerRef.current = window.setTimeout(() => {
-        emotionTimerRef.current = null;
-        setEmotion("neutral");
-      }, hold);
+    if (emotionFadeTimerRef.current) {
+      window.clearTimeout(emotionFadeTimerRef.current);
+      emotionFadeTimerRef.current = null;
     }
+    setEmotionDecaying(false);
+    setEmotion(next);
+    if (next === "neutral") return;
+
+    const decay = EMOTION_DECAY_MS[next];
+    emotionTimerRef.current = window.setTimeout(() => {
+      emotionTimerRef.current = null;
+      if (EMOTION_STATE_PAIR[next] === stateRef.current) {
+        applyEmotion(next); // 状态仍在，续期
+        return;
+      }
+      setEmotionDecaying(true);
+      emotionFadeTimerRef.current = window.setTimeout(() => {
+        emotionFadeTimerRef.current = null;
+        setEmotionDecaying(false);
+        setEmotion("neutral");
+      }, decay.fadeMs);
+    }, decay.holdMs);
   };
 
   const closeComposer = (deactivate = true): void => {
@@ -520,8 +664,6 @@ export default function Widget() {
     speakEndAtRef.current = Date.now();
     setSpeaking(false);
   };
-
-  const handleVrmReady = useCallback(() => setVrmReady(true), []);
 
   /** 播放单个音频 Blob；返回 Promise 在当前块播放结束后 resolve。barge-in 由 playbackRef 停止。 */
   const _playAudioBlob = async (ctx: AudioContext, blob: Blob): Promise<void> => {
@@ -844,6 +986,7 @@ export default function Widget() {
       .then((asset) => {
         if (!alive) return;
         setMascotArt(resolveMascotUrl(asset.avatar));
+        setVrmDriven(asset.vrm);
         setPresentation((current) => current ? { ...current, style: asset.style, motion_family: asset.motion_family ?? asset.style } : current);
         setMotionFamily(asset.motion_family ?? asset.style);
         loadLayersFor(asset.personaId);
@@ -931,11 +1074,13 @@ export default function Widget() {
         if (msg.event_type === "persona.presentation" && msg.presentation) {
           setPresentation(msg.presentation);
           applyPresentation(msg.presentation);
-          setVrmReady(false);
+          setMotionOverrides(msg.presentation.actions);
+          setTransitionMs(Math.max(0, msg.presentation.animations?.transition_ms ?? 250));
           setMotionFamily(msg.presentation.motion_family ?? msg.presentation.style);
           setIdleActionIntervalMs(Math.max(2000, msg.presentation.animations?.idle_action_interval_ms ?? 8000));
           loadLayersFor(msg.presentation.persona_id);
           setMascotArt(resolveMascotUrl(msg.presentation.asset?.avatar_url));
+          setVrmDriven(Boolean(msg.presentation.asset?.vrm_path));
         }
         return;
       }
@@ -1566,6 +1711,7 @@ export default function Widget() {
       className="w-root"
       data-state={state}
       data-emotion={emotion}
+      data-emotion-decay={emotionDecaying ? "fading" : "full"}
       data-vrm={vrmPath ? "1" : "0"}
       data-persona-style={presentation?.style ?? motionFamily}
       data-motion-family={motionFamily}
@@ -1646,6 +1792,8 @@ export default function Widget() {
             setCtxMenu(null);
             return;
           }
+          // VRM：空闲时点击给一次性反馈动作（动画播完自动回当前状态）
+          vrmOneShotFeedback("click");
           activateStage();
           setCtxMenu(null);
         }}
@@ -1687,7 +1835,7 @@ export default function Widget() {
               src={mascotArt}
               alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
               draggable={false}
-              data-hidden={vrmReady ? "1" : undefined}
+              data-hidden="1"
             />
             <Suspense fallback={null}>
               <VrmStage
@@ -1695,7 +1843,9 @@ export default function Widget() {
                 vrmPath={vrmPath}
                 trigger={activeTrigger}
                 emotion={emotion}
-                onReady={handleVrmReady}
+                vrmConfig={presentation?.vrm}
+                idleIntervalMs={idleActionIntervalMs}
+                oneShot={vrmOneShot}
               />
             </Suspense>
           </div>
@@ -1738,7 +1888,7 @@ export default function Widget() {
               ))}
             </div>
           </div>
-        ) : (
+        ) : vrmDriven ? null : (
           <img
             className="mascot"
             ref={mascotRef}
@@ -1747,6 +1897,24 @@ export default function Widget() {
             draggable={false}
           />
         )}
+
+        {/* Phase 3: 触摸/悬停区域反应 */}
+        <div 
+          className="hover-zone hover-zone-head"
+          onMouseEnter={() => {
+            playTrigger("hover");
+            showBrief("❤", 1200);
+          }}
+          aria-hidden="true"
+        />
+        <div 
+          className="hover-zone hover-zone-body"
+          onMouseEnter={() => {
+            playTrigger("hover");
+            showBrief("...", 1000);
+          }}
+          aria-hidden="true"
+        />
 
         <div className="fx-layer" aria-hidden="true">
           <span className="fx-sparkle" />

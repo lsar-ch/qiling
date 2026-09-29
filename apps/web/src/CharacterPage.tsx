@@ -454,8 +454,11 @@ export default function CharacterPage() {
         setDraft(fresh);
         setDirty(false);
       }
+      const warn = result.warnings?.length
+        ? `（建议：${result.warnings.join("；")}）`
+        : "";
       setNotice(
-        `3D 资产包已应用：model.vrm + ${result.vrma.length} 个动作${result.avatar ? " + 占位图" : ""}；若该角色正在启用，挂件已即时切换。`,
+        `3D 资产包已应用：model.vrm + ${result.vrma.length} 个动作${result.avatar ? " + 占位图" : ""}；若该角色正在启用，挂件已即时切换。${warn}`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "3D 资产包导入失败");

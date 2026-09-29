@@ -63,7 +63,12 @@ html, body, #root {
 }
 
 /* ── 分层资产：z 升序叠放，同 role 多图层整体变换；无 layers 时回退单图 ── */
-.mascot-wrap { position: relative; }
+.mascot-wrap {
+  position: relative;
+  /* Phase 1: 鼠标视线跟随 — CSS rotate 属性独立于 transform，不与呼吸动画冲突 */
+  rotate: var(--mf-rotate, 0deg);
+  transition: rotate 0.18s ease-out;
+}
 .mascot-base {
   display: block;
   width: 100%;
@@ -81,6 +86,9 @@ html, body, #root {
   pointer-events: none;
 }
 .w-root[data-vrm="1"] .mascot { animation: none !important; }
+/* Phase 1: VRM 模式下禁用 2D 视线跟随（VrmStage 自有 lookAt） */
+.w-root[data-vrm="1"] .mascot-wrap { rotate: none; transition: none; }
+.w-root[data-vrm="1"] .role-eyes { translate: none; transition: none; }
 .mascot-layers { position: absolute; inset: 0; }
 .mascot-layer {
   position: absolute;
@@ -106,6 +114,9 @@ html, body, #root {
 .role-eyes {
   transform-origin: 50% 76%;
   animation: dmBlink var(--dm-blink-ms, 4000ms) ease-in-out infinite;
+  /* Phase 1: 眼球跟随鼠标 — translate 属性独立于 transform，不与 blink 冲突 */
+  translate: var(--mf-ey-x, 0px) var(--mf-ey-y, 0px);
+  transition: translate 0.12s ease-out;
 }
 .role-mouth { transform-origin: 50% 50%; }
 .w-root[data-action="act-speak"] .role-mouth {
@@ -503,6 +514,17 @@ html, body, #root {
   animation: mascotSurprised 0.6s ease-in-out 1;
 }
 
+/* ── 情绪衰减：fading 阶段只让循环类动画收尾，一次性动画不受影响 ── */
+.w-root[data-emotion-decay="fading"][data-emotion="thinking"] .mascot,
+.w-root[data-emotion-decay="fading"][data-emotion="confused"] .mascot,
+.w-root[data-emotion-decay="fading"][data-emotion="attentive"] .mascot {
+  animation-iteration-count: 1;
+}
+
+.w-root[data-emotion-decay="fading"] .mascot {
+  transition: transform 600ms ease-out;
+}
+
 @keyframes mascotFloat {
   0%, 100% { transform: translateY(0) translateX(0); }
   25% { transform: translateY(-7px) translateX(3px); }
@@ -891,4 +913,147 @@ html, body, #root {
   0%, 100% { transform: rotate(0deg); }
   30% { transform: rotate(-4deg) translateX(-4px); }
   70% { transform: rotate(4deg) translateX(4px); }
+}
+
+/* Phase 2: 动画过渡平滑 - 中性位过渡样式 */
+/* 当 data-action 为空时，角色回到中性位，使用过渡动画 */
+.w-root:not([data-action]) .mascot,
+.w-root[data-action=""] .mascot {
+  transition: transform 0.25s ease-out, opacity 0.25s ease-out;
+  animation: none !important;
+}
+
+/* 有动作时也添加过渡，让切换更平滑 */
+.w-root[data-action] .mascot {
+  transition: transform 0.15s ease-out;
+}
+
+/* Phase 3: 触摸/悬停区域反应 */
+/* 透明的悬停检测区域，覆盖角色不同部位 */
+.hover-zone {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 50%;
+  z-index: 100;
+  /* 调试时可加 background: rgba(255,0,0,0.1); 上线时保持透明 */
+}
+
+/* 头部区域：上半部分 */
+.hover-zone-head {
+  top: 5%;
+  left: 20%;
+  width: 60%;
+  height: 35%;
+}
+
+/* 身体区域：下半部分 */
+.hover-zone-body {
+  top: 45%;
+  left: 15%;
+  width: 70%;
+  height: 40%;
+}
+
+/* 悬停时角色微反应动画 */
+.hover-zone-head:hover ~ .mascot-wrap .mascot {
+  animation: dmHeadTilt 1.2s ease-in-out 1 !important;
+}
+
+.hover-zone-body:hover ~ .mascot-wrap .mascot {
+  animation: dmBodyLean 0.8s ease-out 1 !important;
+}
+
+@keyframes dmHeadTilt {
+  0%, 100% { transform: rotate(0deg) translateX(-50%); }
+  25% { transform: rotate(-3deg) translateX(-50%); }
+  75% { transform: rotate(3deg) translateX(-50%); }
+}
+
+@keyframes dmBodyLean {
+  0%, 100% { transform: translateY(0) translateX(-50%) rotate(0deg); }
+  50% { transform: translateY(-4px) translateX(-50%) rotate(-2deg); }
+}
+
+/* Phase 4: 更多待机小动作 */
+.w-root[data-action="act-human-yawn"] .mascot {
+  animation: dmHumanYawn 2.4s ease-in-out 1;
+}
+.w-root[data-action="act-human-glance"] .mascot {
+  animation: dmHumanGlance 1.4s ease-in-out 1;
+}
+.w-root[data-action="act-animal-yawn"] .mascot {
+  animation: dmAnimalYawn 2.4s ease-in-out 1;
+}
+.w-root[data-action="act-animal-scratch"] .mascot {
+  animation: dmAnimalScratch 1.8s ease-in-out 1;
+}
+.w-root[data-action="act-anime-yawn"] .mascot {
+  animation: dmAnimeYawn 2.4s ease-in-out 1;
+}
+.w-root[data-action="act-anime-sparkle"] .mascot {
+  animation: dmAnimeSparkle 1.6s ease-in-out 1;
+}
+
+@keyframes dmHumanYawn {
+  0%, 100% { transform: translateY(0) scaleY(1) translateX(-50%); }
+  20% { transform: translateY(-3px) scaleY(1.03) translateX(-50%); }
+  50% { transform: translateY(-2px) scaleY(0.97) translateX(-50%); }
+  80% { transform: translateY(-1px) scaleY(1.01) translateX(-50%); }
+}
+
+@keyframes dmHumanGlance {
+  0%, 100% { transform: translateX(-50%) rotate(0deg); }
+  25% { transform: translateX(-50%) rotate(-8deg); }
+  75% { transform: translateX(-50%) rotate(8deg); }
+}
+
+@keyframes dmAnimalYawn {
+  0%, 100% { transform: translateY(0) scaleY(1) translateX(-50%); }
+  30% { transform: translateY(-4px) scaleY(1.04) translateX(-50%); }
+  60% { transform: translateY(-2px) scaleY(0.96) translateX(-50%); }
+}
+
+@keyframes dmAnimalScratch {
+  0%, 100% { transform: translateX(-50%) rotate(0deg); }
+  20% { transform: translateX(-52%) rotate(-5deg); }
+  40% { transform: translateX(-48%) rotate(5deg); }
+  60% { transform: translateX(-52%) rotate(-5deg); }
+  80% { transform: translateX(-48%) rotate(3deg); }
+}
+
+@keyframes dmAnimeYawn {
+  0%, 100% { transform: translateY(0) scale(1) translateX(-50%); }
+  30% { transform: translateY(-5px) scale(1.05) translateX(-50%); }
+  70% { transform: translateY(-2px) scale(0.98) translateX(-50%); }
+}
+
+@keyframes dmAnimeSparkle {
+  0%, 100% { transform: scale(1) translateX(-50%); }
+  25% { transform: scale(1.08) translateX(-50%); }
+  50% { transform: scale(0.95) translateX(-50%); }
+  75% { transform: scale(1.03) translateX(-50%); }
+}
+
+/* Phase 5: 音乐感知→节奏动画 */
+/* 当 --beat-pulse > 0 时，角色跟随节奏微脉动 */
+.w-root[data-beating="1"] .mascot-wrap .mascot {
+  animation: beatPulse 0.3s ease-out;
+}
+
+@keyframes beatPulse {
+  0% {
+    transform: translateX(-50%) scale(calc(1 + var(--beat-pulse, 0) * 0.04));
+  }
+  50% {
+    transform: translateX(-50%) scale(calc(1 + var(--beat-pulse, 0) * 0.02));
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+/* 确保脉动动画不会覆盖其他动作动画 */
+.w-root[data-beating="1"][data-action] .mascot-wrap .mascot {
+  animation: beatPulse 0.3s ease-out, var(--current-action-animation) 1s ease-in-out;
 }

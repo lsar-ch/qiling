@@ -37,7 +37,6 @@ import {
   fetchMemoryVaultStatus,
   checkObsidianPath,
   fetchWidgetState,
-  fetchMainUiVisible,
   publishEvent,
   saveMemoryDoc,
   updateSettings,
@@ -53,6 +52,7 @@ import ChatPage from "./ChatPage";
 import CharacterPage from "./CharacterPage";
 import ExtensionsPage from "./ExtensionsPage";
 import AboutPage from "./AboutPage";
+import MotionLabPage from "./MotionLabPage";
 import ModelProfilesSection from "./ModelProfilesSection";
 import ProjectNodesPage from "./ProjectNodesPage";
 import RemindersPage from "./RemindersPage";
@@ -72,7 +72,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-type PageKey = "home" | "chat" | "character" | "memory" | "project" | "reminders" | "kb" | "agents" | "extensions" | "settings" | "about";
+type PageKey = "home" | "chat" | "character" | "memory" | "project" | "reminders" | "kb" | "agents" | "extensions" | "settings" | "about" | "motion-lab";
 
 type TaskActionStatus = "running" | "awaiting_approval" | "completed" | "failed";
 
@@ -165,10 +165,16 @@ const NAV_GROUPS: { items: PageKey[] }[] = [
   { items: ["settings", "about"] },
 ];
 
+/** 不在主导航显示的开发者页面，仅通过 `#/motion-lab` 直达。 */
+const HIDDEN_PAGES: ReadonlySet<PageKey> = new Set(["motion-lab"]);
+
 /** URL 片段 → 页面：`#/chat` → chat，未知或缺失回落主页。 */
 function pageFromHash(hash: string): PageKey {
   const key = hash.replace(/^#\/?/, "");
-  return NAV.some((item) => item.key === key) ? (key as PageKey) : "home";
+  if (NAV.some((item) => item.key === key) || HIDDEN_PAGES.has(key as PageKey)) {
+    return key as PageKey;
+  }
+  return "home";
 }
 
 /**
@@ -1753,14 +1759,6 @@ export default function App() {
   // 连续探活失败次数：单次超时/瞬时拒绝不算退出，避免误报
   const failStreakRef = useRef(0);
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    void getCurrentWindow()
-      .isVisible()
-      .then(setMainUiVisible)
-      .catch(() => {});
-  }, []);
-
   const onEvent = useCallback((env: EventEnvelope) => {
     setEvents((prev) => [...prev.slice(-14), env]);
     const next = eventToState(env.event_type);
@@ -1812,8 +1810,15 @@ export default function App() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     const syncVisible = async (): Promise<void> => {
-      const visible = await fetchMainUiVisible();
-      if (!disposed) setMainUiVisible(visible);
+      // 问自己，别问挂件那套跨窗口命令：主界面是远程页面（127.0.0.1:8736），
+      // 自定义命令一旦被 IPC 拒绝，旧实现把「调用失败」当成「窗口已隐藏」，
+      // 租约一放开就永久留在挂件手里，对话窗口再也拿不回「听」。
+      try {
+        const visible = await getCurrentWindow().isVisible();
+        if (!disposed) setMainUiVisible(visible);
+      } catch {
+        /* 状态未知就保持上一次判断，未知 != 隐藏 */
+      }
     };
     void syncVisible();
     const pollTimer = window.setInterval(() => void syncVisible(), 2000);
@@ -2078,7 +2083,7 @@ export default function App() {
         <header className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 pb-6 mb-7">
           <div className="max-w-2xl">
             <h1 className="text-[26px] font-bold text-ink mb-2 tracking-tightish">
-              {NAV.find((n) => n.key === page)?.label}
+              {page === "motion-lab" ? "动作实验室" : NAV.find((n) => n.key === page)?.label}
             </h1>
             <p className="text-[13px] text-muted leading-relaxed">
               {page === "chat"
@@ -2099,6 +2104,8 @@ export default function App() {
                 ? "技能与 MCP 扩展：轻任务本地直办，按需接入更多可调用能力。"
                 : page === "settings"
                 ? "模型与权限、语音能力总开关、性能模式、外观与系统维护。"
+                : page === "motion-lab"
+                ? "调整每个角色动作的时长、冷却、权重与循环；调好后桌面挂件实时生效。"
                 : "版本信息、更新日志、运行环境与本地优先说明。"}
             </p>
           </div>
@@ -2171,6 +2178,8 @@ export default function App() {
         )}
 
         {page === "about" && <AboutPage />}
+
+        {page === "motion-lab" && <MotionLabPage />}
       </main>
     </div>
   );

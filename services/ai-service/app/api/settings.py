@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import PerformanceMode, load_settings
 from app.core.persona_asset import NormalizedAvatar, normalize_avatar_image, png_bytes
+from app.core.vrm_validator import validate_vrm, validate_vrma
 from app.llm import create_provider
 from app.model_profiles import (
     CATEGORY_LABELS,
@@ -27,6 +28,7 @@ from app.model_profiles import (
     default_profile,
     ensure_initial_profiles,
     find_model_profile,
+    list_provider_models,
     load_model_profiles,
     public_model_profile,
     save_model_profiles,
@@ -82,6 +84,15 @@ class PersonaPayload(BaseModel):
     preset: Literal["work", "companion", "service"] | None = None  # 预设底座；为空时只使用自定义档案
     motion_family: Literal["human", "animal", "anime"] | None = None  # 动作族：human | animal | anime
     art_style: Literal["realistic", "anime", "chibi", "pixel"] | None = None  # 画风，动作选择不依赖
+
+
+class MotionsPayload(BaseModel):
+    """动作实验室调参产物：2D 动作覆盖 + 3D VRMA 播放参数。"""
+
+    actions: dict[str, dict[str, list[dict[str, Any]]]] | None = None
+    vrm: dict[str, Any] | None = None
+    # presentation.animations：调度节奏（idle 轮询间隔、过渡、呼吸/眨眼）。
+    animations: dict[str, Any] | None = None
 
 
 class SettingsUpdate(BaseModel):
@@ -453,6 +464,31 @@ def delete_model_profile(profile_id: str, request: Request) -> dict[str, Any]:
     return {"deleted": True, "profile_id": profile_id}
 
 
+@router.get("/model-profiles/models")
+async def list_models_for_profile(
+    request: Request,
+    base_url: str = "",
+    api_key: str = "",
+    profile_id: str = "",
+) -> dict[str, Any]:
+    """拉取供应商的可用模型列表，供设置页「模型名称」做下拉选择。
+
+    优先用请求里带的 base_url / api_key（编辑态可能还没保存）；
+    只传 profile_id 时退回该档案已存的地址与 Key。
+    只读查询，不写配置。
+    """
+    settings = request.app.state.settings
+    resolved_url = base_url.strip()
+    resolved_key = api_key.strip()
+    if profile_id:
+        profile = find_model_profile(load_model_profiles(settings.repo_root), profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="模型档案不存在")
+        resolved_url = resolved_url or profile.base_url
+        resolved_key = resolved_key or (profile.api_key or "")
+    return await list_provider_models(resolved_url, resolved_key, settings.llm_api_key)
+
+
 @router.post("/model-profiles/{profile_id}/test")
 async def test_saved_model_profile(profile_id: str, request: Request) -> dict[str, Any]:
     profiles = load_model_profiles(request.app.state.settings.repo_root)
@@ -501,12 +537,37 @@ def get_persona_asset_manifest(persona_id: str, request: Request) -> dict[str, A
 
 
 @router.get("/personas/{persona_id}/asset/{file_path:path}")
+@router.head("/personas/{persona_id}/asset/{file_path:path}")
 def get_persona_asset_file(persona_id: str, file_path: str, request: Request) -> Response:
     """角色资产目录内的文件（layers.json / layers/*.png 等），禁止路径穿越。"""
     directory = _persona_asset_dir(request, persona_id)
     target = _resolve_persona_asset(directory, file_path)
     if target is None:
         raise HTTPException(status_code=404, detail="角色资产不存在")
+    return FileResponse(target)
+
+
+@router.get("/motion-library/{variant}")
+def list_motion_library(variant: str, request: Request) -> dict[str, Any]:
+    """列出共享库里的片段基名（动作实验室下拉用）。新导出的 vrma 丢进库里就能直接预览。"""
+    if variant not in _MOTION_VARIANTS:
+        raise HTTPException(status_code=404, detail="动作库不存在")
+    directory = request.app.state.settings.data_dir / "motion-library" / variant
+    if not directory.is_dir():
+        return {"clips": []}
+    return {"clips": sorted(path.stem for path in directory.glob("*.vrma"))}
+
+
+@router.get("/motion-library/{variant}/{file_path:path}")
+@router.head("/motion-library/{variant}/{file_path:path}")
+def get_motion_library_file(variant: str, file_path: str, request: Request) -> Response:
+    """共享动作库（male / female）只读下发，所有同套角色共用，禁止路径穿越。"""
+    if variant not in _MOTION_VARIANTS:
+        raise HTTPException(status_code=404, detail="动作库不存在")
+    directory = request.app.state.settings.data_dir / "motion-library" / variant
+    target = _resolve_persona_asset(directory, file_path)
+    if target is None:
+        raise HTTPException(status_code=404, detail="动作不存在")
     return FileResponse(target)
 
 
@@ -585,6 +646,8 @@ _VRM_TRIGGERS = {
     "idle", "listening", "thinking", "speaking", "executing",
     "awaiting_approval", "success", "error", "click", "project", "hover",
 }
+# 共享动作库：同性别/同物种的角色共用一套，不落各自目录（动物线走 2D 表，不进这里）。
+_MOTION_VARIANTS = {"male", "female"}
 _IMPORT3D_MAX_BYTES = 300 * 1024 * 1024
 
 
@@ -630,6 +693,22 @@ async def import_persona_3d(persona_id: str, request: Request) -> dict[str, Any]
     if model_bytes is None:
         raise HTTPException(status_code=400, detail="zip 内未找到 model.vrm")
 
+    # 导入闸门：坏资产不进落盘，错误信息要能直接指导修复动作。
+    report = validate_vrm(model_bytes)
+    if not report.ok:
+        raise HTTPException(
+            status_code=400,
+            detail="VRM 不符合项目规格，已拒绝导入：\n- " + "\n- ".join(report.errors),
+        )
+    bad_vrma = {
+        stem: errors for stem, body in vrma_files.items()
+        if (errors := validate_vrma(body))
+    }
+    if bad_vrma:
+        detail = "\n".join(f"- {stem}.vrma：{'；'.join(errs)}"
+                            for stem, errs in sorted(bad_vrma.items()))
+        raise HTTPException(status_code=400, detail="VRMA 动作文件不可用：\n" + detail)
+
     directory = _persona_asset_dir(request, persona_id)
     (directory / "model.vrm").write_bytes(model_bytes)
     vrma_dir = directory / "vrma"
@@ -660,6 +739,7 @@ async def import_persona_3d(persona_id: str, request: Request) -> dict[str, Any]
         "vrm": "model.vrm",
         "vrma": sorted(vrma_files),
         "avatar": avatar_url,
+        "warnings": report.warnings,
     }
 
 
@@ -707,3 +787,52 @@ def update_persona(persona_id: str, payload: PersonaPayload, request: Request) -
         encoding="utf-8",
     )
     return payload.model_dump()
+
+
+@router.get("/personas/{persona_id}/motions")
+def get_persona_motions(persona_id: str, request: Request) -> dict[str, Any]:
+    """读取角色的动作参数覆盖（动作实验室）。"""
+    path = _persona_dir(request) / f"{persona_id}.yaml"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="角色卡不存在")
+    raw = _persona_from_file(path)
+    pres = raw.get("presentation") if isinstance(raw.get("presentation"), dict) else {}
+    return {
+        "actions": pres.get("actions"),
+        "vrm": pres.get("vrm"),
+        "animations": pres.get("animations"),
+    }
+
+
+@router.put("/personas/{persona_id}/motions")
+async def update_persona_motions(persona_id: str, payload: MotionsPayload, request: Request) -> dict[str, Any]:
+    """写入角色的动作参数覆盖（动作实验室调参保存）。"""
+    path = _persona_dir(request) / f"{persona_id}.yaml"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="角色卡不存在")
+    raw = _persona_from_file(path)
+    if not isinstance(raw, dict):
+        raw = {}
+    pres = raw.get("presentation") if isinstance(raw.get("presentation"), dict) else {}
+    data = payload.model_dump(exclude_unset=True)
+    if "actions" in data:
+        pres["actions"] = data["actions"]
+    if "vrm" in data:
+        pres["vrm"] = data["vrm"]
+    if "animations" in data:
+        # 合并而不是整体替换：实验室只知道自己展示的那几个键，替换会丢掉别的调参项。
+        existing = pres.get("animations") if isinstance(pres.get("animations"), dict) else {}
+        pres["animations"] = {**existing, **(data["animations"] or {})}
+    raw["presentation"] = pres
+    path.write_text(
+        yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    await request.app.state.presentation_bridge.broadcast(
+        persona_id, request.app.state.event_hub
+    )
+    return {
+        "actions": pres.get("actions"),
+        "vrm": pres.get("vrm"),
+        "animations": pres.get("animations"),
+    }

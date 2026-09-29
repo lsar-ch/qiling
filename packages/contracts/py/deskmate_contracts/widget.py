@@ -134,6 +134,9 @@ class PersonaPresentation(BaseModel):
         }
     )
 
+    actions: dict[str, dict[str, list[dict[str, Any]]]] | None = None
+    vrm: dict[str, Any] | None = None
+
     asset: dict[str, Any] | None = None
 
     model_config = {"extra": "forbid"}

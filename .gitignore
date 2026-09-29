@@ -65,5 +65,10 @@ data/settings.local.json
 *.bak
 *.bak-*
 *.backup
+.backup-*/
 data/tmp_seethrough/
 vrm-spike-lows-power.png
+
+# 根目录临时截图与调试脚本
+/*.png
+/scripts/_tmp_*.mjs

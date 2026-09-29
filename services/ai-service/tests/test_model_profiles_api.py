@@ -268,3 +268,68 @@ def test_default_tts_profile_voice_applies_without_persona_binding() -> None:
     settings = Settings(repo_root=PROJECT_ROOT)
     apply_default_profiles(settings, overrides)
     assert settings.tts_voice == "male-qn-qingse"
+
+
+class _FakeModelsResponse:
+    def __init__(self, status_code: int, payload: dict) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeModelsClient:
+    """只替掉 httpx.AsyncClient，不打真实网络。"""
+
+    def __init__(self, response: "_FakeModelsResponse") -> None:
+        self._response = response
+        self.requested_url = ""
+
+    async def __aenter__(self) -> "_FakeModelsClient":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def get(self, url: str, headers: dict | None = None) -> "_FakeModelsResponse":
+        self.requested_url = url
+        return self._response
+
+
+def test_provider_model_list_endpoint(tmp_path: Path, monkeypatch) -> None:
+    _prepare_home(tmp_path, monkeypatch)
+
+    import app.model_profiles as mp
+
+    client_holder: dict[str, _FakeModelsClient] = {}
+
+    def fake_async_client(*args: object, **kwargs: object) -> _FakeModelsClient:
+        client = _FakeModelsClient(
+            _FakeModelsResponse(200, {"data": [{"id": "qwen-max"}, {"id": "qwen-flash"}, {"id": "qwen-flash"}]})
+        )
+        client_holder["client"] = client
+        return client
+
+    monkeypatch.setattr(mp.httpx, "AsyncClient", fake_async_client)
+
+    with TestClient(create_app(load_settings())) as client:
+        body = client.get(
+            "/api/model-profiles/models",
+            params={"base_url": "https://example.invalid/v1", "api_key": "k"},
+        ).json()
+        assert body["available"] is True
+        assert body["models"] == ["qwen-flash", "qwen-max"]  # 去重且排序
+        assert client_holder["client"].requested_url == "https://example.invalid/v1/models"
+
+        # 缺 Key 时不发请求，返回可读原因
+        missing = client.get(
+            "/api/model-profiles/models",
+            params={"base_url": "https://example.invalid/v1"},
+        ).json()
+        assert missing["available"] is False
+        assert missing["models"] == []
+        assert missing["reason"]
+
+        # profile_id 不存在 -> 404
+        assert client.get("/api/model-profiles/models", params={"profile_id": "nope"}).status_code == 404

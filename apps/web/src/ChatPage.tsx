@@ -125,6 +125,7 @@ export default function ChatPage({
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("off");
   const [personaName, setPersonaName] = useState("千问");
+  const [speakerName, setSpeakerName] = useState("DeskMate");
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [memoryBubble, setMemoryBubble] = useState("");
@@ -224,8 +225,11 @@ export default function ChatPage({
         loadedProfiles = profiles.filter(
           (profile) => profile.enabled && (profile.category === "text" || profile.category === "multimodal"),
         );
-        personaProfileId =
-          personas.find((persona) => persona.id === appSettings.active_persona_id)?.llm?.profile_id ?? "";
+        const activePersona = personas.find(
+          (persona) => persona.id === appSettings.active_persona_id,
+        );
+        personaProfileId = activePersona?.llm?.profile_id ?? "";
+        if (alive && activePersona?.name) setSpeakerName(activePersona.name);
         if (alive) setModelProfiles(loadedProfiles);
       } catch {
         /* 模型档案未配置时保持演示模式 */
@@ -1149,7 +1153,7 @@ export default function ChatPage({
         {messages.map((m, i) => (
           <div key={`${m.role}-${i}`} className={`flex flex-col max-w-[78%] min-w-0 ${m.role === "user" ? "self-end items-end" : "self-start"}`}>
             <span className="text-[11px] text-muted mb-1 select-none" title={m.created_at}>
-              {m.role === "user" ? "你" : m.role === "tool" ? "任务" : "DeskMate"}
+              {m.role === "user" ? "你" : m.role === "tool" ? "任务" : speakerName}
               {m.created_at ? ` · ${fmtChatTime(m.created_at)}` : ""}
             </span>
             <div className={`break-words break-anywhere min-w-0 px-3.5 py-2.5 text-sm leading-relaxed ${

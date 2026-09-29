@@ -19,7 +19,7 @@ avatar: /api/personas/vrm_demo/avatar?v=1789908077263
 voice:
   provider: minimax
   model: speech-2.8-hd
-  voice: Chinese (Mandarin)_Sweet_Lady
+  voice: Chinese (Mandarin)_Warm_Bestie
   speed: 1.25
   pitch: 1.05
 activation:
@@ -43,3 +43,337 @@ profile:
   preferences: 喜欢清晰的任务边界；长任务优先交给执行器，不自称全能。
   boundaries: 不假装拥有通用 Computer Use；敏感操作必须确认；不编造记忆。
 llm: {}
+presentation:
+  actions:
+    human:
+      idle:
+      - id: human-breathe
+        className: act-breath
+        durationMs: 3600
+        cooldownMs: 4000
+        weight: 2
+      - id: human-look
+        className: act-human-look
+        durationMs: 2200
+        cooldownMs: 9000
+        weight: 1
+      - id: human-stretch
+        className: act-human-stretch
+        durationMs: 1800
+        cooldownMs: 14000
+        weight: 0.6
+      - id: human-yawn
+        className: act-human-yawn
+        durationMs: 2400
+        cooldownMs: 30000
+        weight: 0.4
+      - id: human-glance
+        className: act-human-glance
+        durationMs: 1400
+        cooldownMs: 12000
+        weight: 0.8
+      listening:
+      - id: human-attend
+        className: act-human-attend
+        durationMs: 1100
+        cooldownMs: 4000
+        weight: 1
+      thinking:
+      - id: human-think
+        className: act-human-think
+        durationMs: 2000
+        cooldownMs: 5000
+        weight: 1
+      speaking:
+      - id: human-speak
+        className: act-speak
+        durationMs: 1200
+        cooldownMs: 2000
+        weight: 1
+      executing:
+      - id: human-execute
+        className: act-execute
+        durationMs: 1500
+        cooldownMs: 2000
+        weight: 1
+      awaiting_approval:
+      - id: human-question
+        className: act-question
+        durationMs: 1600
+        cooldownMs: 3000
+        weight: 1
+        fx: question
+      success:
+      - id: human-wave
+        className: act-human-wave
+        durationMs: 1400
+        cooldownMs: 6000
+        weight: 1
+        fx: sparkle
+      error:
+      - id: human-shrug
+        className: act-error-shake
+        durationMs: 900
+        cooldownMs: 5000
+        weight: 1
+      click:
+      - id: human-shrug
+        className: act-error-shake
+        durationMs: 900
+        cooldownMs: 3000
+        weight: 1
+      project:
+      - id: human-project
+        className: act-human-wave
+        durationMs: 1400
+        cooldownMs: 7000
+        weight: 1
+        fx: sparkle
+      hover:
+      - id: human-lean
+        className: act-human-lean
+        durationMs: 700
+        cooldownMs: 1500
+        weight: 1
+    animal:
+      idle:
+      - id: animal-breathe
+        className: act-breath
+        durationMs: 3600
+        cooldownMs: 4000
+        weight: 2
+      - id: animal-tail
+        className: act-animal-tail
+        durationMs: 2000
+        cooldownMs: 8000
+        weight: 1
+      - id: animal-ear
+        className: act-animal-ear
+        durationMs: 1200
+        cooldownMs: 6000
+        weight: 1
+      - id: animal-yawn
+        className: act-animal-yawn
+        durationMs: 2400
+        cooldownMs: 30000
+        weight: 0.4
+      - id: animal-scratch
+        className: act-animal-scratch
+        durationMs: 1800
+        cooldownMs: 15000
+        weight: 0.6
+      listening:
+      - id: animal-attend
+        className: act-animal-attend
+        durationMs: 1000
+        cooldownMs: 4000
+        weight: 1
+      thinking:
+      - id: animal-tilt
+        className: act-animal-tilt
+        durationMs: 1800
+        cooldownMs: 5000
+        weight: 1
+        fx: thought
+      speaking:
+      - id: animal-speak
+        className: act-speak
+        durationMs: 1200
+        cooldownMs: 2000
+        weight: 1
+      executing:
+      - id: animal-scurry
+        className: act-animal-scurry
+        durationMs: 1400
+        cooldownMs: 2000
+        weight: 1
+        fx: speed
+      awaiting_approval:
+      - id: animal-question
+        className: act-question
+        durationMs: 1600
+        cooldownMs: 3000
+        weight: 1
+        fx: question
+      success:
+      - id: animal-jump
+        className: act-animal-jump
+        durationMs: 1200
+        cooldownMs: 6000
+        weight: 1
+        fx: sparkle
+      error:
+      - id: animal-crouch
+        className: act-animal-crouch
+        durationMs: 1100
+        cooldownMs: 5000
+        weight: 1
+      click:
+      - id: animal-hop
+        className: act-animal-hop
+        durationMs: 800
+        cooldownMs: 3000
+        weight: 1
+      project:
+      - id: animal-project
+        className: act-animal-jump
+        durationMs: 1200
+        cooldownMs: 7000
+        weight: 1
+        fx: sparkle
+      hover:
+      - id: animal-head
+        className: act-animal-head
+        durationMs: 700
+        cooldownMs: 1500
+        weight: 1
+    anime:
+      idle:
+      - id: anime-breathe
+        className: act-breath
+        durationMs: 3600
+        cooldownMs: 4000
+        weight: 2
+      - id: anime-float
+        className: act-anime-float
+        durationMs: 2600
+        cooldownMs: 8000
+        weight: 1
+        fx: sparkle
+      - id: anime-turn
+        className: act-anime-turn
+        durationMs: 1400
+        cooldownMs: 9000
+        weight: 0.8
+      - id: anime-yawn
+        className: act-anime-yawn
+        durationMs: 2400
+        cooldownMs: 30000
+        weight: 0.4
+      - id: anime-sparkle
+        className: act-anime-sparkle
+        durationMs: 1600
+        cooldownMs: 10000
+        weight: 0.6
+        fx: sparkle
+      listening:
+      - id: anime-attend
+        className: act-human-attend
+        durationMs: 1000
+        cooldownMs: 4000
+        weight: 1
+      thinking:
+      - id: anime-think
+        className: act-anime-think
+        durationMs: 2000
+        cooldownMs: 5000
+        weight: 1
+        fx: thought
+      speaking:
+      - id: anime-speak
+        className: act-speak
+        durationMs: 1200
+        cooldownMs: 2000
+        weight: 1
+        fx: note
+      executing:
+      - id: anime-magic
+        className: act-anime-magic
+        durationMs: 1600
+        cooldownMs: 2500
+        weight: 1
+        fx: magic
+      awaiting_approval:
+      - id: anime-question
+        className: act-question
+        durationMs: 1600
+        cooldownMs: 3000
+        weight: 1
+        fx: question
+      success:
+      - id: anime-flash
+        className: act-anime-flash
+        durationMs: 1300
+        cooldownMs: 6000
+        weight: 1
+        fx: magic
+      error:
+      - id: anime-dizzy
+        className: act-anime-dizzy
+        durationMs: 1200
+        cooldownMs: 5000
+        weight: 1
+      click:
+      - id: anime-spark
+        className: act-anime-turn
+        durationMs: 900
+        cooldownMs: 3000
+        weight: 1
+        fx: sparkle
+      project:
+      - id: anime-project
+        className: act-anime-flash
+        durationMs: 1300
+        cooldownMs: 7000
+        weight: 1
+        fx: magic
+      hover:
+      - id: anime-look
+        className: act-anime-look
+        durationMs: 700
+        cooldownMs: 1500
+        weight: 1
+  vrm:
+    library: female
+    loop_triggers:
+    - idle
+    - listening
+    - thinking
+    - speaking
+    - executing
+    - awaiting_approval
+    crossfade_ms: 200
+    crossfade_ms: 200
+    # 多候选：同一状态列多条候选，按 weight 加权随机；cooldownMs 内不再挑同一条。
+    # 只给 idle / speaking / success / click 配了多候选，其余 trigger 默认回退同名文件。
+    actions:
+      listening:
+      - clip: listening
+        weight: 3
+      - clip: hover
+        weight: 1
+        cooldownMs: 40000
+      - clip: idle
+        weight: 1
+        cooldownMs: 40000
+      idle:
+      - clip: idle
+        weight: 4
+      - clip: idle_yawn
+        weight: 0.5
+        cooldownMs: 45000
+      speaking:
+      - clip: speaking
+        weight: 3
+      - clip: speak_alt
+        weight: 1
+        cooldownMs: 20000
+      success:
+      - clip: success
+        weight: 2.5
+      - clip: success_happy
+        weight: 1
+        cooldownMs: 12000
+      click:
+      - clip: click
+        weight: 1
+      - clip: error
+        repeat: 2
+        timeScale: 0.7
+        weight: 0.5
+        cooldownMs: 8000
+  animations:
+    idle_action_interval_ms: 8000
+    transition_ms: 300
+    breath_rate: 1
+    blink_interval_ms: 4000

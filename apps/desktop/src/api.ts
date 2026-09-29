@@ -39,6 +39,42 @@ export interface ExpressionEvent {
 export type MotionFamily = "human" | "animal" | "anime";
 export type ArtStyle = "realistic" | "anime" | "chibi" | "pixel";
 
+export interface MotionActionOverride {
+  id: string;
+  className?: string;
+  durationMs?: number;
+  cooldownMs?: number;
+  weight?: number;
+  loop?: boolean;
+  fx?: string;
+}
+
+export type MotionOverrides = Record<string, Record<string, MotionActionOverride[]>>;
+
+export type VrmClipRef =
+  | string
+  | {
+      clip: string;
+      repeat?: number;
+      timeScale?: number;
+      /** 同一 trigger 多候选时的相对权重，缺省 1。 */
+      weight?: number;
+      /** 同一 trigger 多候选时的冷却毫秒，缺省 0。 */
+      cooldownMs?: number;
+    };
+
+export interface VrmMotionConfig {
+  loop_triggers?: string[];
+  crossfade_ms?: number;
+  /** 共享动作库（male / female）：配了先从库里解析，库里没有才回退角色自己的 vrma/。 */
+  library?: string;
+  /**
+   * trigger → VRMA 候选。字符串即文件基名（缺省同名）；给数组即多候选，
+   * 按 weight 加权随机挑一条，cooldownMs 挡刚播过的。
+   */
+  actions?: Record<string, VrmClipRef | VrmClipRef[]>;
+}
+
 export interface PersonaPresentation {
   persona_id: string;
   persona_name: string;
@@ -61,6 +97,8 @@ export interface PersonaPresentation {
     music_note: boolean;
     success_sparkle: boolean;
   };
+  actions?: MotionOverrides;
+  vrm?: VrmMotionConfig | null;
   asset?: {
     avatar_url?: string;
     width?: number;
@@ -126,6 +164,8 @@ export async function fetchActivePersonaAsset(): Promise<{
   avatar: string;
   style: MotionFamily;
   motion_family?: MotionFamily;
+  /** 角色卡是否走 VRM 3D；为真时 avatar 只是导入用的 T-pose 占位图，不能当立绘显示 */
+  vrm: boolean;
 } & PersonaAssetMetrics> {
   const settingsResp = await fetch(`${SERVICE_BASE}/api/settings`);
   if (!settingsResp.ok) throw new Error(await readDetail(settingsResp));
@@ -133,7 +173,13 @@ export async function fetchActivePersonaAsset(): Promise<{
   const personasResp = await fetch(`${SERVICE_BASE}/api/personas`);
   if (!personasResp.ok) throw new Error(await readDetail(personasResp));
   const personas = await personasResp.json() as {
-    items: Array<{ id: string; avatar?: string; kind?: string; motion_family?: string }>;
+    items: Array<{
+      id: string;
+      avatar?: string;
+      kind?: string;
+      motion_family?: string;
+      vrm?: string | null;
+    }>;
   };
   const persona = personas.items.find((item) => item.id === settings.active_persona_id);
   const animalKinds = new Set(["cat", "dog", "bird", "rabbit", "animal"]);
@@ -146,6 +192,7 @@ export async function fetchActivePersonaAsset(): Promise<{
     avatar: persona?.avatar ?? "",
     style: animalKinds.has(persona?.kind?.toLowerCase() ?? "") ? "animal" : "human",
     motion_family: motionFamily,
+    vrm: Boolean(persona?.vrm),
     ...(await fetchPersonaAssetMetrics(settings.active_persona_id)),
   };
 }
@@ -153,6 +200,12 @@ export async function fetchActivePersonaAsset(): Promise<{
 export function personaAssetUrl(personaId: string, file: string): string {
   const encoded = file.split("/").map(encodeURIComponent).join("/");
   return `${SERVICE_BASE}/api/personas/${encodeURIComponent(personaId)}/asset/${encoded}`;
+}
+
+/** 共享动作库（male / female）只读地址。 */
+export function motionLibraryUrl(variant: string, file: string): string {
+  const encoded = file.split("/").map(encodeURIComponent).join("/");
+  return `${SERVICE_BASE}/api/motion-library/${encodeURIComponent(variant)}/${encoded}`;
 }
 
 /** 读取分层 + 多帧/spritesheet 资产清单；无 layers.json 时返回空清单。 */

@@ -47,10 +47,10 @@ def build_persona_svg(p: dict) -> str:
         hair_top = (
             '<path d="M70 92 Q78 52 120 50 Q162 52 170 92 Q160 84 120 82 Q80 84 70 92 Z" fill="{h}"/>'
         ).format(h=hair)
-    fringe = (
-        '<path d="M78 94 Q82 76 100 72 Q118 70 128 74 Q146 70 162 94 Q152 108 130 106 '
-        'Q110 104 96 106 Q84 106 78 94 Z" fill="{h}"/>'
-    ).format(h=hair)
+   fringe = (
+        '<path d="M78 94 Q82 76 100 72 Q118 70 128 74 Q146 70 162 94 Q152 100 130 98 '
+        'Q110 96 96 98 Q84 98 78 94 Z" fill="{h}"/>'
+   ).format(h=hair)
 
     # 眼型：杏眼=圆润，细长眼=压扁，其余默认
     if "细长" in eye_shape:
@@ -59,10 +59,7 @@ def build_persona_svg(p: dict) -> str:
         eye_w, eye_h = 6.5, 5.5
     else:
         eye_w, eye_h = 6.5, 8
-    clip_path = (
-        '<clipPath id="clip"><path d="M88 104 Q96 96 106 104 Q100 112 92 110 Z M134 104 '
-        'Q142 96 152 104 Q146 112 138 110 Z"/></clipPath>'
-    ) if clip else ""
+    clip_path = ""
 
     return f'''<svg class="persona-svg" viewBox="0 0 240 380" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -73,18 +70,18 @@ def build_persona_svg(p: dict) -> str:
   <!-- 身体（呼吸） -->
   <g class="persona-body">
     <!-- 颈 + 肩 -->
-    <path d="M104 168 Q120 158 136 168 L138 186 L102 186 Z" fill="{skin}" stroke="#00000022" strokeWidth="1"/>
-    <path d="M92 172 Q88 184 96 196 Q120 208 144 196 Q152 184 148 172 Q136 182 120 184 Q104 182 92 172 Z"
+    <path d="M106 146 Q120 140 134 146 L136 178 L104 178 Z" fill="{skin}" stroke="#00000022" strokeWidth="1"/>
+    <path d="M92 166 Q88 178 96 190 Q120 202 144 190 Q152 178 148 166 Q136 176 120 178 Q104 176 92 166 Z"
           fill="{skin}" stroke="#00000022" strokeWidth="1"/>
     <!-- 露肩连衣裙 -->
     <path d="M84 176 Q78 200 82 224 Q88 262 98 296 Q110 330 120 352 Q130 330 142 296 Q152 262 158 224 "
-          fill="{dress}" stroke="#00000033"/>
+          "Q162 200 156 176 Q120 188 84 176 Z" fill="{dress}" stroke="#00000033"/>
     <path d="M98 296 Q112 330 120 352 Q128 330 142 296 Q132 316 120 320 Q108 316 98 296 Z" fill="{dress2}"/>
     <path d="M82 224 Q100 238 120 240 Q140 238 158 224 Q156 252 146 280 Q132 262 120 264 Q108 262 94 280 Z"
           fill="{dress2}" opacity="0.9"/>
     <!-- 围巾 -->
-    <path d="M96 170 Q120 160 144 170 L146 196 Q120 206 94 196 Z" fill="{scarf}" stroke="#00000033"/>
-    <path d="M96 170 Q102 188 98 204 Q110 198 120 200 Q130 198 142 204 Q138 188 144 170 Z" fill="{scarf}" opacity="0.85"/>
+    <path d="M96 164 Q120 154 144 164 L146 190 Q120 200 94 190 Z" fill="{scarf}" stroke="#00000033"/>
+    <path d="M96 164 Q102 182 98 198 Q110 192 120 194 Q130 192 142 198 Q138 182 144 164 Z" fill="{scarf}" opacity="0.85"/>
   </g>
 
   <!-- 头部 -->
@@ -99,22 +96,22 @@ def build_persona_svg(p: dict) -> str:
     {fringe}
     {f'<rect x="150" y="74" width="14" height="10" rx="3" fill="{clip}" transform="rotate(18 157 79)"/>' if clip else ""}
     <!-- 眉 -->
-    <path d="M96 88 Q104 84 112 87" stroke="{hair}" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
-    <path d="M128 87 Q136 84 144 88" stroke="{hair}" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
+    <path d="M96 98 Q104 94 112 97" stroke="{hair}" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
+    <path d="M128 97 Q136 94 144 98" stroke="{hair}" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
     <!-- 眼（眨眼动画） -->
-    <g class="persona-eyes" clip-path="{ ("url(#clip)") if clip else None }">
-      <ellipse class="eye-l" cx="104" cy="100" rx="{eye_w}" ry="{eye_h}" fill="{eye}"/>
-      <ellipse class="eye-r" cx="136" cy="100" rx="{eye_w}" ry="{eye_h}" fill="{eye}"/>
-      <circle class="glint-l" cx="106" cy="97.5" r="1.8" fill="#fff"/>
-      <circle class="glint-r" cx="138" cy="97.5" r="1.8" fill="#fff"/>
+    <g class="persona-eyes">
+      <ellipse class="eye-l" cx="104" cy="106" rx="{eye_w}" ry="{eye_h}" fill="{eye}"/>
+      <ellipse class="eye-r" cx="136" cy="106" rx="{eye_w}" ry="{eye_h}" fill="{eye}"/>
+      <circle class="glint-l" cx="106" cy="103.5" r="1.8" fill="#fff"/>
+      <circle class="glint-r" cx="138" cy="103.5" r="1.8" fill="#fff"/>
     </g>
     <!-- 鼻 -->
-    <path d="M120 106 Q118 112 121 114" stroke="#00000033" strokeWidth="1.6" fill="none" strokeLinecap="round"/>
+    <path d="M120 114 Q118 120 121 122" stroke="#00000033" strokeWidth="1.6" fill="none" strokeLinecap="round"/>
     <!-- 嘴（可切换） -->
     <g class="persona-mouths">
-      <path class="mouth-smile" d="M110 124 Q120 132 130 124" stroke="#B5544D" strokeWidth="3" fill="none" strokeLinecap="round"/>
-      <path class="mouth-ah" d="M109 122 Q120 138 131 122 Z" fill="#8C4F3D"/>
-      <ellipse class="mouth-o" cx="120" cy="126" rx="6.5" ry="8.5" fill="#8C4F3D"/>
+      <path class="mouth-smile" d="M110 130 Q120 138 130 130" stroke="#B5544D" strokeWidth="3" fill="none" strokeLinecap="round"/>
+      <path class="mouth-ah" d="M109 128 Q120 144 131 128 Z" fill="#8C4F3D"/>
+      <ellipse class="mouth-o" cx="120" cy="132" rx="6.5" ry="8.5" fill="#8C4F3D"/>
     </g>
   </g>
 </svg>'''
@@ -126,7 +123,7 @@ def persona_css(hair: str, dress: str, dress2: str, scarf: str) -> str:
     .persona-body {{ animation: pBreath 3.6s ease-in-out infinite; transform-origin: 120px 300px; }}
     @keyframes pBreath {{ 0%,100% {{ transform: translateY(0); }} 50% {{ transform: translateY(-2.5px); }} }}
     /* 眨眼 */
-    .persona-eyes {{ transform-origin: 120px 100px; animation: pBlink 4.6s infinite; }}
+    .persona-eyes {{ transform-origin: 120px 106px; animation: pBlink 4.6s infinite; }}
     @keyframes pBlink {{ 0%,92%,100% {{ transform: scaleY(1); }} 95%,97% {{ transform: scaleY(0.08); }} }}
     /* 嘴型切换 */
     .persona-mouths .mouth-ah, .persona-mouths .mouth-o {{ display: none; }}

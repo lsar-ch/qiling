@@ -61,8 +61,10 @@ class PresentationBridge:
         theme = {**_DEFAULT_THEME, **pres.get("theme", {})}
         animations = {**_DEFAULT_ANIMATIONS, **pres.get("animations", {})}
         fx = {**_DEFAULT_FX, **pres.get("fx", {})}
+        actions = pres.get("actions")
+        vrm_motion_config = pres.get("vrm")
         avatar = str(raw.get("avatar") or "")
-        vrm = str(raw.get("vrm") or "")  # VRM 模型相对 persona 资产目录的路径
+        vrm_path = str(raw.get("vrm") or "")  # VRM 模型相对 persona 资产目录的路径
         style = pres.get("style")
         if style not in {"human", "animal", "anime"}:
             style = raw.get("motion_family")
@@ -78,8 +80,8 @@ class PresentationBridge:
         asset: dict[str, Any] = {}
         if avatar:
             asset["avatar_url"] = avatar
-        if vrm:
-            asset["vrm_path"] = vrm
+        if vrm_path:
+            asset["vrm_path"] = vrm_path
 
         return PersonaPresentation(
             persona_id=persona_id,
@@ -90,6 +92,8 @@ class PresentationBridge:
             theme=theme,
             animations=animations,
             fx=fx,
+            actions=actions if isinstance(actions, dict) else None,
+            vrm=vrm_motion_config if isinstance(vrm_motion_config, dict) else None,
             asset=asset or None,
         )
 

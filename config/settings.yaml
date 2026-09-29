@@ -13,7 +13,7 @@ awareness:
 llm:
   fallback_provider: openai
   max_tokens: 512
-  model: qwen-plus
+  model: qwen-flash
   provider: auto
   stream: true
   system_prompt_path: config/system_prompt.md
@@ -31,7 +31,7 @@ memory:
   summary:
     enabled: true
     every_n_messages: 10
-    model: qwen-plus
+    model: qwen-flash
 proactive:
   enabled: true
   sedentary_minutes: 40

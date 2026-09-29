@@ -220,6 +220,57 @@ def ensure_initial_profiles(root: Path, settings: Any) -> list[ModelProfile]:
     return profiles
 
 
+async def list_provider_models(
+    base_url: str,
+    api_key: str | None,
+    fallback_key: str | None = None,
+) -> dict[str, Any]:
+    """向 OpenAI 兼容供应商拉取可用模型 ID 列表（GET /models）。
+
+    只读查询，不写任何配置；供应商不支持或未配置时返回
+    `available=False` + `reason`，由前端回退为手填模型名。
+    """
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return {"available": False, "models": [], "reason": "请先填写 API 地址"}
+    key = (api_key or "").strip() or (fallback_key or "").strip()
+    if not key:
+        return {"available": False, "models": [], "reason": "请先填写 API Key"}
+    url = f"{base}/models"
+    headers = {"Authorization": f"Bearer {key}"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(url, headers=headers)
+        if response.status_code >= 400:
+            return {
+                "available": False,
+                "models": [],
+                "reason": f"获取失败：HTTP {response.status_code} {response.text[:120]}",
+            }
+        body = response.json()
+    except Exception as exc:
+        return {"available": False, "models": [], "reason": f"获取失败：{exc}"}
+
+    raw = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(raw, list):
+        return {"available": False, "models": [], "reason": "供应商返回格式不支持模型列表"}
+    models: list[str] = []
+    seen: set[str] = set()
+    for entry in raw:
+        model_id = ""
+        if isinstance(entry, dict):
+            model_id = str(entry.get("id") or "").strip()
+        elif isinstance(entry, str):
+            model_id = entry.strip()
+        if model_id and model_id not in seen:
+            seen.add(model_id)
+            models.append(model_id)
+    models.sort()
+    if not models:
+        return {"available": False, "models": [], "reason": "供应商未返回任何模型"}
+    return {"available": True, "models": models, "reason": None}
+
+
 async def test_model_profile(profile: ModelProfile, fallback_key: str | None = None) -> dict[str, Any]:
     if profile.category not in CHAT_PROFILE_CATEGORIES:
         return {

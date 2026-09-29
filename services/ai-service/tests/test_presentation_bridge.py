@@ -53,3 +53,22 @@ def test_presentation_vrm_path(tmp_path: Path) -> None:
         "plain", {"id": "plain", "name": "2D", "avatar": "/a.png"}
     )
     assert plain.asset == {"avatar_url": "/a.png"}
+
+
+def test_presentation_vrm_motion_config_is_preserved(tmp_path: Path) -> None:
+    """动作实验室保存的 vrm 播放配置与模型路径互不覆盖。"""
+    bridge = PresentationBridge(tmp_path)
+    pres = bridge._build_presentation(
+        "vrm3d",
+        {
+            "id": "vrm3d",
+            "name": "3D",
+            "avatar": "",
+            "vrm": "model.vrm",
+            "presentation": {
+                "vrm": {"loop_triggers": ["idle", "speaking"], "crossfade_ms": 240}
+            },
+        },
+    )
+    assert pres.vrm == {"loop_triggers": ["idle", "speaking"], "crossfade_ms": 240}
+    assert pres.asset == {"vrm_path": "model.vrm"}
