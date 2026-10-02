@@ -362,3 +362,20 @@ def test_pdf_image_email_route_as_office_tasks(tmp_path, monkeypatch) -> None:
             task = resp.json()["task"]
             assert task["work_kind"] == work_kind, text
             assert task["category"] == "delegate_backend", text
+
+
+def test_conversion_prompts_route_as_office_tasks(tmp_path: Path, monkeypatch) -> None:
+    """「转成 / 导出为 X」也是办公任务，不能掉进闲聊或普通后端。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        cases = [
+            ("把 test.docx 转成 PDF", "word"),
+            ("把这个 pptx 转成 pdf", "ppt"),
+            ("把这个 Excel 导出为 pdf", "excel"),
+            ("把 report.docx 转成 markdown", "word"),
+        ]
+        for text, work_kind in cases:
+            resp = client.post("/api/tasks", json={"input": text})
+            assert resp.status_code == 200
+            task = resp.json()["task"]
+            assert task["category"] == "delegate_backend", text
+            assert task["work_kind"] == work_kind, text

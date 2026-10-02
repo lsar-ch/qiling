@@ -71,8 +71,22 @@ sections[]      heading / level / paragraphs[] / bullets[] / tables[][][]
 
 列表连续项之间不插空行，避免 Typst 把它们拆成多个列表。
 
+## 已接：格式转换（2026-10-02）
+
+自然语言入口：说「把 xxx.docx 转成 PDF」「把这个 Excel 导出为 pdf」「把 xxx.docx 转成
+markdown」「把 readme.md 转成 docx」就走本机引擎转换，产物落在源文件同目录：
+
+| 目标 | 引擎 | 说明 |
+| --- | --- | --- |
+| pdf / docx / xlsx / pptx 互转 | LibreOffice | `soffice --headless --convert-to`（独立 profile） |
+| md <-> docx / pptx、任意 -> md | Pandoc | `pandoc <src> -o <dst>` |
+| md -> pdf | 内置渲染器 | 避免 Pandoc 转 PDF 依赖 LaTeX |
+
+装了就用、没装则提示到本页安装；目标格式取整句里最后一个格式词（源在前、目标在后，
+中英文语序都覆盖）。
+
 ## 未做（明确记录）
 
-- Pandoc / Marp / WeasyPrint / LibreOffice 仍是"可安装、可探测"，尚未接进落盘链路。
+- Marp / WeasyPrint 仍是"可安装、可探测"，尚未接进调用链路；LibreOffice 与 Pandoc 已接转换。
 - 不支持用户自行添加任意 pip 包：清单是白名单，避免把任意包名当命令执行。
 - docxtpl 默认模板已入库（2026-10-02）：装了 docxtpl 即生效；用户可整份替换成公司模板。

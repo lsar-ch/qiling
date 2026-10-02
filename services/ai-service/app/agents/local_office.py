@@ -10,7 +10,8 @@ B 为主、A 兜底：外部 Agent（Codex/WorkBuddy/其它 ACP 执行器）不�
 
 写作：没有源文件（或任务本身就是要新建）时，调用已配置的模型写 Markdown，
 再本地渲染成 docx / xlsx / pptx / pdf / md —— 不依赖外部 Agent 也能产出文件。
-复杂编辑既有文件、跨格式转换仍走外部 Agent。
+跨格式转换由本机引擎完成：Markdown 相关走 Pandoc，其余走 LibreOffice（装了就用、没装则提示安装）；
+复杂编辑既有文件仍走外部 Agent。
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from pathlib import Path
 
 from deskmate_contracts.agent import AgentInfo
 
+from app.agents import office_tools
 from app.agents.base import (
     AgentAdapter,
     AgentTaskRequest,
@@ -50,6 +52,86 @@ _MAX_BODY_CHARS = 4000
 
 # 明确要「新建」而不是「读现有的」时，即使目录里有同类型文件也走写作分支。
 _CREATE_HINTS = re.compile(r"写一份|写一篇|起草|生成一份|生成一份|新建|创建|做一份|做一份|拟一份|帮我写")
+
+# 「转成 / 转为 / 导出为 X」：有转换动词才走转换分支，目标格式取整句最后一个格式词。
+_CONVERT_HINTS = re.compile(
+    r"转成|转为|转换成|转换|导出为|导出成|另存为|\bconvert\b|\bexport\b", re.I
+)
+_TARGET_FORMATS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("pdf", re.compile(r"\bpdf\b", re.I)),
+    ("word", re.compile(r"\b(docx?|word)\b", re.I)),
+    ("excel", re.compile(r"\b(xlsx?|excel)\b", re.I)),
+    ("ppt", re.compile(r"\b(pptx?|powerpoint)\b", re.I)),
+    ("markdown", re.compile(r"\b(md|markdown)\b", re.I)),
+)
+_TARGET_SUFFIX = {"pdf": ".pdf", "word": ".docx", "excel": ".xlsx", "ppt": ".pptx", "markdown": ".md"}
+_CONVERT_SOURCE_SUFFIXES = (
+    ".docx", ".doc", ".xlsx", ".xlsm", ".pptx", ".ppt", ".pdf", ".md", ".markdown", ".txt",
+)
+
+
+def conversion_target(prompt: str) -> str | None:
+    """抽出「把这个 docx 转成 PDF」的目标格式；没有转换动词返回 None。
+
+    取整句里**最后一个**格式词：中英文语序都是「源在前、目标在后」
+    （"docx 转成 PDF" / "convert docx to pptx"），无需区分动词位置。
+    """
+    text = prompt or ""
+    if _CONVERT_HINTS.search(text) is None:
+        return None
+    best: tuple[int, str] | None = None
+    for kind, pattern in _TARGET_FORMATS:
+        for match in pattern.finditer(text):
+            if best is None or match.start() > best[0]:
+                best = (match.start(), kind)
+    return best[1] if best else None
+
+
+def _find_conversion_source(cwd: str, prompt: str, target_kind: str) -> Path | None:
+    """找要转换的源文件：先认 prompt 里点名的文件名，否则取目录里最新的办公文件。
+
+    ponytail: 只按「点名 + 最新」两档猜，不做模糊匹配；多文件同类型时请点名。
+    """
+    root = Path(cwd)
+    if not root.is_dir():
+        return None
+    target_suffix = _TARGET_SUFFIX.get(target_kind)
+    named = re.findall(
+        r"[\w\u4e00-\u9fff.\-]+\.(?:docx?|xlsx?|pptx?|pdf|md|markdown|txt)", prompt or "", re.I
+    )
+    for name in named:
+        candidate = root / name
+        if candidate.is_file() and candidate.suffix.lower() != target_suffix:
+            return candidate
+    latest: tuple[float, Path] | None = None
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in _CONVERT_SOURCE_SUFFIXES:
+            continue
+        if any(part.startswith(".") for part in path.parts) or path.name.startswith("~"):
+            continue
+        if path.suffix.lower() == target_suffix:
+            continue
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            continue
+        if latest is None or stamp > latest[0]:
+            latest = (stamp, path)
+    return latest[1] if latest else None
+
+
+_ENGINE_LABELS = {"pandoc": "Pandoc", "libreoffice": "LibreOffice"}
+
+
+def _convert_file(source: Path, target_kind: str) -> tuple[Path, str]:
+    """返回 (产物, 引擎名)。Markdown -> PDF 走内置渲染器（Pandoc 转 PDF 依赖 LaTeX）。"""
+    if target_kind == "pdf" and source.suffix.lower() in {".md", ".markdown"}:
+        text = source.read_text(encoding="utf-8", errors="replace")
+        produced = write_file(source.with_suffix(".pdf"), "pdf", parse_markdown(text), raw_text=text)
+        return produced, "内置渲染器"
+    engine = office_tools.engine_for(source, target_kind)
+    return office_tools.convert(source, target_kind), _ENGINE_LABELS.get(engine, engine)
+
 
 _AUTHOR_SYSTEM = (
     "你是 DeskMate 的办公写作助手。只输出 Markdown 正文，不要寒暄、不要解释你的做法。"
@@ -321,6 +403,9 @@ class LocalOfficeAdapter(AgentAdapter):
         request: AgentTaskRequest,
         on_update,
     ) -> AgentTaskResult:
+        target_kind = conversion_target(request.prompt or "")
+        if target_kind is not None:
+            return await self._convert(request, target_kind, on_update)
         work_kind = request.config.get("work_kind", "")
         if work_kind not in _READERS:
             return AgentTaskResult(
@@ -400,4 +485,30 @@ class LocalOfficeAdapter(AgentAdapter):
         return AgentTaskResult(
             status="completed",
             message=f"已生成文件：{target}\n\n标题：{title}\n\n{text[:1500]}",
+        )
+
+    # ------------------------------------------------------------------ 转换
+
+    async def _convert(
+        self,
+        request: AgentTaskRequest,
+        target_kind: str,
+        on_update,
+    ) -> AgentTaskResult:
+        """用已装的 LibreOffice 把办公文件转成目标格式（没装则给出安装指引）。"""
+        source = _find_conversion_source(request.cwd, request.prompt or "", target_kind)
+        if source is None:
+            return AgentTaskResult(
+                status="failed",
+                error="没找到要转换的办公文件。请把源文件放进工作目录，或在指令里写清文件名。",
+            )
+        await on_update("progress", {"message": f"正在转换 {source.name}..."})
+        try:
+            produced, engine = _convert_file(source, target_kind)
+        except office_tools.OfficeToolError as exc:
+            return AgentTaskResult(status="failed", error=str(exc))
+        await on_update("progress", {"message": f"已生成 {produced.name}"})
+        return AgentTaskResult(
+            status="completed",
+            message=f"已转换文件：{produced}\n\n源文件：{source}\n引擎：{engine}",
         )

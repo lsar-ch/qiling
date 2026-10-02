@@ -132,3 +132,80 @@ def test_office_tools_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 
         missing = client.post("/api/office-tools/nope/install")
         assert missing.status_code == 404
+
+
+def test_convert_requires_libreoffice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "a.docx"
+    source.write_bytes(b"x")
+    monkeypatch.setattr(office_tools.shutil, "which", lambda name: None)
+    with pytest.raises(office_tools.OfficeToolError) as exc:
+        office_tools.convert(source, "pdf")
+    assert "LibreOffice" in str(exc.value)
+
+
+def test_convert_rejects_same_format_and_unknown_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "a.pdf"
+    source.write_bytes(b"%PDF-")
+    monkeypatch.setattr(office_tools.shutil, "which", lambda name: "/fake/soffice")
+    with pytest.raises(office_tools.OfficeToolError):
+        office_tools.convert(source, "pdf")   # 源文件已是目标格式
+    with pytest.raises(office_tools.OfficeToolError):
+        office_tools.convert(source, "doc")   # 未登记的目标格式
+
+
+def test_convert_invokes_soffice_headless(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "report.docx"
+    source.write_bytes(b"x")
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        (tmp_path / "report.pdf").write_bytes(b"%PDF-")
+        return _FakeProc(0, out="convert ok")
+
+    monkeypatch.setattr(
+        office_tools.shutil, "which",
+        lambda name: "/fake/soffice" if name == "soffice" else None,
+    )
+    monkeypatch.setattr(office_tools.subprocess, "run", fake_run)
+
+    produced = office_tools.convert(source, "pdf")
+    assert produced == tmp_path / "report.pdf"
+    assert "--headless" in calls[0]
+    assert calls[0][calls[0].index("--convert-to") + 1] == "pdf"
+    assert calls[0][-1] == str(source)
+
+
+def test_convert_markdown_target_routes_to_pandoc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "report.docx"
+    source.write_bytes(b"x")
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        (tmp_path / "report.md").write_text("# t\n", encoding="utf-8")
+        return _FakeProc(0)
+
+    monkeypatch.setattr(
+        office_tools.shutil, "which",
+        lambda name: "/fake/pandoc" if name == "pandoc" else None,
+    )
+    monkeypatch.setattr(office_tools.subprocess, "run", fake_run)
+
+    produced = office_tools.convert(source, "markdown")
+    assert produced == tmp_path / "report.md"
+    assert calls[0][0] == "/fake/pandoc"
+    assert calls[0][1] == str(source) and calls[0][2] == "-o"
+
+
+def test_convert_markdown_source_without_pandoc_reports_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "readme.md"
+    source.write_text("# t\n", encoding="utf-8")
+    monkeypatch.setattr(office_tools.shutil, "which", lambda name: None)
+    with pytest.raises(office_tools.OfficeToolError) as exc:
+        office_tools.convert(source, "word")
+    assert "Pandoc" in str(exc.value)

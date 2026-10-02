@@ -10,6 +10,7 @@ import pytest
 from app.agents.base import AgentTaskRequest
 from app.agents.local_office import (
     LocalOfficeAdapter,
+    conversion_target,
     _find_office_files,
     _read_docx,
     _read_xlsx,
@@ -317,3 +318,146 @@ class TestWidenedReaders:
         result = asyncio.run(run())
         assert result.status == "completed"
         assert "Employee handbook" in result.message
+
+
+class _FakeConvertProc:
+    def __init__(self, returncode: int) -> None:
+        self.returncode = returncode
+        self.stdout = ""
+        self.stderr = ""
+
+
+class TestConversionIntent:
+    def test_target_is_read_after_the_convert_verb(self):
+        assert conversion_target("把这个 docx 转成 PDF") == "pdf"
+        assert conversion_target("把 report.docx 导出为 xlsx") == "excel"
+        assert conversion_target("convert notes.docx to pptx") == "ppt"
+
+    def test_source_format_is_not_mistaken_for_target(self):
+        # 目标只看「转成」之后，源格式（pdf）不算
+        assert conversion_target("把这份 PDF 转成 docx") == "word"
+
+    def test_markdown_target_and_source(self):
+        assert conversion_target("把 report.docx 转成 markdown") == "markdown"
+        assert conversion_target("把 readme.md 转成 docx") == "word"
+
+    def test_plain_read_has_no_conversion_target(self):
+        assert conversion_target("总结这个 docx") is None
+
+
+class TestLocalOfficeConversion:
+    def test_converts_named_file_via_libreoffice(self, tmp_office_dir, monkeypatch):
+        from app.agents import office_tools
+
+        def fake_run(command, **kwargs):
+            (tmp_office_dir / "test.pdf").write_bytes(b"%PDF-")
+            return _FakeConvertProc(0)
+
+        monkeypatch.setattr(
+            office_tools.shutil, "which",
+            lambda name: "/fake/soffice" if name == "soffice" else None,
+        )
+        monkeypatch.setattr(office_tools.subprocess, "run", fake_run)
+
+        adapter = LocalOfficeAdapter()
+
+        async def on_update(kind, payload):
+            pass
+
+        async def run():
+            return await adapter.run(
+                AgentTaskRequest(
+                    task_id="c1",
+                    prompt="把 test.docx 转成 PDF",
+                    cwd=str(tmp_office_dir),
+                    config={"work_kind": "word"},
+                ),
+                on_update,
+            )
+
+        result = asyncio.run(run())
+        assert result.status == "completed"
+        assert "test.pdf" in result.message
+
+    def test_conversion_reports_missing_libreoffice(self, tmp_office_dir, monkeypatch):
+        from app.agents import office_tools
+
+        monkeypatch.setattr(office_tools.shutil, "which", lambda name: None)
+        adapter = LocalOfficeAdapter()
+
+        async def on_update(kind, payload):
+            pass
+
+        async def run():
+            return await adapter.run(
+                AgentTaskRequest(
+                    task_id="c2",
+                    prompt="把 test.docx 转成 PDF",
+                    cwd=str(tmp_office_dir),
+                    config={"work_kind": "word"},
+                ),
+                on_update,
+            )
+
+        result = asyncio.run(run())
+        assert result.status == "failed"
+        assert "LibreOffice" in result.error
+
+
+    def test_markdown_to_pdf_uses_builtin_renderer(self, tmp_path, monkeypatch):
+        """md -> PDF 不该依赖 Pandoc/LaTeX，两个引擎都没装也能出 PDF。"""
+        from app.agents import office_tools
+
+        (tmp_path / "notes.md").write_text("# 标题\n\n- 一\n- 二\n", encoding="utf-8")
+        monkeypatch.setattr(office_tools.shutil, "which", lambda name: None)
+        adapter = LocalOfficeAdapter()
+
+        async def on_update(kind, payload):
+            pass
+
+        async def run():
+            return await adapter.run(
+                AgentTaskRequest(
+                    task_id="c3",
+                    prompt="把 notes.md 转成 PDF",
+                    cwd=str(tmp_path),
+                    config={"work_kind": "word"},
+                ),
+                on_update,
+            )
+
+        result = asyncio.run(run())
+        assert result.status == "completed"
+        assert (tmp_path / "notes.pdf").read_bytes()[:5] == b"%PDF-"
+
+    def test_converts_docx_to_markdown_via_pandoc(self, tmp_office_dir, monkeypatch):
+        from app.agents import office_tools
+
+        def fake_run(command, **kwargs):
+            (tmp_office_dir / "test.md").write_text("# test\n", encoding="utf-8")
+            return _FakeConvertProc(0)
+
+        monkeypatch.setattr(
+            office_tools.shutil, "which",
+            lambda name: "/fake/pandoc" if name == "pandoc" else None,
+        )
+        monkeypatch.setattr(office_tools.subprocess, "run", fake_run)
+        adapter = LocalOfficeAdapter()
+
+        async def on_update(kind, payload):
+            pass
+
+        async def run():
+            return await adapter.run(
+                AgentTaskRequest(
+                    task_id="c4",
+                    prompt="把 test.docx 转成 markdown",
+                    cwd=str(tmp_office_dir),
+                    config={"work_kind": "word"},
+                ),
+                on_update,
+            )
+
+        result = asyncio.run(run())
+        assert result.status == "completed"
+        assert "test.md" in result.message
