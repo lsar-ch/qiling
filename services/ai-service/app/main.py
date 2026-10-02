@@ -142,7 +142,7 @@ def create_app(
     )
     app.state.memory = MemoryService(settings.memory_dir, persona_dir=settings.personas_dir)
     app.state.agent_catalog = load_agent_catalog()
-    app.state.agent_registry = build_agent_registry(app.state.agent_catalog)
+    app.state.agent_registry = build_agent_registry(app.state.agent_catalog, provider)
     app.state.agent_run_manager = AgentRunManager(
         registry=app.state.agent_registry,
         store=AgentRunStore(settings.data_dir),

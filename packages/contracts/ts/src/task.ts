@@ -11,6 +11,9 @@ export type WorkKind =
   | "word"
   | "excel"
   | "ppt"
+  | "pdf"
+  | "image"
+  | "email"
   | "project";
 export type InteractionKind = "casual" | "project" | "work";
 export type RiskLevel = "low" | "medium" | "high";

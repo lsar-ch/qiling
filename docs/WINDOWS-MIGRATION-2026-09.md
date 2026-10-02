@@ -4,6 +4,9 @@
 > 原始过程记录（逐项证据、环境清单、执行流水）已移入
 > `docs/archive/windows-migration-2026-09/`，仅在需要翻原始证据时再读。
 > 依赖漏洞与升级影响面见 `docs/DEPENDENCY-VULNERABILITIES.md`。
+>
+> 后续轮次：09-30 真机轮见 `WORKBUDDY-WINDOWS-RECHECK-2026-09-30.md`；
+> 10-01 回传复验评估见 `docs/WINDOWS-HANDOFF-REVIEW-2026-10-01.md`。
 
 ## 1. 状态一句话
 

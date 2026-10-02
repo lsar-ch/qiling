@@ -4,6 +4,7 @@ import type { AgentInfo, AgentIntegrationStatus } from "@deskmate/contracts";
 import type { EventEnvelope } from "@deskmate/contracts";
 import type {
   McpServerInfo,
+  OfficeToolInfo,
   SkillDetail,
   SkillInfo,
 } from "@deskmate/contracts";
@@ -210,6 +211,27 @@ export async function fetchSkill(id: string): Promise<SkillDetail> {
   return fetchJson<SkillDetail>(`/api/skills/${encodeURIComponent(id)}`);
 }
 
+export async function fetchOfficeTools(): Promise<OfficeToolInfo[]> {
+  const data = await fetchJson<{ tools: OfficeToolInfo[] }>("/api/office-tools");
+  return data.tools;
+}
+
+// 不走 fetchJson：pip 安装动辄几十秒，不能被 5s 超时掐断。
+export async function installOfficeTool(
+  name: string,
+): Promise<{ ok: boolean; message: string; tools: OfficeToolInfo[] }> {
+  const resp = await fetch(`/api/office-tools/${encodeURIComponent(name)}/install`, {
+    method: "POST",
+  });
+  const body = await resp.json().catch(() => null);
+  if (!resp.ok) {
+    throw new Error(
+      typeof body?.detail === "string" ? body.detail : `安装请求失败：HTTP ${resp.status}`,
+    );
+  }
+  return body as { ok: boolean; message: string; tools: OfficeToolInfo[] };
+}
+
 export async function toggleSkill(id: string, enabled: boolean): Promise<SkillInfo> {
   const resp = await fetch(`/api/skills/${encodeURIComponent(id)}/toggle`, {
     method: "POST",
@@ -344,6 +366,8 @@ export interface AgentConfigEntry {
   tags: string[];
   detail: string;
   config: Record<string, unknown>;
+  /** 该执行器是否已配置自备 API Key（明文永不出接口）。 */
+  api_key_configured: boolean;
 }
 
 export async function fetchAgentConfig(): Promise<{
@@ -358,6 +382,7 @@ export async function updateAgentConfig(
   body: {
     command?: string | null;
     internet_environment?: string | null;
+    api_key?: string | null;
     enabled?: boolean;
     set_default?: boolean;
   },
@@ -376,6 +401,31 @@ export async function updateAgentConfig(
       // 保留默认错误信息
     }
     throw new Error(`「${name}」配置保存失败：${detail}`);
+  }
+  return (await resp.json()) as AgentInfo;
+}
+
+export async function addCustomAgent(body: {
+  name: string;
+  label?: string | null;
+  command: string;
+  api_key_env?: string | null;
+  api_key?: string | null;
+}): Promise<AgentInfo> {
+  const resp = await fetch("/api/agents/custom", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const data = (await resp.json()) as { detail?: unknown };
+      if (typeof data?.detail === "string") detail = data.detail;
+    } catch {
+      // 保留默认错误信息
+    }
+    throw new Error(`添加执行器失败：${detail}`);
   }
   return (await resp.json()) as AgentInfo;
 }

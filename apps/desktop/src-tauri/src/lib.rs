@@ -20,6 +20,8 @@ mod widget;
 const SERVICE_PORT: u16 = 8736;
 /// 主界面可见性事件：主界面据此让出/收回语音租约，挂件据此立即重探租约。
 const MAIN_UI_VISIBILITY: &str = "main-ui-visibility";
+/// 挂件要求主界面切到指定会话：主界面据此加载长回复所在的会话。
+const MAIN_UI_OPEN_CONVERSATION: &str = "main-ui-open-conversation";
 const SERVICE_START_TIMEOUT: Duration = Duration::from_secs(15);
 const SERVICE_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const SERVICE_PORT_GRACE: Duration = Duration::from_millis(1500);
@@ -290,8 +292,6 @@ fn start_service(shared: &mut Shared) {
             "127.0.0.1",
             "--port",
             &port,
-            // 开发模式：改 Python 保存后自动重启服务，配合前端 HMR 实现边改边看。
-            "--reload",
         ])
         .current_dir(&service_dir)
         .stdin(Stdio::null())
@@ -306,8 +306,8 @@ fn start_service(shared: &mut Shared) {
     #[cfg(not(target_os = "windows"))]
     {
         use std::os::unix::process::CommandExt;
-        // 让 uvicorn reloader 与 worker 同属一个新进程组（PGID=子进程PID），
-        // 退出时按整组回收，避免孤儿 worker 残留继续占用端口/麦克风。
+        // 让 uvicorn 单独成组（PGID=子进程PID），退出时按整组回收，
+        // 避免任何子进程残留继续占用端口/麦克风。
         command.process_group(0);
     }
 
@@ -325,7 +325,11 @@ fn start_service(shared: &mut Shared) {
     }
 }
 
-fn open_main_ui_window(app: &AppHandle, page: Option<String>) -> Result<(), String> {
+fn open_main_ui_window(
+    app: &AppHandle,
+    page: Option<String>,
+    conversation: Option<String>,
+) -> Result<(), String> {
     let url = format!("http://127.0.0.1:{SERVICE_PORT}/{}", page_fragment(page));
     if let Some(window) = app.get_webview_window("main_ui") {
         let target: tauri::Url = url.parse().map_err(|e| format!("主界面地址无效: {e}"))?;
@@ -342,6 +346,9 @@ fn open_main_ui_window(app: &AppHandle, page: Option<String>) -> Result<(), Stri
         let _ = window.show();
         let _ = window.set_focus();
         let _ = app.emit(MAIN_UI_VISIBILITY, true);
+        if let Some(id) = conversation {
+            let _ = app.emit(MAIN_UI_OPEN_CONVERSATION, id);
+        }
         return Ok(());
     }
     let target: tauri::Url = url.parse().map_err(|e| format!("主界面地址无效: {e}"))?;
@@ -355,6 +362,9 @@ fn open_main_ui_window(app: &AppHandle, page: Option<String>) -> Result<(), Stri
     let _ = window.show();
     let _ = window.set_focus();
     let _ = app.emit(MAIN_UI_VISIBILITY, true);
+    if let Some(id) = conversation {
+        let _ = app.emit(MAIN_UI_OPEN_CONVERSATION, id);
+    }
     Ok(())
 }
 
@@ -381,7 +391,12 @@ fn service_status(state: State<'_, ChildState>) -> Result<ServiceStatus, String>
 }
 
 #[tauri::command]
-fn open_main_ui(app: AppHandle, state: State<'_, ChildState>, page: Option<String>) -> Result<(), String> {
+fn open_main_ui(
+    app: AppHandle,
+    state: State<'_, ChildState>,
+    page: Option<String>,
+    conversation: Option<String>,
+) -> Result<(), String> {
     let log_path = {
         let mut shared = state.0.lock().map_err(|_| "服务状态锁不可用".to_string())?;
         start_service(&mut shared);
@@ -398,7 +413,7 @@ fn open_main_ui(app: AppHandle, state: State<'_, ChildState>, page: Option<Strin
             None => "AI 服务尚未就绪".to_string(),
         });
     }
-    open_main_ui_window(&app, page)
+    open_main_ui_window(&app, page, conversation)
 }
 
 /// 页面名 → URL 片段（`chat` → `#/chat`）；只放行纯字母，其余一律回到主页。
@@ -427,8 +442,8 @@ fn kill_child(app: &AppHandle) {
             if let Some(mut child) = shared.child.take() {
                 #[cfg(not(target_os = "windows"))]
                 {
-                    // 服务以新进程组启动（含 uvicorn reloader + worker）；
-                    // 对负 PID（= 整个进程组）发 TERM，再回收主进程，避免孤儿 worker 残留。
+                    // 服务以新进程组启动；对负 PID（= 整个进程组）发 TERM，
+                    // 再回收主进程，避免任何子进程残留。
                     let group = format!("-{}", child.id());
                     let _ = Command::new("/bin/kill")
                         .args(["-TERM", &group])
@@ -443,7 +458,7 @@ fn kill_child(app: &AppHandle) {
     }
 }
 
-/// 端口兜底：回收仍在监听本项目服务端口的进程（uvicorn worker 偶发漏网时）。
+/// 端口兜底：回收仍在监听本项目服务端口的进程（uvicorn 偶发漏网时）。
 /// 只作用于 127.0.0.1 的该端口，不触碰其它程序。
 #[cfg(not(target_os = "windows"))]
 fn kill_listeners_on_port(port: u16) {
@@ -520,7 +535,7 @@ pub fn run() {
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => {
                         if ensure_service_for_app(app) {
-                            let _ = open_main_ui_window(app, None);
+                            let _ = open_main_ui_window(app, None, None);
                         } else if let Some(win) = app.get_webview_window("main") {
                             let _ = win.show();
                         }

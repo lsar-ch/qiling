@@ -605,10 +605,14 @@ export default function Widget() {
     }
   };
 
-  const openMainUi = async (page?: string): Promise<void> => {
+  const openMainUi = async (page?: string, quiet = false): Promise<void> => {
     try {
-      await invoke("open_main_ui", { page: page ?? null });
-      showBrief("已打开主界面", 2000);
+      await invoke("open_main_ui", {
+        page: page ?? null,
+        conversation: conversationIdRef.current,
+      });
+      // 自动展开时主窗口本身就是反馈：再弹气泡会覆盖回复摘要，让窗口高度二次跳变。
+      if (!quiet) showBrief("已打开主界面", 2000);
     } catch (err) {
       const detail =
         typeof err === "string"
@@ -628,7 +632,7 @@ export default function Widget() {
     const now = Date.now();
     if (now - mainUiOpenedAtRef.current < MAIN_UI_AUTO_DEDUPE_MS) return;
     mainUiOpenedAtRef.current = now;
-    void openMainUi(page);
+    void openMainUi(page, true);
   };
 
   /** 用户主动打开（双击 / 右键菜单）：始终放行，并占用去重窗口避免紧接着再自动弹一次。 */
@@ -936,10 +940,9 @@ export default function Widget() {
       const r = await recognizeSpeech(segment.wav, "widget");
       text = (r.text || "").trim();
     } catch (error) {
+      // 空识别结果不再走异常分支（服务端已改为 200 + 空文本），这里只报真正的故障。
       const message = error instanceof Error ? error.message : "语音识别失败";
-      if (!message.includes("未识别到有效语音内容")) {
-        showBrief(`语音识别失败：${message}`, 5000);
-      }
+      showBrief(`语音识别失败：${message}`, 5000);
       return;
     }
     if (!text) return;
@@ -1198,8 +1201,15 @@ export default function Widget() {
       }
     };
     void loadVoice();
+    // 主界面改完设置会广播：重新拉一次，避免挂件一直用挂载时的旧快照。
+    let stopListen: UnlistenFn | undefined;
+    void listen("settings-changed", () => void loadVoice()).then((stop) => {
+      if (alive) stopListen = stop;
+      else stop();
+    });
     return () => {
       alive = false;
+      stopListen?.();
     };
   }, []);
 
@@ -1680,6 +1690,9 @@ export default function Widget() {
   }, [ctxMenu]);
 
   const voiceEnabled = voiceStatus?.enabled === true;
+  // 注意：胶囊整体受下方 `{voiceEnabled && …}` 门禁保护，语音总开关关闭时**不渲染**。
+  // 因此这里的分支无需再判 voiceEnabled（原「无 / 语音未配置」是不可达死代码，已移除）。
+  // 若要改成「总开关关闭时显示『无』」，需要同时放宽 :1951 的渲染门禁。
   const chipText =
     voiceMode === "listening"
       ? "听"
@@ -1687,16 +1700,13 @@ export default function Widget() {
         ? "静"
         : voiceMode === "starting"
           ? "·"
-          : voiceEnabled
-            ? "关"
-            : "无";
-  const chipTitle = voiceEnabled
-    ? voiceMode === "listening"
+          : "关";
+  const chipTitle =
+    voiceMode === "listening"
       ? "聆听中：点击静默，右键关闭"
       : voiceMode === "sleeping"
         ? "静默中：点击唤醒"
-        : "语音未开启：点击开启"
-    : "语音未配置";
+        : "语音未开启：点击开启";
 
   const vrmPath = presentation?.asset?.vrm_path;
   const vrmPersonaId = presentation?.persona_id;

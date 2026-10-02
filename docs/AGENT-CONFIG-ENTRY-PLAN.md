@@ -4,8 +4,11 @@
 > 状态：方案定稿；2026-09-10 完成 codex 单卡片最小版与跨平台策略（回归 90 passed）。
 > 外部项目借鉴点见 `docs/EXECUTOR-CONFIG-REFERENCE.md`。
 >
-> 待办标记：阶段二「其余执行器（claude-code / qwen-code 等）页面配置与专属字段」为
-> 后续事项，暂不展开；当前先跑通 codex 一条链路、推进项目主线。
+> 阶段二已落地（2026-10-01）：执行器主线定为 **ACP**。新增通用 `adapter: acp-cli`
+> （`app/agents/acp_cli.py`），claude-code / qwen-code / kimi-cli 由 pending 转为真实
+> ACP 执行器；页面配置对这四类适配器（codex / workbuddy / acp-cli）统一开放，专属字段
+> 由目录 config 下发（`acp_command` / `api_key_env` / `signup_url` / `login_hint`）。
+> 详细决策与实证见 `docs/ACP-DECISION-PACK-2026-10-01.md`。
 
 ## 目标
 
@@ -17,7 +20,8 @@
 
 ## 现状与缺口
 
-- `config/agents.yaml` 是执行器目录事实源（codex 真实接入，其余 adapter: pending）
+- `config/agents.yaml` 是执行器目录事实源（codex / workbuddy / acp-cli 真实接入，
+  reasonix 仍为 adapter: pending）
 - 后端已内置 `config/agents.local.yaml` 按 name 合并覆盖机制（`app/agents/catalog.py`）
 - `/api/agents` 只读探测；`/api/agents/config` 已返回完整目录条目，但**没有写接口**
 - 前端「执行器状态」卡只有刷新按钮，无编辑入口

@@ -1,16 +1,23 @@
 """WorkBuddy 执行器适配器：复用本机 WorkBuddy 自带 CLI，通过 ACP 真实执行任务。
 
-三个关键事实（2026-09-12 本机实测，见迁移文档 §10）：
+三个关键事实：
 
 1. CLI 位置：WorkBuddy 安装目录内的
    ``resources/app.asar.unpacked/cli/bin/codebuddy``。
    它是 JS 脚本，**需要 Node 运行时**，不能像普通 exe 那样直接双击运行。
 2. **终端用户不必安装 Node**：WorkBuddy 桌面端本身就是 Electron 应用，
-   设 ``ELECTRON_RUN_AS_NODE=1`` 后可用 ``WorkBuddy.exe`` / ``WorkBuddy``
-   当 Node 解释器用（实测 Node v22.21.1）——这是满足「零安装」约束的关键。
-3. **登录态是硬前提**：CLI 复用桌面端登录，未登录时 ``session/new`` 会返回
-   JSON-RPC ``-32000 Authentication required``（1.8 秒快速失败、不消耗积分）。
-   这与「未安装」是两种完全不同的状态，必须分开呈现给用户。
+   设 ``ELECTRON_RUN_AS_NODE=1`` 后可用 ``WorkBuddy.exe`` / ``WorkBuddy`` /
+   ``Electron`` 当 Node 解释器用（实测 Node v22.21.1）——这是「零安装」约束的关键。
+3. **凭据必须自备**（2026-10-01 实测，macOS + Windows 双端复现）：
+   CLI 2.147.0 起把凭据落盘加密（``$wbEncrypted``），解封用的 protector key 只由
+   桌面端主进程经 ``CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET`` 下发给它自己的
+   子进程。外部进程 fork 出来的 CLI 一律读不到 → ``at-rest-failures-v1.json`` 记
+   ``missing-key`` → ``-32000 Authentication required``。**登录桌面端不再有用**，
+   唯一通道是把 API Key 经 env（``CODEBUDDY_API_KEY`` / ``CODEBUDDY_AUTH_TOKEN``）
+   传给子进程。这与「未安装」是两种完全不同的状态，必须分开呈现给用户。
+
+探测分两步：``session/new`` 握手（便宜，但**不校验登录**，会假报就绪），
+再跑一条极短 ``session/prompt`` 确认账号真能执行（见 ``_run_exec_probe``）。
 
 另外 ``session/close`` 在 WorkBuddy 的 ACP 实现里不存在（返回 -32601），
 所以这里收尾只 terminate 进程，不发 session/close。
@@ -33,7 +40,13 @@ from typing import Any
 
 from deskmate_contracts.agent import AgentInfo
 
-from app.agents.acp import AcpClient, AcpError, AcpRequestError
+from app.agents.acp import (
+    AcpClient,
+    AcpError,
+    AcpRequestError,
+    content_text as _content_text,
+    option_id_for_kind as _option_id_for_kind,
+)
 from app.agents.base import (
     AgentAdapter,
     AgentExecutionError,
@@ -48,12 +61,35 @@ _CLI_RELATIVE = ("resources", "app.asar.unpacked", "cli", "bin", "codebuddy")
 
 logger = logging.getLogger(__name__)
 
-# 未登录引导文案：任何失败态都要给用户可执行的下一步
+# 凭据引导文案：任何失败态都要给用户可执行的下一步。
+# WorkBuddy CLI 2.147.0 起把凭据落盘加密，解封密钥只由桌面端主进程经私有通道
+# 下发给它自己的子进程 —— 外部进程拉起的 CLI 一律读不到（at-rest-failures 记 missing-key）。
+# 所以「打开桌面端登录」不再是一条可行路径，唯一正门是自备 API Key 注入子进程 env。
 _LOGIN_HINT = (
-    "请先打开 WorkBuddy 桌面端完成登录（右上角头像 → 登录），"
-    "登录成功后回到这里点「重新检测」。登录态由 WorkBuddy 自己持久化，"
-    "DeskMate 无法代替你登录。"
+    "WorkBuddy 的 API Key 需要先订阅付费版才能在 https://copilot.tencent.com/profile/ 申请"
+    "（是否订阅由你决定，DeskMate 不代购也不提供凭据）。"
+    "拿到后填入执行器卡片里的「API Key」并保存，再点「测试连接」。"
+    "WorkBuddy 2.147.0 起桌面端登录态只对它自己的子进程可见，DeskMate 无法复用。"
 )
+
+
+def _credential_hint(raw: str) -> str:
+    """凭据失败的具体形态决定下一步：没配 Key vs Key 被拒。
+
+    带 Key 时 CLI 的报错里会带 401 与 auth-type；完全没有凭据时只有一句
+    "Authentication required"。两者要让用户做的事不同，不能混成一句。
+    """
+    lowered = raw.lower()
+    if "401" in lowered or "auth-type" in lowered:
+        return (
+            "WorkBuddy 拒绝了这把 API Key：可能是未订阅付费版、Key 已失效或额度用尽。"
+            "请到 https://copilot.tencent.com/profile/ 核对订阅与 Key 后重填。"
+        )
+    return _LOGIN_HINT
+
+# 真实执行探针：只握手证明不了「账号能跑任务」——账号为空时 session/new 照样成功，
+# 却在 session/prompt 阶段回 refusal。这条极短、不碰文件、不调工具的提示词用来区分两者。
+_EXEC_PROBE_PROMPT = "只回复两个字：就绪"
 
 
 @dataclass(frozen=True)
@@ -246,6 +282,20 @@ def _parse_version(output: str) -> str | None:
     return match.group(0) if match else (output.splitlines()[0].strip() or None)
 
 
+def _probe_workdir() -> str:
+    """探测用的 CLI 工作目录：固定的临时目录，**不用用户主目录**。
+
+    主目录可能非常大（Windows 上尤其），把它当 workspace 会让 CLI 白扫一遍；
+    固定目录还让 CLI 自身日志文件名稳定可查。跨平台都落在系统临时目录下。
+    """
+    base = Path(tempfile.gettempdir()) / "deskmate-workbuddy-probe"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return str(Path(tempfile.gettempdir()))
+    return str(base)
+
+
 class WorkBuddyAdapter(AgentAdapter):
     """通过 WorkBuddy 自带 CLI 的 ACP/stdio 提交真实任务。"""
 
@@ -303,10 +353,26 @@ class WorkBuddyAdapter(AgentAdapter):
         self._configured = self.catalog_entry.config.get(
             f"{self.name}_command"
         ) or self.catalog_entry.config.get("command")
+        # 网络环境（internal / ioa / cloudhosted / selfhosted）由 WorkBuddy 自身持久化
+        # 状态决定：CLI 文档写明填错会 401 endpoint mismatch。只在显式配置时覆盖，
+        # 不替用户猜环境。
         self._internet_env = str(
-            self.catalog_entry.config.get("internet_environment") or "internal"
-        )
+            self.catalog_entry.config.get("internet_environment") or ""
+        ).strip()
+        # 自备凭据：WorkBuddy CLI 2.147.0 起外部进程读不到桌面端登录态（凭据落盘加密，
+        # protector key 只走桌面端私有通道），唯一可用通道是把 API Key 作为 env 传给
+        # 子进程（官方 ACP 文档的 Zed 示例即如此）。留空则沿用系统环境里已有的
+        # CODEBUDDY_API_KEY / CODEBUDDY_AUTH_TOKEN。
+        self._api_key = str(
+            self.catalog_entry.config.get(f"{self.name}_api_key")
+            or self.catalog_entry.config.get("api_key")
+            or ""
+        ).strip()
         self._probe_cache: tuple[float, str, str] | None = None  # (ts, status, detail)
+        # 真实 prompt 探测结果。健康检查带 3~5s 超时，而真实 prompt 要十几秒，
+        # 所以它只在后台跑，detect() 读缓存，绝不占住请求。
+        self._exec_probe: tuple[float, str, str] | None = None
+        self._exec_task: asyncio.Task[None] | None = None
         self._version_cache: dict[str, str | None] = {}
         self._active_clients: dict[str, AcpClient] = {}
         self._cancel_events: dict[str, asyncio.Event] = {}
@@ -332,6 +398,10 @@ class WorkBuddyAdapter(AgentAdapter):
 
         version = await self._version(runtime)
         status, detail = await self._probe(runtime)
+        if status == "ready":
+            exec_status, exec_detail = self._exec_verdict(runtime)
+            if exec_status is not None:
+                status, detail = exec_status, exec_detail
         return self._info(
             status,
             status == "ready",
@@ -369,10 +439,12 @@ class WorkBuddyAdapter(AgentAdapter):
         return _parse_version(output) if output else None
 
     async def _probe(self, runtime: WorkBuddyRuntime) -> tuple[str, str]:
-        """握手探测登录态：initialize + session/new，结果按 TTL 缓存。
+        """握手探测：initialize + session/new，结果按 TTL 缓存。
 
-        未登录时 session/new 会立刻返回 -32000，不调用模型、不消耗积分，
-        比跑一次真实提问（8 秒 + 积分）便宜得多。
+        注意 session/new **不校验登录**，未登录也会照发 sessionId（旧结论说它会返回
+        -32000，已在 2026-10-01 证伪）。所以它只能证明「CLI 起得来」，
+        真伪由 _run_exec_probe 的 session/prompt 定夺。
+        它便宜（不调用模型、不消耗积分），适合先给用户一个快速反馈。
         """
         cached = self._probe_cache
         if cached is not None and (time.monotonic() - cached[0]) < self._PROBE_TTL_S:
@@ -380,7 +452,7 @@ class WorkBuddyAdapter(AgentAdapter):
 
         client: AcpClient | None = None
         try:
-            client = await self._spawn(runtime, logs_dir=None)
+            client = await self._spawn(runtime, cwd=_probe_workdir(), logs_dir=None)
             await client.request(
                 "initialize",
                 {
@@ -395,15 +467,15 @@ class WorkBuddyAdapter(AgentAdapter):
             )
             await client.request(
                 "session/new",
-                {"cwd": str(Path.home()), "mcpServers": []},
+                {"cwd": _probe_workdir(), "mcpServers": []},
                 timeout_s=30.0,
             )
-            result = ("ready", "WorkBuddy 已就绪：CLI 可启动、账号已登录，可提交真实任务。")
+            result = ("ready", "WorkBuddy CLI 可启动、ACP 握手正常，正在核实账号是否可用。")
         except AcpRequestError as exc:
             if exc.auth_required:
                 result = (
                     "auth_required",
-                    f"WorkBuddy 已安装且 CLI 可运行，但账号未登录或登录已失效。"
+                    f"WorkBuddy 已安装且 CLI 可运行，但没有可用的账号凭据。"
                     f"{_LOGIN_HINT}（原始错误：{exc}）",
                 )
             else:
@@ -417,9 +489,88 @@ class WorkBuddyAdapter(AgentAdapter):
         self._probe_cache = (time.monotonic(), result[0], result[1])
         return result
 
+    def _exec_verdict(self, runtime: WorkBuddyRuntime) -> tuple[str | None, str | None]:
+        """后台真实-prompt 探测的当前结论；必要时顺带发起一次。
+
+        返回 (None, None) 表示还没有结论，调用方沿用握手结果。
+        """
+        cached = self._exec_probe
+        if cached is not None and (time.monotonic() - cached[0]) < self._PROBE_TTL_S:
+            return cached[1], cached[2]
+        if self._exec_task is None or self._exec_task.done():
+            self._exec_task = asyncio.create_task(self._run_exec_probe(runtime))
+        return (cached[1], cached[2]) if cached is not None else (None, None)
+
+    async def _run_exec_probe(self, runtime: WorkBuddyRuntime) -> None:
+        """initialize + session/new + 极短 session/prompt，判「能不能真执行」。
+
+        失败只影响结论措辞，不抛出：探测是后台任务，异常会污染事件循环。
+        """
+        client: AcpClient | None = None
+        try:
+            client = await self._spawn(runtime, cwd=_probe_workdir(), logs_dir=None)
+            await client.request(
+                "initialize",
+                {
+                    "protocolVersion": 1,
+                    "clientCapabilities": {
+                        "fs": {"readTextFile": False, "writeTextFile": False},
+                        "terminal": False,
+                    },
+                    "clientInfo": {"name": "DeskMate", "version": "0.1.0"},
+                },
+                timeout_s=20.0,
+            )
+            created = await client.request(
+                "session/new",
+                {"cwd": _probe_workdir(), "mcpServers": []},
+                timeout_s=30.0,
+            )
+            session_id = created.get("sessionId") if isinstance(created, dict) else None
+            if not session_id:
+                result = ("error", "WorkBuddy session/new 未返回 sessionId")
+            else:
+                prompt_result = await client.request(
+                    "session/prompt",
+                    {
+                        "sessionId": session_id,
+                        "prompt": [{"type": "text", "text": _EXEC_PROBE_PROMPT}],
+                    },
+                    timeout_s=90.0,
+                )
+                stop_reason = (
+                    prompt_result.get("stopReason")
+                    if isinstance(prompt_result, dict)
+                    else None
+                )
+                if stop_reason == "refusal":
+                    meta = prompt_result.get("_meta") if isinstance(prompt_result, dict) else None
+                    raw_error = str((meta or {}).get("codebuddy.ai/errorMessage") or "")
+                    result = (
+                        "auth_required",
+                        "WorkBuddy 能建立会话但拒绝执行任务。\n" + _credential_hint(raw_error),
+                    )
+                else:
+                    result = ("ready", "WorkBuddy 已就绪：CLI 可启动、账号可提交真实任务。")
+        except AcpRequestError as exc:
+            if exc.auth_required:
+                result = (
+                    "auth_required",
+                    f"WorkBuddy 账号凭据不可用。{_LOGIN_HINT}（原始错误：{exc}）",
+                )
+            else:
+                result = ("error", f"WorkBuddy 真实执行探测失败：{exc}")
+        except (AcpError, OSError) as exc:
+            result = ("error", f"WorkBuddy CLI 启动失败：{exc}")
+        finally:
+            if client is not None:
+                await client.close()
+        self._exec_probe = (time.monotonic(), result[0], result[1])
+
     def invalidate_probe(self) -> None:
         """用户点「重新检测」时清掉缓存。"""
         self._probe_cache = None
+        self._exec_probe = None
 
     def _info(
         self,
@@ -463,7 +614,10 @@ class WorkBuddyAdapter(AgentAdapter):
         env["CODEBUDDY_DISABLE_IDE"] = "1"
         env["SERVER__PORT"] = "0"
         env["SERVER__HOST"] = "127.0.0.1"
-        env["CODEBUDDY_INTERNET_ENVIRONMENT"] = self._internet_env
+        if self._internet_env:
+            env["CODEBUDDY_INTERNET_ENVIRONMENT"] = self._internet_env
+        if self._api_key:
+            env["CODEBUDDY_API_KEY"] = self._api_key
         env["NO_COLOR"] = "1"
         return env
 
@@ -481,7 +635,7 @@ class WorkBuddyAdapter(AgentAdapter):
         return await AcpClient.spawn(
             str(runtime.runner),
             args=[str(runtime.cli), "--acp"],
-            cwd=cwd or str(Path.home()),
+            cwd=cwd or _probe_workdir(),
             env=self._child_env(runtime),
             on_update=on_update,
             on_permission=on_permission,
@@ -538,8 +692,9 @@ class WorkBuddyAdapter(AgentAdapter):
             except AcpRequestError as exc:
                 if exc.auth_required:
                     self._probe_cache = None
+                    self._exec_probe = None
                     raise AgentExecutionError(
-                        f"WorkBuddy 未登录，任务无法执行。{_LOGIN_HINT}"
+                        f"WorkBuddy 账号凭据不可用，任务无法执行。{_credential_hint(str(exc))}"
                     ) from exc
                 raise
             session_id = created.get("sessionId") if isinstance(created, dict) else None
@@ -715,47 +870,3 @@ class WorkBuddyAdapter(AgentAdapter):
             return await future
 
         return handle
-
-
-def _option_id_for_kind(options: object, *kinds: str) -> str | None:
-    """按 ACP PermissionOption.kind 找出真正的 optionId。
-
-    WorkBuddy 的 kind 与 optionId 不同名（实测：kind="allow_once" 对应
-    optionId="allow"，kind="reject_once" 对应 optionId="reject"）。只按
-    optionId 猜会命中不到 allow_once、静默升级成 allow_always（永久放行），
-    因此必须以 kind 为准；kind 缺失时才退回「optionId 与 kind 同名」的惯例
-    （Codex ACP 就是同名），保证两种执行器共用同一套逻辑不出错。
-    """
-    items = [item for item in (options or []) if isinstance(item, dict)]
-    by_kind: dict[str, str] = {}
-    by_id: set[str] = set()
-    for item in items:
-        option_id = str(item.get("optionId") or "").strip()
-        if not option_id:
-            continue
-        by_id.add(option_id)
-        kind = str(item.get("kind") or "").strip()
-        if kind:
-            by_kind.setdefault(kind, option_id)
-    for kind in kinds:
-        if kind in by_kind:
-            return by_kind[kind]
-        if kind in by_id:
-            return kind
-    return None
-
-
-def _content_text(value: object) -> str:
-    if isinstance(value, str):
-        return value
-    if not isinstance(value, dict):
-        return ""
-    text = value.get("text")
-    if isinstance(text, str):
-        return text
-    nested = value.get("content")
-    if isinstance(nested, dict):
-        return _content_text(nested)
-    if isinstance(nested, str):
-        return nested
-    return ""

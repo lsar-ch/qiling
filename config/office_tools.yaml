@@ -1,0 +1,96 @@
+# DeskMate 办公引擎目录：写作 / 排版 / 格式转换用的外部工具。
+#
+# 只登记「外部工具本体」，不复制它们的代码：DeskMate 负责探测本机是否可用、
+# 按需安装、调用。工具由用户自行获取，避免包体膨胀与许可证问题。
+#
+# install.kind:
+#   - builtin  随 AI 服务内置，无需安装
+#   - pip      「安装」按钮在本服务虚拟环境执行 pip install
+#   - link     「安装」按钮打开下载页，由用户自行安装
+# detect.kind: builtin | python-module | command
+version: 1
+tools:
+  - name: builtin-writer
+    label: 内置排版引擎
+    detail: 开箱即用：Markdown 转 docx / xlsx / pptx / pdf，含页边距、标题层级、真实编号、表格几何与页脚页码。
+    homepage: null
+    license: MIT / BSD
+    powers: [word, excel, ppt, pdf]
+    install:
+      kind: builtin
+    detect:
+      kind: builtin
+
+  - name: docxtpl
+    label: docxtpl（Word 模板排版）
+    detail: 装好后把公司模板放到 config/office_templates/word.docx，Word 输出就会套用该模板（标题/页眉页脚/样式）；没有模板时用内置排版引擎。
+    homepage: https://github.com/elapouya/python-docx-template
+    license: LGPL-2.1
+    powers: [word]
+    install:
+      kind: pip
+      package: docxtpl
+    detect:
+      kind: python-module
+      value: docxtpl
+
+  - name: weasyprint
+    label: WeasyPrint（HTML/CSS 排版 PDF）
+    detail: 用 CSS 精确控制版式，产出高质量 PDF；macOS 需先 brew install pango，Windows 需 GTK 运行库。
+    homepage: https://weasyprint.org/
+    license: BSD-3-Clause
+    powers: [pdf]
+    install:
+      kind: pip
+      package: weasyprint
+    detect:
+      kind: python-module
+      value: weasyprint
+
+  - name: typst
+    label: Typst（出版级 PDF 排版）
+    detail: 装好后 DeskMate 的 PDF 自动改用它排版（两端对齐、表格与页码更精致），排版质量接近 LaTeX；未安装时用内置 PDF 渲染器。
+    homepage: https://github.com/typst/typst/releases
+    license: Apache-2.0
+    powers: [pdf]
+    install:
+      kind: link
+    detect:
+      kind: command
+      value: typst
+
+  - name: pandoc
+    label: Pandoc（全格式转换）
+    detail: Markdown 一键转 docx / pptx / pdf，可用 reference-doc 套用模板，格式覆盖面最广。
+    homepage: https://pandoc.org/installing.html
+    license: GPL-2.0
+    powers: [word, ppt, pdf, markdown]
+    install:
+      kind: link
+    detect:
+      kind: command
+      value: pandoc
+
+  - name: marp
+    label: Marp（Markdown 转幻灯片）
+    detail: Markdown 写幻灯片，主题化输出 pptx / pdf / html，适合汇报与分享。
+    homepage: https://github.com/marp-team/marp-cli
+    license: MIT
+    powers: [ppt]
+    install:
+      kind: link
+    detect:
+      kind: command
+      value: marp
+
+  - name: libreoffice
+    label: LibreOffice（万能转换兜底）
+    detail: soffice --headless 可把 docx / xlsx / pptx 转 PDF，也能做格式互转，作为兜底导出通道。
+    homepage: https://www.libreoffice.org/download/
+    license: MPL-2.0
+    powers: [word, excel, ppt, pdf]
+    install:
+      kind: link
+    detect:
+      kind: command
+      value: soffice

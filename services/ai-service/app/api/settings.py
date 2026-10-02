@@ -18,9 +18,12 @@ from PIL import Image
 from PIL import UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
-from app.config import PerformanceMode, load_settings
+from deskmate_contracts.events import EventEnvelope
+
+from app.config import PerformanceMode, is_lite_mode, load_settings
 from app.core.persona_asset import NormalizedAvatar, normalize_avatar_image, png_bytes
 from app.core.vrm_validator import validate_vrm, validate_vrma
+from app.agents.factory import rebuild_agent_registry
 from app.llm import create_provider
 from app.model_profiles import (
     CATEGORY_LABELS,
@@ -145,11 +148,32 @@ def _reload_runtime(request: Request) -> None:
     request.app.state.speech = build_speech_stack(request.app.state.settings)
     request.app.state.llm_provider = create_provider(request.app.state.settings)
     request.app.state.echo_mode = request.app.state.settings.llm_provider == "echo"
+    # 换模型后让内置办公执行器立刻用上新 provider（就地重建，保留 registry 引用）
+    rebuild_agent_registry(
+        request.app.state.agent_registry,
+        request.app.state.agent_catalog,
+        request.app.state.llm_provider,
+    )
     vault = Path(request.app.state.settings.obsidian_vault_path).expanduser()
     if request.app.state.settings.memory_mode == "obsidian_linked" and vault.is_dir():
         request.app.state.memory.set_vault_mirror(vault)
     else:
         request.app.state.memory.set_vault_mirror(None)
+
+
+def _voice_active(request: Request) -> bool:
+    """语音当前是否真正可用。
+
+    刻意与挂件侧的判据保持同源，避免两边漂移 ——
+    Widget.tsx:1308 `if (!voiceStatus?.enabled || voiceStatus.activation?.enabled === false) → 停下监听`。
+    其中 voice/status.enabled 来自 SpeechStack.voice_enabled（STT/TTS provider 均可用，
+    未配云 key 时为 False），activation 来自设置项。
+    """
+    return bool(
+        request.app.state.speech.voice_enabled
+        and request.app.state.settings.activation_enabled
+        and not is_lite_mode(request.app.state.settings)
+    )
 
 
 def _persona_dir(request: Request) -> Path:
@@ -311,8 +335,21 @@ async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str
     for key in ("memory_mode", "obsidian_vault_path"):
         if key in data:
             memory[key.removeprefix("memory_")] = data[key]
+    voice_was_active = _voice_active(request)
     _write_overrides(request, current)
     _reload_runtime(request)
+    # 语音由「可用」变为「不可用」（关总开关 / 关语音激活 / 移除云 key / 进轻量模式）时补发 speech.stopped。
+    # 挂件自身是按 voice/status 渲染的，但挂件状态注册表只由事件推动：
+    # 不补发会残留关闭前的 listening 快照，读 /api/widget/state 与实际不符。
+    # 只在下降沿补发，避免每次保存设置都刷一条事件。
+    if voice_was_active and not _voice_active(request):
+        await request.app.state.event_hub.publish(
+            EventEnvelope(
+                event_type="speech.stopped",
+                source="speech",
+                payload={"reason": "voice_disabled_by_settings"},
+            )
+        )
     # Step 9.5: 角色切换后广播 PersonaPresentation
     if switched_persona_id is not None:
         await request.app.state.presentation_bridge.broadcast(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 
 from app.agents.catalog import (
     AgentCatalog,
+    add_local_executor,
     default_catalog_path,
     load_agent_catalog,
     update_local_default_executor,
@@ -26,6 +28,7 @@ class AgentConfigUpdate(BaseModel):
 
     command: str | None = None
     internet_environment: str | None = None  # workbuddy 专用：internal / ioa / selfhosted / null(海外)
+    api_key: str | None = None              # workbuddy / acp-cli 通用：自备 API Key，空串=清除
     enabled: bool | None = None             # None = 不改启停
     set_default: bool | None = None         # True = 把该执行器设为兜底默认
 
@@ -57,11 +60,87 @@ async def list_agents(request: Request) -> dict:
 
 @router.get("/config")
 async def agent_config(request: Request) -> dict:
+    """执行器目录 + 配置。密钥只回传「是否已配置」，明文不出接口。"""
     catalog = _catalog(request)
-    return {
-        "default_executor": catalog.default_executor,
-        "items": [asdict(entry) for entry in catalog.executors],
-    }
+    items: list[dict] = []
+    for entry in catalog.executors:
+        item = asdict(entry)
+        config = dict(item.get("config") or {})
+        key_name = f"{entry.name}_api_key"
+        configured = bool(str(config.pop(key_name, "") or "").strip())
+        item["config"] = config
+        item["api_key_configured"] = configured
+        items.append(item)
+    return {"default_executor": catalog.default_executor, "items": items}
+
+
+class CustomAgentCreate(BaseModel):
+    """用户自行添加的 ACP 执行器：给启动命令就能接入。"""
+
+    name: str
+    label: str | None = None
+    command: str
+    api_key_env: str | None = None  # 该 CLI 读取凭据用的环境变量名
+    api_key: str | None = None
+
+
+_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}$")
+_ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,40}$")
+
+
+@router.post("/custom")
+async def add_custom_agent(payload: CustomAgentCreate, request: Request) -> dict:
+    """按需安装：把用户填的 ACP 执行器写进 agents.local.yaml 并立即可用。"""
+    name = payload.name.strip().lower()
+    if not _NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="名称只能用 2-31 位小写字母、数字与连字符。")
+    command = (payload.command or "").strip()
+    if not command:
+        raise HTTPException(status_code=400, detail="启动命令不能为空。")
+
+    catalog = _catalog(request)
+    if any(entry.name == name for entry in catalog.executors):
+        raise HTTPException(status_code=409, detail=f"执行器 {name} 已存在。")
+
+    key_env = (payload.api_key_env or "").strip()
+    api_key = (payload.api_key or "").strip()
+    if api_key and not key_env:
+        raise HTTPException(
+            status_code=400,
+            detail="填了 API Key 就必须同时填「凭据环境变量名」，否则该 CLI 读不到它。",
+        )
+    if key_env and not _ENV_RE.match(key_env):
+        raise HTTPException(status_code=400, detail="环境变量名需形如 MY_AGENT_API_KEY。")
+
+    config: dict = {"acp_command": command}
+    if key_env:
+        config["api_key_env"] = key_env
+    add_local_executor(
+        default_catalog_path(),
+        {
+            "name": name,
+            "label": (payload.label or name).strip(),
+            "adapter": "acp-cli",
+            "enabled": True,
+            "commands": [command.split()[0]],
+            "protocol": "acp",
+            "capabilities": ["task_execution"],
+            "source_url": None,
+            "tags": ["custom", "acp", "cli"],
+            "detail": f"用户自定义 ACP 执行器：{command}",
+            "config": config,
+        },
+    )
+    if api_key:
+        update_local_executor_config(default_catalog_path(), name, {f"{name}_api_key": api_key})
+
+    fresh = load_agent_catalog()
+    rebuild_agent_registry(
+        _registry(request), fresh, getattr(request.app.state, "llm_provider", None)
+    )
+    request.app.state.agent_catalog = fresh
+    agent = await _registry(request).detect(name)
+    return agent.model_dump(mode="json")
 
 
 @router.post("/{name}/refresh")
@@ -94,11 +173,15 @@ async def update_agent_config(name: str, payload: AgentConfigUpdate, request: Re
     catalog_path = default_catalog_path()
     fields = payload.model_fields_set
 
-    if fields & {"command", "internet_environment"}:
-        if name not in {"codex", "workbuddy"}:
+    if fields & {"command", "internet_environment", "api_key"}:
+        # ACP 主线：凡走 ACP 的执行器都允许填启动命令与自备凭据，
+        # 厂商差异只体现在 config 的 acp_command / api_key_env。
+        entry = next((item for item in _catalog(request).executors if item.name == name), None)
+        adapter = entry.adapter if entry is not None else ""
+        if adapter not in {"codex", "workbuddy", "acp-cli"}:
             raise HTTPException(
                 status_code=400,
-                detail="当前仅 codex 与 workbuddy 支持页面配置命令路径；其余执行器将在后续版本开放。",
+                detail=f"{name} 不是 ACP 执行器，暂不支持页面配置命令与凭据。",
             )
         config_updates: dict = {}
         if "command" in fields:
@@ -108,6 +191,15 @@ async def update_agent_config(name: str, payload: AgentConfigUpdate, request: Re
             # 空字符串视为 null（海外模式）
             env_val = (payload.internet_environment or "").strip() or None
             config_updates["internet_environment"] = env_val
+        if "api_key" in fields:
+            declares_env = bool(str((entry.config or {}).get("api_key_env") or "").strip())
+            if adapter != "workbuddy" and not (adapter == "acp-cli" and declares_env):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{name} 未声明 api_key_env，请改用该 CLI 自身的登录方式。",
+                )
+            # 空字符串视为清除：删掉后回落系统环境里已有的同名变量。
+            config_updates[f"{name}_api_key"] = (payload.api_key or "").strip() or None
         update_local_executor_config(catalog_path, name, config_updates)
 
     if payload.enabled is not None:
@@ -136,7 +228,7 @@ async def update_agent_config(name: str, payload: AgentConfigUpdate, request: Re
         update_local_default_executor(catalog_path, name)
 
     catalog = load_agent_catalog()
-    rebuild_agent_registry(registry, catalog)
+    rebuild_agent_registry(registry, catalog, getattr(request.app.state, "llm_provider", None))
     request.app.state.agent_catalog = catalog
     agent = await registry.detect(name)
     return agent.model_dump(mode="json")

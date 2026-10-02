@@ -24,6 +24,18 @@ from app.agents.base import (
 from app.agents.registry import AgentRegistry
 from app.routing.store import TaskStore
 
+# 办公域：外部 Agent 不可用时都能降级到本地办公执行器。
+_OFFICE_KINDS = {"word", "excel", "ppt", "pdf", "image", "email"}
+# 每种办公任务的产物后缀，用于执行后识别本次新增/修改的文件。
+_OFFICE_SUFFIXES: dict[str, set[str]] = {
+    "word": {".doc", ".docx"},
+    "excel": {".xls", ".xlsx", ".xlsm"},
+    "ppt": {".ppt", ".pptx"},
+    "pdf": {".pdf"},
+    "image": {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff"},
+    "email": {".eml", ".msg"},
+}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -164,6 +176,24 @@ class AgentRunManager:
         self._approval_timers: dict[str, asyncio.Task[None]] = {}  # task_id -> reminder timer
         self._approval_deadlines: dict[str, asyncio.Task[None]] = {}  # task_id -> 超时自动拒绝
         self._stale_reminded: set[str] = set()  # 已提醒过的 run_id，只提醒一次
+        # 服务重启后，磁盘上仍是 queued/running 的 run 必然没有在跑：拉起它的
+        # asyncio 任务随进程一起没了。判据是「进程存活」而不是「跑了多久」，
+        # 所以长任务不会被误杀（Celery/Sidekiq 启动时回收孤儿任务同此思路）。
+        self._reconcile_orphaned_runs()
+
+    def _reconcile_orphaned_runs(self) -> None:
+        """启动时把上次进程遗留的未终态 run 判失败，避免任务台永远转圈。"""
+        for run in self.store.list_recent(limit=1000):
+            if run.status not in ("queued", "running"):
+                continue
+            run.status = "failed"
+            run.error = "服务重启，任务已中断；可重新运行。"
+            run.finished_at = _now()
+            self.store.put(run)
+            task = self.task_store.get(run.task_id)
+            if task is not None:
+                task.status = "failed"
+                self.task_store.put(task)
 
     def _find_previous_session(self, conversation_id: str | None, exclude_task_id: str) -> str | None:
         """找到同一 conversation 下最近一次已完成的 run 的 session_id。"""
@@ -195,7 +225,7 @@ class AgentRunManager:
         original_name: str,
     ) -> AgentAdapter:
         """外部 Agent 不可用时，办公任务降级到本地执行器。"""
-        if task.work_kind not in {"word", "excel", "ppt"}:
+        if task.work_kind not in _OFFICE_KINDS:
             raise AgentExecutionUnsupported(
                 f"{original_name} 当前不可执行；此任务类型不支持本地降级。"
             )
@@ -269,6 +299,24 @@ class AgentRunManager:
                 "生成带 _edited 后缀的新 .pptx（旧 .ppt 如无法直接编辑，请明确说明并保留"
                 "原文件）；完成后在最终回复中列出输出文件路径、页面变更摘要和视觉调整摘要。"
             )
+        elif task.work_kind == "pdf":
+            parts.append(
+                "PDF 处理要求：先读取并理解 PDF 内容（含表格与扫描件说明），再进行提取、"
+                "摘要、合并拆分或表单处理；默认不要覆盖原文件，生成带 _processed 后缀的新文件；"
+                "扫描件若无法直接提取文字请明确说明需要 OCR。完成后列出输出文件路径和变更摘要。"
+            )
+        elif task.work_kind == "image":
+            parts.append(
+                "图片处理要求：先读取图片基本信息（尺寸/格式/EXIF），再进行缩放、裁剪、旋转、"
+                "格式转换、压缩、水印或批量处理；默认不要覆盖原文件，生成带 _processed 后缀的新文件；"
+                "需要识别图片文字时说明使用 OCR。完成后列出输出文件路径和处理摘要。"
+            )
+        elif task.work_kind == "email":
+            parts.append(
+                "邮件处理要求：先解析邮件头、正文与附件，再进行摘要、归类或整理；"
+                "回复/发送邮件需要显式授权，默认只做本地解析，不自动发送。"
+                "完成后列出解析结论与（如有）生成的输出文件路径。"
+            )
         return "\n\n".join(parts)
 
     @staticmethod
@@ -325,7 +373,7 @@ class AgentRunManager:
         adapter = self.registry.get(executor_name)
         if adapter is None:
             raise ValueError(f"执行器不存在：{executor_name}")
-        _is_office = task.work_kind in {"word", "excel", "ppt"}
+        _is_office = task.work_kind in _OFFICE_KINDS
         if not adapter.executable:
             if _is_office:
                 adapter = await self._try_office_fallback(task, adapter, executor_name)
@@ -407,7 +455,7 @@ class AgentRunManager:
             resolved_cwd = cwd_override or await self._resolve_cwd(task)
             before = (
                 self._file_snapshot(resolved_cwd)
-                if task.work_kind in {"word", "excel", "ppt"}
+                if task.work_kind in _OFFICE_KINDS
                 else {}
             )
             prompt = task.input if run.executor == "browser" else await self._compose_prompt(task)
@@ -436,15 +484,10 @@ class AgentRunManager:
             return
         if result.status not in ("completed", "failed", "cancelled"):
             result.status = "completed"
-        if result.status == "completed" and task.work_kind in {"word", "excel", "ppt"}:
-            suffixes = (
-                {".doc", ".docx"}
-                if task.work_kind == "word"
-                else {".xls", ".xlsx"}
-                if task.work_kind == "excel"
-                else {".ppt", ".pptx"}
+        if result.status == "completed" and task.work_kind in _OFFICE_KINDS:
+            artifacts = self._office_artifacts(
+                resolved_cwd, before, _OFFICE_SUFFIXES.get(task.work_kind, set())
             )
-            artifacts = self._office_artifacts(resolved_cwd, before, suffixes)
             if artifacts:
                 artifact_lines = "\n".join(f"- {path}" for path in artifacts)
                 result.message = (

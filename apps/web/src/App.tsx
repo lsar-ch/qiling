@@ -3,12 +3,13 @@ import type { CompiledMemory, DocOverview, EventEnvelope, MemoryDoc, SearchHit }
 import type { AgentInfo, AgentIntegrationStatus, Task } from "@deskmate/contracts";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import {
   connectEvents,
   addMemoryEntry,
   deleteMemoryEntry,
   fetchAgents,
+  addCustomAgent,
   fetchAgentConfig,
   fetchHealth,
   acquireVoiceLease,
@@ -41,6 +42,7 @@ import {
   saveMemoryDoc,
   updateSettings,
   updateAgentConfig,
+  refreshAgentDetection,
   type AppSettings,
   type MemoryVaultStatus,
   type HealthResponse,
@@ -86,7 +88,7 @@ const TASK_ACTIONS: { status: TaskActionStatus; label: string }[] = [
 const AGENT_STATUS_ZH: Record<AgentIntegrationStatus, string> = {
   ready: "可用",
   pending: "预留",
-  auth_required: "需登录",
+  auth_required: "需凭据",
   not_installed: "未安装",
   error: "异常",
 };
@@ -122,7 +124,7 @@ const RUN_STATUS_DOT: Record<AgentRun["status"], string> = {
 const AGENT_PILL: Record<AgentIntegrationStatus, { pill: string; dot: string; note: string; noteCls: string }> = {
   ready: { pill: "bg-ok-50 text-ok", dot: "bg-ok", note: "已接通真实执行，可直接运行任务。", noteCls: "text-ok" },
   pending: { pill: "bg-warn-50 text-warn", dot: "bg-warn", note: "执行器已预留，完成接入配置后即可用。", noteCls: "text-warn" },
-  auth_required: { pill: "bg-warn-50 text-warn", dot: "bg-warn animate-pulse", note: "已安装但账号未登录或登录已失效，登录后重新检测。", noteCls: "text-warn" },
+  auth_required: { pill: "bg-warn-50 text-warn", dot: "bg-warn animate-pulse", note: "已安装但没有可用凭据：自备 API Key（需付费订阅）后测试连接。", noteCls: "text-warn" },
   not_installed: { pill: "bg-line-subtle text-muted", dot: "bg-muted", note: "尚未安装；按文档安装后刷新即可使用。", noteCls: "text-muted" },
   error: { pill: "bg-bad-50 text-bad", dot: "bg-bad", note: "接入异常，请检查配置后刷新。", noteCls: "text-bad" },
 };
@@ -903,6 +905,19 @@ function MyAgentsPage() {
   const [agentError, setAgentError] = useState("");
   const [configName, setConfigName] = useState<string | null>(null);
   const [configCommand, setConfigCommand] = useState("");
+  const [configApiKey, setConfigApiKey] = useState("");
+  const [configKeyConfigured, setConfigKeyConfigured] = useState(false);
+  const [configKeyEnv, setConfigKeyEnv] = useState("");
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customCommand, setCustomCommand] = useState("");
+  const [customKeyEnv, setCustomKeyEnv] = useState("");
+  const [customKey, setCustomKey] = useState("");
+  const [customBusy, setCustomBusy] = useState(false);
+  const [customError, setCustomError] = useState("");
+  const [configLoginHint, setConfigLoginHint] = useState("");
+  const [configSignupUrl, setConfigSignupUrl] = useState("");
+  const [keyTesting, setKeyTesting] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
   const [configError, setConfigError] = useState("");
   const [configNotice, setConfigNotice] = useState("");
@@ -915,7 +930,10 @@ function MyAgentsPage() {
     setAgentError("");
     try {
       const data = await fetchAgents();
-      setAgentItems(data.items);
+      // 已启用的排前面：页面先给「在用的」，再给「可添加的」
+      setAgentItems(
+        [...data.items].sort((a, b) => Number(b.enabled) - Number(a.enabled)),
+      );
       setDefaultExecutor(data.default_executor);
     } catch (e) {
       setAgentError(e instanceof Error ? `执行器状态获取失败：${e.message}` : "执行器状态获取失败");
@@ -944,16 +962,53 @@ function MyAgentsPage() {
     }
   };
 
+  const submitCustomAgent = async (): Promise<void> => {
+    if (customBusy) return;
+    setCustomBusy(true);
+    setCustomError("");
+    try {
+      await addCustomAgent({
+        name: customName.trim(),
+        command: customCommand.trim(),
+        api_key_env: customKeyEnv.trim() || null,
+        api_key: customKey.trim() || null,
+      });
+      setFlagNotice(`已添加执行器 ${customName.trim()}。`);
+      setCustomName("");
+      setCustomCommand("");
+      setCustomKeyEnv("");
+      setCustomKey("");
+      setCustomOpen(false);
+      await loadAgents();
+    } catch (e) {
+      setCustomError(e instanceof Error ? e.message : "添加失败");
+    } finally {
+      setCustomBusy(false);
+    }
+  };
+
   const openAgentConfig = async (name: string): Promise<void> => {
     setConfigName(name);
     setConfigCommand("");
+    setConfigApiKey("");
+    setConfigKeyConfigured(false);
+    setConfigKeyEnv("");
+    setConfigLoginHint("");
+    setConfigSignupUrl("");
     setConfigError("");
     setConfigNotice("");
     try {
       const data = await fetchAgentConfig();
       const entry = data.items.find((item) => item.name === name);
-      const value = entry?.config?.[`${name}_command`];
+      const value = entry?.config?.[`${name}_command`] ?? entry?.config?.acp_command;
       setConfigCommand(typeof value === "string" ? value : "");
+      setConfigKeyConfigured(Boolean(entry?.api_key_configured));
+      const keyEnv = entry?.config?.api_key_env;
+      setConfigKeyEnv(typeof keyEnv === "string" ? keyEnv : "");
+      const hint = entry?.config?.login_hint;
+      setConfigLoginHint(typeof hint === "string" ? hint : "");
+      const signup = entry?.config?.signup_url;
+      setConfigSignupUrl(typeof signup === "string" ? signup : "");
     } catch (e) {
       setConfigError(e instanceof Error ? e.message : "配置读取失败");
     }
@@ -962,17 +1017,29 @@ function MyAgentsPage() {
   const closeAgentConfig = (): void => {
     setConfigName(null);
     setConfigCommand("");
+    setConfigApiKey("");
+    setConfigKeyConfigured(false);
+    setConfigKeyEnv("");
+    setConfigLoginHint("");
+    setConfigSignupUrl("");
     setConfigError("");
     setConfigNotice("");
   };
 
   const saveAgentConfig = async (name: string, commandOverride?: string | null): Promise<void> => {
     const command = commandOverride !== undefined ? commandOverride : configCommand.trim() || null;
+    // 只发送本次真正填写的 key：空串会清掉服务端已存的凭据，不能因为没动输入框就误清。
+    const typedKey = configApiKey.trim();
+    const body: { command: string | null; api_key?: string } = { command };
+    const supportsKey = name === "workbuddy" || Boolean(configKeyEnv);
+    if (supportsKey && commandOverride === undefined && typedKey) {
+      body.api_key = typedKey;
+    }
     setConfigSaving(true);
     setConfigError("");
     setConfigNotice("");
     try {
-      const updated = await updateAgentConfig(name, { command });
+      const updated = await updateAgentConfig(name, body);
       setConfigNotice(command ? "已保存手动路径。" : "已恢复自动检测。");
       if (updated.integration_status === "not_installed") {
         setConfigError(command ? `路径已保存，但该路径不可用：${command}` : `自动检测未找到 ${name}。`);
@@ -983,6 +1050,82 @@ function MyAgentsPage() {
       setConfigError(e instanceof Error ? e.message : "配置保存失败");
     } finally {
       setConfigSaving(false);
+    }
+  };
+
+  const clearAgentKey = async (name: string): Promise<void> => {
+    setConfigSaving(true);
+    setConfigError("");
+    setConfigNotice("");
+    try {
+      await updateAgentConfig(name, { api_key: "" });
+      setConfigApiKey("");
+      setConfigKeyConfigured(false);
+      setConfigNotice("已清除 API Key，将回落到系统环境里的同名变量。");
+      await loadAgents();
+    } catch (e) {
+      setConfigError(e instanceof Error ? e.message : "清除失败");
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  // 通用 ACP 执行器测试：握手探测成本低，一次刷新就能给结论。
+  const testAgentConnection = async (name: string): Promise<void> => {
+    setKeyTesting(true);
+    setConfigError("");
+    setConfigNotice("");
+    try {
+      const typedKey = configApiKey.trim();
+      if (typedKey) {
+        await updateAgentConfig(name, { api_key: typedKey });
+        setConfigApiKey("");
+        setConfigKeyConfigured(true);
+      }
+      await refreshAgentDetection(name);
+      const data = await fetchAgents();
+      const agent = data.items.find((item) => item.name === name);
+      const status = agent?.integration_status ?? "error";
+      if (status === "ready") setConfigNotice("测试通过：ACP 握手正常，可提交任务。");
+      else if (status === "auth_required") setConfigError(`测试未通过：${agent?.detail ?? "凭据不可用"}`);
+      else setConfigError(`测试未通过：${agent?.detail || status}`);
+      await loadAgents();
+    } catch (e) {
+      setConfigError(e instanceof Error ? e.message : "测试连接失败");
+    } finally {
+      setKeyTesting(false);
+    }
+  };
+
+  const testWorkBuddy = async (): Promise<void> => {
+    setKeyTesting(true);
+    setConfigError("");
+    setConfigNotice("");
+    try {
+      const typedKey = configApiKey.trim();
+      if (typedKey) {
+        await updateAgentConfig("workbuddy", { api_key: typedKey });
+        setConfigApiKey("");
+        setConfigKeyConfigured(true);
+      }
+      // session/new 不校验登录，握手必然「成功」；真实结论来自后台那条极短 session/prompt
+      // 探针（约 4~20 秒落地）。所以这里刷新一次后轮询，直到探针结论替换掉握手结果。
+      await refreshAgentDetection("workbuddy");
+      let status = "ready";
+      for (let i = 0; i < 10; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const data = await fetchAgents();
+        status = data.items.find((item) => item.name === "workbuddy")?.integration_status ?? "error";
+        if (status !== "ready") break;
+      }
+      if (status === "ready") setConfigNotice("测试通过：凭据可用，能提交真实任务。");
+      else if (status === "auth_required") setConfigError("测试未通过：凭据无效或额度不足，请核对 API Key。");
+      else setConfigError(`测试未通过：${status}`);
+      await loadAgents();
+    } catch (e) {
+      setConfigError(e instanceof Error ? e.message : "测试连接失败");
+    } finally {
+      setKeyTesting(false);
     }
   };
 
@@ -1066,8 +1209,14 @@ function MyAgentsPage() {
     }
   };
 
+  // 忙时不静默吞点击：按钮 disabled 只管住当前动作，别的动作进行中仍会落到这里。
+  const busyHint = (): void => setTaskNotice("有执行操作正在进行，请等它结束再试。");
+
   const startRun = async (task: Task, executor: string | null): Promise<void> => {
-    if (busyRun) return;
+    if (busyRun) {
+      busyHint();
+      return;
+    }
     const mode = runModes[task.task_id] ?? "read-only";
     setTaskNotice("");
     setTaskError("");
@@ -1087,7 +1236,11 @@ function MyAgentsPage() {
 
   const stopRun = async (task: Task): Promise<void> => {
     const run = runs[task.task_id];
-    if (!run || busyRun) return;
+    if (!run) return;
+    if (busyRun) {
+      busyHint();
+      return;
+    }
     setTaskNotice("");
     setTaskError("");
     setBusyRun("cancel");
@@ -1105,7 +1258,11 @@ function MyAgentsPage() {
 
   const decideAction = async (task: Task, decision: "approved" | "rejected"): Promise<void> => {
     const run = runs[task.task_id];
-    if (!run || busyRun) return;
+    if (!run) return;
+    if (busyRun) {
+      busyHint();
+      return;
+    }
     setTaskNotice("");
     setTaskError("");
     setBusyRun(decision);
@@ -1232,7 +1389,7 @@ function MyAgentsPage() {
                     ) : null}
                   </div>
                   {agent.detail && <p className="text-xs text-muted mt-2 leading-relaxed break-anywhere">{agent.detail}</p>}
-                  {(agent.name === "codex" || agent.name === "workbuddy") && (
+                  {(["codex", "workbuddy", "acp-cli"].includes(agent.adapter)) && (
                     configName === agent.name ? (
                       <div className="mt-2.5 border-t border-line pt-2.5 flex flex-col gap-2 min-w-0">
                         <div>
@@ -1245,6 +1402,72 @@ function MyAgentsPage() {
                           />
                           <p className="text-[11px] text-muted mt-1">留空保存即恢复自动检测。</p>
                         </div>
+                        {(agent.name === "workbuddy" || configKeyEnv) && (
+                          <div className="border-t border-line pt-2.5">
+                            <p className="text-[11px] text-muted mb-1">API Key（自备凭据）</p>
+                            <input
+                              className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                              type="password"
+                              autoComplete="off"
+                              value={configApiKey}
+                              onChange={(e) => setConfigApiKey(e.target.value)}
+                              placeholder={configKeyConfigured ? "已配置（留空则不改动）" : "粘贴 API Key"}
+                            />
+                            <p className="text-[11px] text-muted mt-1 leading-relaxed">
+                              {configLoginHint ? (
+                                <>
+                                  {configLoginHint}
+                                  {configSignupUrl && (
+                                    <>
+                                      {" "}到{" "}
+                                      <a
+                                        href={configSignupUrl}
+                                        target="_blank"
+                                        rel="noreferrer noopener"
+                                        className="text-brand hover:underline"
+                                      >
+                                        {configSignupUrl.replace(/^https?:\/\//, "").split("/")[0]}
+                                      </a>{" "}
+                                      获取。
+                                    </>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  WorkBuddy 的 API Key 需先订阅付费版才能申请，是否订阅由你决定。
+                                  到{" "}
+                                  <a
+                                    href="https://copilot.tencent.com/profile/"
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    className="text-brand hover:underline"
+                                  >
+                                    copilot.tencent.com/profile
+                                  </a>{" "}
+                                  申请后粘贴到这里。桌面端登录态 DeskMate 读不到，只能走自备 Key。
+                                </>
+                              )}
+                            </p>
+                            <div className="flex flex-wrap gap-2 mt-1.5">
+                              <button
+                                className="px-2.5 py-1 rounded-md border border-line text-xs text-ink hover:bg-surface-secondary transition-colors disabled:opacity-50"
+                                onClick={() => void (agent.name === "workbuddy" ? testWorkBuddy() : testAgentConnection(agent.name))}
+                                disabled={keyTesting || configSaving || (!configApiKey.trim() && !configKeyConfigured)}
+                              >
+                                {keyTesting ? "测试中…" : "测试连接"}
+                              </button>
+                              {configKeyConfigured && (
+                                <button
+                                  className="px-2.5 py-1 rounded-md text-xs text-muted hover:text-bad transition-colors disabled:opacity-50"
+                                  onClick={() => void clearAgentKey(agent.name)}
+                                  disabled={keyTesting || configSaving}
+                                >
+                                  清除 Key
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                         {configNotice && <p className="text-[11px] text-ok">{configNotice}</p>}
                         {configError && <p className="text-[11px] text-bad break-anywhere">{configError}</p>}
                         <div className="flex flex-wrap gap-2">
@@ -1276,12 +1499,27 @@ function MyAgentsPage() {
                         <span className="text-[11px] text-muted font-mono truncate min-w-0">
                           {agent.command ? `路径 ${agent.command}` : "未检测到可执行文件"}
                         </span>
-                        <button
-                          className="px-2.5 py-1 rounded-md border border-line text-xs text-ink hover:bg-surface-secondary transition-colors shrink-0"
-                          onClick={() => void openAgentConfig(agent.name)}
-                        >
-                          配置
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {!agent.enabled && (
+                            <button
+                              className="px-2.5 py-1 rounded-md bg-brand text-white text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                              disabled={Boolean(flagBusy)}
+                              onClick={() => void setExecutorFlag(
+                                agent.name,
+                                { enabled: true },
+                                `${agent.label} 已添加并启用。`,
+                              )}
+                            >
+                              添加
+                            </button>
+                          )}
+                          <button
+                            className="px-2.5 py-1 rounded-md border border-line text-xs text-ink hover:bg-surface-secondary transition-colors shrink-0"
+                            onClick={() => void openAgentConfig(agent.name)}
+                          >
+                            配置
+                          </button>
+                        </div>
                       </div>
                     )
                   )}
@@ -1290,6 +1528,78 @@ function MyAgentsPage() {
             })}
           </div>
         ) : null}
+        {agentItems.length > 0 && (
+          <div className="mt-3 border-t border-line pt-3">
+            {customOpen ? (
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-[11px] text-muted mb-1">名称</p>
+                    <input
+                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                      value={customName}
+                      onChange={(e) => setCustomName(e.target.value)}
+                      placeholder="my-agent"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-muted mb-1">启动命令</p>
+                    <input
+                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                      value={customCommand}
+                      onChange={(e) => setCustomCommand(e.target.value)}
+                      placeholder="my-agent --acp"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-muted mb-1">凭据环境变量名（可选）</p>
+                    <input
+                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                      value={customKeyEnv}
+                      onChange={(e) => setCustomKeyEnv(e.target.value)}
+                      placeholder="MY_AGENT_API_KEY"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-muted mb-1">API Key（可选）</p>
+                    <input
+                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                      type="password"
+                      autoComplete="off"
+                      value={customKey}
+                      onChange={(e) => setCustomKey(e.target.value)}
+                      placeholder="留空则用该 CLI 自身登录态"
+                    />
+                  </div>
+                </div>
+                {customError && <p className="text-[11px] text-bad break-anywhere">{customError}</p>}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="px-2.5 py-1 rounded-md bg-brand text-white text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                    onClick={() => void submitCustomAgent()}
+                    disabled={customBusy || !customName.trim() || !customCommand.trim()}
+                  >
+                    {customBusy ? "添加中…" : "添加"}
+                  </button>
+                  <button
+                    className="px-2.5 py-1 rounded-md text-xs text-muted hover:text-ink transition-colors disabled:opacity-50"
+                    onClick={() => { setCustomOpen(false); setCustomError(""); }}
+                    disabled={customBusy}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                className="text-brand text-xs hover:underline"
+                onClick={() => setCustomOpen(true)}
+              >
+                添加自定义执行器
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Recent tasks card */}
@@ -1470,6 +1780,8 @@ function SettingsPage() {
       const nextSettings = await updateSettings(body);
       setSettings(nextSettings);
       setNotice(label);
+      // 语音等设置会被挂件窗口复用：广播一次让别处刷新自己的快照。
+      if (isTauri()) void emit("settings-changed");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
     } finally {
@@ -1742,6 +2054,9 @@ export default function App() {
   // 主界面被隐藏（关闭按钮走 hide）时让出语音租约，挂件自动接管「听」。
   // 只有真隐藏/真显示会翻这个值：最小化、失焦、被遮挡都不算，语音留在主界面。
   const [mainUiVisible, setMainUiVisible] = useState(() => !isTauri());
+  const [pendingConversation, setPendingConversation] = useState<
+    { id: string; seq: number } | null
+  >(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [wsOpen, setWsOpen] = useState(false);
@@ -1829,9 +2144,20 @@ export default function App() {
       if (disposed) stop();
       else unlisten = stop;
     });
+    let unlistenConversation: (() => void) | undefined;
+    void listen<string>("main-ui-open-conversation", (event) => {
+      if (!event.payload) return;
+      // 带一个自增序号：同一会话再次打开也要触发刷新，不能因值相同被跳过。
+      setPendingConversation((prev) => ({ id: event.payload, seq: (prev?.seq ?? 0) + 1 }));
+      setPage("chat");
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlistenConversation = stop;
+    });
     return () => {
       disposed = true;
       unlisten?.();
+      unlistenConversation?.();
       window.clearInterval(pollTimer);
     };
   }, []);
@@ -2156,6 +2482,7 @@ export default function App() {
             voiceLeaseOwned={voiceLeaseOwned}
             onOpenSettings={() => setPage("settings")}
             events={events}
+            targetConversation={pendingConversation}
           />
         )}
 

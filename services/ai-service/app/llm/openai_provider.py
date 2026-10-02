@@ -116,10 +116,12 @@ class OpenAICompatibleProvider:
                         break
                     try:
                         obj = json.loads(data)
+                        # 尾片可能是 {"choices": []}：key 存在但为空，默认值不生效。
+                        choices = obj.get("choices") or []
                         delta = (
-                            obj.get("choices", [{}])[0]
-                            .get("delta", {})
-                            .get("content")
+                            choices[0].get("delta", {}).get("content")
+                            if choices
+                            else None
                         )
                     except json.JSONDecodeError:
                         continue

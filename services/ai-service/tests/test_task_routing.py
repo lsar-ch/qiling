@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -13,6 +14,8 @@ from fastapi.testclient import TestClient
 from app.config import load_settings
 from app.main import create_app
 from app.routing import classify_task_input
+from app.routing.store import TaskStore
+from deskmate_contracts.task import Task
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -299,3 +302,63 @@ def test_chat_task_keeps_project_binding(tmp_path: Path, monkeypatch) -> None:
         assert resp.status_code == 200
         task = client.get("/api/tasks").json()["items"][0]
         assert task["project"] == str(project)
+
+
+def test_chat_answer_task_reaches_terminal_state(tmp_path: Path, monkeypatch) -> None:
+    """纯问答没有执行步骤，对话答完即落终态，避免 tasks/ 只增不减地堆 queued。"""
+    with make_client(tmp_path, monkeypatch, llm_provider=DummyProvider()) as client:
+        resp = client.post("/api/chat/stream", json={"message": "你今天怎么样"})
+        assert resp.status_code == 200
+        task = client.get("/api/tasks").json()["items"][0]
+        assert task["category"] == "answer"
+        assert task["status"] == "completed"
+
+
+def _write_task_file(tasks_dir: Path, task: Task, *, status: str, hours_old: float) -> None:
+    payload = task.model_dump(mode="json")
+    payload["status"] = status
+    payload["updated_at"] = (
+        datetime.now(timezone.utc) - timedelta(hours=hours_old)
+    ).isoformat()
+    tasks_dir.joinpath(f"{task.task_id}.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_task_store_reclaims_only_stale_queued_tasks(tmp_path: Path) -> None:
+    """过期回收只清长期停在 queued 的任务，跑过的/待授权/终态都保留。"""
+    root = tmp_path / "data"
+    tasks_dir = root / "tasks"
+    TaskStore(root, stale_hours=1.0)  # 建目录
+
+    stale_queued = Task(input="昨天的随口一问")
+    _write_task_file(tasks_dir, stale_queued, status="queued", hours_old=3)
+    still_running = Task(input="还在跑的任务")
+    _write_task_file(tasks_dir, still_running, status="running", hours_old=3)
+    done = Task(input="已经做完的任务")
+    _write_task_file(tasks_dir, done, status="completed", hours_old=3)
+
+    reopened = TaskStore(root, stale_hours=1.0)
+
+    assert reopened.get(stale_queued.task_id) is None
+    assert not (tasks_dir / f"{stale_queued.task_id}.json").exists()
+    assert reopened.get(still_running.task_id) is not None
+    assert reopened.get(done.task_id) is not None
+
+
+def test_pdf_image_email_route_as_office_tasks(tmp_path, monkeypatch) -> None:
+    """2026-10-01 办公扩充：PDF / 图片 / 邮件与 Word/Excel/PPT 同走后台执行。"""
+    with make_client(tmp_path, monkeypatch) as client:
+        cases = [
+            ("帮我把这份 PDF 合同提取成要点", "pdf"),
+            ("总结一下这个 PDF", "pdf"),
+            ("把这几张图片压缩一下", "image"),
+            ("识别一下截图里的文字", "image"),
+            ("看看这封邮件说了什么并整理要点", "email"),
+        ]
+        for text, work_kind in cases:
+            resp = client.post("/api/tasks", json={"input": text})
+            assert resp.status_code == 200, text
+            task = resp.json()["task"]
+            assert task["work_kind"] == work_kind, text
+            assert task["category"] == "delegate_backend", text

@@ -1,11 +1,15 @@
 # DeskMate external executor catalog.
 #
 # Registry 会读取此文件并注册 executors：
-# - adapter: codex        表示已有 Codex 专用探测适配器
-# - adapter: pending      表示接口已预留，只做命令/环境探测，不执行真实任务
+# - adapter: acp-cli      通用 ACP/stdio 执行器（执行器主线）：配 acp_command 即可接入
+# - adapter: codex        Codex 专用适配器（同样是 ACP，但有专属探测/续接逻辑）
+# - adapter: workbuddy    WorkBuddy 专用适配器（ACP + Electron 运行时 + 自备 Key）
+# - adapter: pending      接口已预留，只做命令/环境探测，不执行真实任务
 #
-# 默认只保留用户确认的 6 个执行器；后续需要新增时优先修改此目录，
-# 或使用同目录 config/agents.local.yaml 覆盖/追加，不改前端硬编码。
+# 按需安装：只有 codex 与 browser 默认启用，其余 enabled: false —— 用户在
+# 「我的智能体」页按需添加（页面的「可添加」分组），也可以自行添加任意 ACP 执行器。
+# 需要新增时优先修改此目录，或使用同目录 config/agents.local.yaml 覆盖/追加，
+# 不改前端硬编码。
 version: 1
 # 后台任务的兜底执行器。分流器不再硬编码 codex，所以这里才是真正的默认值。
 # 测试 codex 通路中；改回 workbuddy 即可（值必须是 executors 里的 name）。
@@ -24,41 +28,56 @@ executors:
 
   - name: claude-code
     label: Claude Code
-    adapter: pending
-    enabled: true
-    commands: ["claude"]
-    protocol: claude-code-acp
-    capabilities: ["code", "project"]
-    source_url: "https://github.com/anthropics/claude-code"
+    adapter: acp-cli
+    enabled: false
+    commands: ["claude-agent-acp"]
+    protocol: acp
+    capabilities: ["code", "project", "task_execution"]
+    source_url: "https://github.com/agentclientprotocol/claude-agent-acp"
     tags: ["official", "acp", "cli"]
-    detail: "Anthropic 终端编码 agent，保留 ACP/stdio 接入位"
+    detail: "Anthropic Claude Agent，经官方 ACP 适配器接入（全局 ACP 主线，启动命令可覆盖）"
+    config:
+      acp_command: "npx -y @agentclientprotocol/claude-agent-acp"
+      api_key_env: "ANTHROPIC_API_KEY"
+      signup_url: "https://console.anthropic.com/settings/keys"
+      login_hint: "Claude Code 可先在终端运行 claude 用订阅账号登录；或到 console.anthropic.com 申请 API Key 填到下方。"
 
   - name: qwen-code
     label: Qwen Code
-    adapter: pending
-    enabled: true
-    commands: ["qwen-code", "qwen"]
-    protocol: null
-    capabilities: ["code", "project"]
-    source_url: "https://github.com/QwenLM/Qwen-Code"
-    tags: ["open-source", "alibaba", "cli"]
-    detail: "阿里 Qwen 官方 CLI coding agent"
+    adapter: acp-cli
+    enabled: false
+    commands: ["qwen"]
+    protocol: acp
+    capabilities: ["code", "project", "task_execution"]
+    source_url: "https://github.com/QwenLM/qwen-code"
+    tags: ["open-source", "alibaba", "acp", "cli"]
+    detail: "阿里 Qwen 官方 CLI，ACP 模式接入（--acp）"
+    config:
+      acp_command: "npx -y @qwen-code/qwen-code --acp --experimental-skills"
+      api_key_env: "OPENAI_API_KEY"
+      signup_url: "https://bailian.console.aliyun.com/?apiKey=1"
+      login_hint: "Qwen Code 可先用 qwen 登录，或填阿里云百炼 API Key；如用其它 OpenAI 兼容端点可在环境变量配 OPENAI_BASE_URL。"
 
   - name: kimi-cli
     label: Kimi CLI
-    adapter: pending
-    enabled: true
+    adapter: acp-cli
+    enabled: false
     commands: ["kimi"]
-    protocol: null
-    capabilities: ["code", "mcp", "acp"]
+    protocol: acp
+    capabilities: ["code", "mcp", "acp", "task_execution"]
     source_url: "https://github.com/MoonshotAI/kimi-cli"
-    tags: ["open-source", "moonshot", "cli"]
-    detail: "Moonshot Kimi 官方 CLI，具备 MCP 与 ACP IDE 集成"
+    tags: ["open-source", "moonshot", "acp", "cli"]
+    detail: "Moonshot Kimi 官方 CLI，ACP 模式接入（kimi acp）"
+    config:
+      acp_command: "kimi acp"
+      api_key_env: "MOONSHOT_API_KEY"
+      signup_url: "https://platform.moonshot.cn/console/api-keys"
+      login_hint: "Kimi CLI 可先用 kimi 登录，或到 platform.moonshot.cn 申请 API Key 填到下方。"
 
   - name: reasonix
     label: Reasonix
     adapter: pending
-    enabled: true
+    enabled: false
     commands: ["reasonix"]
     protocol: acp
     capabilities: ["code", "project", "long-running"]
@@ -69,7 +88,7 @@ executors:
   - name: workbuddy
     label: WorkBuddy
     adapter: workbuddy
-    enabled: true
+    enabled: false
     commands: ["workbuddy", "wb"]
     protocol: acp
     capabilities: ["task", "agent"]

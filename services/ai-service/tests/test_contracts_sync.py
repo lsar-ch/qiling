@@ -18,6 +18,7 @@ MIRROR_MAP: dict[str, tuple[str, str]] = {
     "SkillDetail": ("extension", "SkillDetail"),
     "McpServerInfo": ("extension", "McpServerInfo"),
     "McpToolInfo": ("extension", "McpToolInfo"),
+    "OfficeToolInfo": ("extension", "OfficeToolInfo"),
     "CharacterConfig": ("character", "CharacterConfig"),
     "PersonaPresentation": ("widget", "PersonaPresentation"),
     "EventEnvelope": ("events", "EventEnvelope"),

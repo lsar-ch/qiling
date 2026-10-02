@@ -1017,6 +1017,41 @@ def test_unlinked_node_is_untouched_by_task_finish(tmp_path, monkeypatch) -> Non
         assert client.app.state.project_node_store.get(other.node_id).status == "planned"
 
 
+def test_restart_marks_interrupted_runs_failed(tmp_path) -> None:
+    """T4：重启后磁盘上遗留的 queued/running run 必然没有进程在跑，启动即判失败。
+
+    判据是「进程存活」而不是「跑了多久」，所以正常跑着的长任务不受影响。
+    """
+    from app.agents.runtime import AgentRun, AgentRunManager, AgentRunStore
+    from app.core.bus import EventHub
+    from app.routing.store import TaskStore
+
+    runs = AgentRunStore(tmp_path / "runs")
+    tasks = TaskStore(tmp_path / "tasks")
+    interrupted = Task(input="重启前还在跑的任务")
+    tasks.put(interrupted)
+    runs.put(AgentRun(task_id=interrupted.task_id, executor="fake", status="running"))
+    finished = Task(input="重启前就完成了的任务")
+    tasks.put(finished)
+    runs.put(AgentRun(task_id=finished.task_id, executor="fake", status="completed"))
+
+    AgentRunManager(
+        registry=None,  # type: ignore[arg-type]
+        store=runs,
+        task_store=tasks,
+        hub=EventHub(),
+        memory=None,  # type: ignore[arg-type]
+        data_dir=tmp_path,
+    )
+
+    killed = runs.latest_for_task(interrupted.task_id)
+    assert killed is not None and killed.status == "failed"
+    assert "服务重启" in (killed.error or "")
+    assert tasks.get(interrupted.task_id).status == "failed"
+    kept = runs.latest_for_task(finished.task_id)
+    assert kept is not None and kept.status == "completed"
+
+
 def test_stale_sweeper_reminds_once_per_run(tmp_path) -> None:
     """T3：超阈值无进展的 running run 发 task.stale，且同一 run 只提醒一次。"""
     import asyncio

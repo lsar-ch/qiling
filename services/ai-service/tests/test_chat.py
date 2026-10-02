@@ -94,6 +94,12 @@ def test_full_qa_roundtrip_short() -> None:
         done = next(e for e in events if e["type"] == "done")
         assert done["short"] is True
         assert done["speak_text"] == "你好呀"
+        completed = next(
+            e
+            for e in client.app.state.event_hub.recent(20)
+            if e.get("event_type") == "conversation.completed"
+        )
+        assert completed["payload"]["expand_ui"] is False
 
         # 事件联动：完成后挂件进入 completed
         state = client.get("/api/widget/state").json()["widget_state"]
@@ -116,6 +122,13 @@ def test_long_reply_flags_expand() -> None:
         events = parse_sse(resp.text)
         done = next(e for e in events if e["type"] == "done")
         assert done["short"] is False
+        # 挂件侧另一条自动展开路径消费的是事件而非 SSE：payload.expand_ui 必须同为真
+        completed = next(
+            e
+            for e in client.app.state.event_hub.recent(20)
+            if e.get("event_type") == "conversation.completed"
+        )
+        assert completed["payload"]["expand_ui"] is True
         # 长回复：语音摘要取开头整句，全文仍完整保存在会话中
         assert len(done["speak_text"]) < len(long_answer)
         assert done["speak_text"].endswith("。")

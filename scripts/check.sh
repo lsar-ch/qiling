@@ -15,4 +15,7 @@ echo "── Desktop 类型检查"
 cd ../desktop
 npm run typecheck --silent
 
+echo "── Desktop 单元测试（vitest）"
+npm run test --silent
+
 echo "✅ 全部通过"

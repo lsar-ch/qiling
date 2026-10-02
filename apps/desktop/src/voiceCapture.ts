@@ -55,6 +55,7 @@ const SILENCE_MS = 650;
 const MIN_SPEECH_MS = 400;
 const MAX_SPEECH_MS = 12000;
 const START_HOLD_MS = 90;
+const MIN_VOICED_MS = 300; // 段内真正高于起音阈值的累计时长；低于此值多为噪声误触
 
 function rms(chunk: Float32Array): number {
   let sum = 0;
@@ -130,6 +131,7 @@ export async function startAlwaysListener(
   let state: "waiting" | "speech" = "waiting";
   let holdMs = 0;
   let speechMs = 0;
+  let voicedMs = 0;
   let silentMs = 0;
   let parts: Float32Array[] = [];
   let partLen = 0;
@@ -140,13 +142,15 @@ export async function startAlwaysListener(
     partLen = 0;
     holdMs = 0;
     speechMs = 0;
+    voicedMs = 0;
     silentMs = 0;
     utteranceStartAt = 0;
     state = "waiting";
   };
 
   const emitSegment = (): void => {
-    if (partLen < rate * 0.25) {
+    if (partLen < rate * 0.25 || voicedMs < MIN_VOICED_MS) {
+      // 静音/噪声误触的片段直接丢弃：上传只会白占租约、白跑一次云端识别。
       reset();
       return;
     }
@@ -183,6 +187,7 @@ export async function startAlwaysListener(
           parts = [new Float32Array(data)];
           partLen = data.length;
           speechMs = frameMs;
+          voicedMs = frameMs;
           silentMs = 0;
         }
       } else {
@@ -194,6 +199,7 @@ export async function startAlwaysListener(
     parts.push(new Float32Array(data));
     partLen += data.length;
     speechMs += frameMs;
+    if (level > START_RMS) voicedMs += frameMs;
     silentMs = level > END_RMS ? 0 : silentMs + frameMs;
 
     if (

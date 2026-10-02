@@ -98,10 +98,12 @@ export default function ChatPage({
   voiceLeaseOwned,
   onOpenSettings,
   events = [],
+  targetConversation = null,
 }: {
   voiceLeaseOwned: boolean;
   onOpenSettings?: () => void;
   events?: EventEnvelope[];
+  targetConversation?: { id: string; seq: number } | null;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -279,6 +281,32 @@ export default function ChatPage({
       });
     };
   }, []);
+
+  // 挂件把长回复所在会话带到前台：切到该会话，避免主界面停在旧快照。
+  useEffect(() => {
+    if (!targetConversation) return;
+    const targetId = targetConversation.id;
+    let alive = true;
+    const loadTarget = async (): Promise<void> => {
+      try {
+        const conv = await fetchConversation(targetId);
+        if (!alive) return;
+        setConversationId(conv.conversation_id);
+        conversationIdRef.current = conv.conversation_id;
+        setMessages(conv.messages);
+        setProjectInput(conv.project || "");
+        setProjectNameInput(conv.project_name || "");
+        await reloadAwaitingRuns(conv.conversation_id);
+        void reloadConversations();
+      } catch {
+        /* 会话不存在或服务离线时保持当前展示 */
+      }
+    };
+    void loadTarget();
+    return () => {
+      alive = false;
+    };
+  }, [targetConversation]);
 
   const onProjectChanged = (event: Event): void => {
     const path = (event as CustomEvent<{ path?: string }>).detail?.path?.trim() ?? "";
@@ -485,6 +513,12 @@ export default function ChatPage({
     for (const env of events) {
       if (seen.has(env.event_id)) continue;
       seen.add(env.event_id);
+      // 对话类事件同样要刷新：挂件/语音发起的对话也走这里。早先只认 task 事件，
+      // 短回复场景主界面会停在打开时的快照，现象就是「卡住不动」。
+      if (env.source === "conversation") {
+        if (env.conversation_id === conversationId) needRefresh = true;
+        continue;
+      }
       if (env.source !== "task") continue;
       if (env.event_type === "memory.updated") {
         const memBubble = typeof env.payload?.bubble === "string" ? env.payload.bubble : "";

@@ -230,3 +230,47 @@ class AcpClient:
             if not future.done():
                 future.set_exception(exc)
         self._requests.clear()
+
+
+def option_id_for_kind(options: object, *kinds: str) -> str | None:
+    """按 ACP PermissionOption.kind 找出真正的 optionId。
+
+    kind 与 optionId 未必同名（WorkBuddy 实测 kind="allow_once" 对应
+    optionId="allow"），只按 optionId 猜会命中不到 allow_once、静默升级成
+    allow_always。所以以 kind 为准，kind 缺失时才退回「optionId 与 kind 同名」
+    的惯例（Codex ACP 即同名）。
+    """
+    items = [item for item in (options or []) if isinstance(item, dict)]
+    by_kind: dict[str, str] = {}
+    by_id: set[str] = set()
+    for item in items:
+        option_id = str(item.get("optionId") or "").strip()
+        if not option_id:
+            continue
+        by_id.add(option_id)
+        kind = str(item.get("kind") or "").strip()
+        if kind:
+            by_kind.setdefault(kind, option_id)
+    for kind in kinds:
+        if kind in by_kind:
+            return by_kind[kind]
+        if kind in by_id:
+            return kind
+    return None
+
+
+def content_text(value: object) -> str:
+    """从 ACP ContentBlock / agent_message_chunk.content 里取纯文本。"""
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, dict):
+        return ""
+    text = value.get("text")
+    if isinstance(text, str):
+        return text
+    nested = value.get("content")
+    if isinstance(nested, dict):
+        return content_text(nested)
+    if isinstance(nested, str):
+        return nested
+    return ""

@@ -230,6 +230,8 @@ export default function VrmStage({
           loopTriggers.has(name) ? THREE.LoopPingPong : THREE.LoopOnce,
           loopTriggers.has(name) ? Infinity : 1,
         );
+        // 非循环 trigger（success/error 等）播完后按住末帧；否则动作权重归零会闪回绑定姿态（T-pose）
+        action.clampWhenFinished = true;
         action.play();
         if (current && current !== action) current.crossFadeTo(action, crossfade, false);
         current = action;

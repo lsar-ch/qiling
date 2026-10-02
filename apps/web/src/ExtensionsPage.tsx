@@ -6,8 +6,10 @@ import {
   deleteSkill,
   fetchMcpServers,
   fetchMcpTools,
+  fetchOfficeTools,
   fetchSkill,
   fetchSkills,
+  installOfficeTool,
   registerSkillDirectory,
   testMcpServer,
   toggleMcpServer,
@@ -17,6 +19,7 @@ import {
 } from "./api";
 import type {
   McpServerInfo,
+  OfficeToolInfo,
   SkillDetail,
   SkillInfo,
 } from "@deskmate/contracts";
@@ -24,7 +27,7 @@ import type {
 const CARD_CLS =
   "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-2.5 min-w-0";
 
-type Tab = "skills" | "mcp";
+type Tab = "skills" | "mcp" | "tools";
 
 function SourceTag({ source }: { source: SkillInfo["source"] }) {
   return (
@@ -670,6 +673,7 @@ export default function ExtensionsPage() {
             [
               { key: "skills", label: "智能技能" },
               { key: "mcp", label: "MCP 服务器" },
+              { key: "tools", label: "办公工具" },
             ] as { key: Tab; label: string }[]
           ).map((item) => (
             <button
@@ -766,6 +770,8 @@ export default function ExtensionsPage() {
         <McpPanel />
       )}
 
+      {tab === "tools" && <OfficeToolsPanel />}
+
       {selected && (
         <SkillDrawer skill={selected} onClose={() => setSelected(null)} />
       )}
@@ -778,6 +784,154 @@ export default function ExtensionsPage() {
             load();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+const POWER_LABELS: Record<string, string> = {
+  word: "Word",
+  excel: "表格",
+  ppt: "幻灯片",
+  pdf: "PDF",
+  markdown: "Markdown",
+};
+
+/** 办公引擎清单：探测本机是否已装，pip 类型一键安装，link 类型跳下载页。 */
+function OfficeToolsPanel() {
+  const [tools, setTools] = useState<OfficeToolInfo[] | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setTools(await fetchOfficeTools());
+      setError("");
+    } catch (item: unknown) {
+      setError(item instanceof Error ? item.message : "加载失败");
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const install = useCallback(async (tool: OfficeToolInfo) => {
+    setBusy(tool.name);
+    setError("");
+    setNotice("");
+    try {
+      const result = await installOfficeTool(tool.name);
+      if (result.tools.length) setTools(result.tools);
+      if (result.ok) setNotice(result.message.split("\n")[0]);
+      else setError(result.message);
+    } catch (item: unknown) {
+      setError(item instanceof Error ? item.message : "安装失败");
+    } finally {
+      setBusy("");
+    }
+  }, []);
+
+  const readyCount = tools?.filter((tool) => tool.installed).length ?? 0;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted">
+          写作与排版用的外部引擎（Progressive Enhancement）：DeskMate 只做探测、安装和调用，
+          工具本体由各项目自行分发。
+        </p>
+        <button
+          className="text-brand text-xs hover:underline shrink-0"
+          onClick={() => void load()}
+        >
+          重新检测
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-lg bg-bad-50 text-bad px-4 py-3 text-sm whitespace-pre-wrap break-anywhere">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="rounded-lg bg-ok-50 text-ok px-4 py-3 text-sm">{notice}</div>
+      )}
+      {!tools && !error && <p className="text-sm text-muted">正在探测本机办公引擎…</p>}
+      {tools && (
+        <>
+          <p className="text-xs text-muted">
+            共 {tools.length} 个引擎，已就绪 {readyCount} 个。
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {tools.map((tool) => (
+              <div key={tool.name} className={CARD_CLS}>
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-ink min-w-0 break-anywhere">
+                    {tool.label}
+                  </h3>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
+                      tool.installed
+                        ? "bg-ok-50 text-ok"
+                        : "bg-surface-tertiary text-muted"
+                    }`}
+                  >
+                    {tool.installed ? "已就绪" : "未安装"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted leading-relaxed">{tool.detail}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {tool.powers.map((power) => (
+                    <span
+                      key={power}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-tertiary text-muted"
+                    >
+                      {POWER_LABELS[power] ?? power}
+                    </span>
+                  ))}
+                  {tool.license && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-tertiary text-muted">
+                      {tool.license}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-end gap-2 mt-auto pt-1">
+                  {!tool.installed && tool.install_kind === "pip" && (
+                    <button
+                      className="text-[11px] px-2.5 py-1 rounded bg-brand text-white disabled:opacity-50"
+                      disabled={Boolean(busy)}
+                      onClick={() => void install(tool)}
+                    >
+                      {busy === tool.name ? "安装中…" : "安装"}
+                    </button>
+                  )}
+                  {!tool.installed && tool.install_kind === "link" && tool.homepage && (
+                    <a
+                      className="text-[11px] px-2.5 py-1 rounded bg-brand text-white"
+                      href={tool.homepage}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      去下载
+                    </a>
+                  )}
+                  {tool.installed && tool.homepage && (
+                    <a
+                      className="text-[11px] text-brand hover:underline"
+                      href={tool.homepage}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      官网
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

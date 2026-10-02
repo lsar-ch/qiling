@@ -190,6 +190,18 @@ _WORK_KIND_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "pdf",
+        (r"\bpdf\b", r"扫描件"),
+    ),
+    (
+        "image",
+        (r"图片", r"照片", r"截图", r"图像", r"\b(png|jpe?g|gif|webp|bmp|tiff?)\b"),
+    ),
+    (
+        "email",
+        (r"邮件", r"邮箱", r"收件箱", r"\beml\b"),
+    ),
+    (
         "browser",
         (r"浏览器", r"网页", r"网站", r"页面", r"链接", r"url"),
     ),
@@ -222,6 +234,9 @@ _OFFICE_ACTION_HINTS = (
     r"提取",
     r"总结",
     r"整理",
+    r"压缩",
+    r"转换",
+    r"识别",
 )
 
 
@@ -236,7 +251,7 @@ def infer_work_kind(text: str) -> str:
 
 
 def _is_office_task(work_kind: str, text: str) -> bool:
-    return work_kind in {"word", "excel", "ppt"} and (
+    return work_kind in {"word", "excel", "ppt", "pdf", "image", "email"} and (
         _matches_any(text, _OFFICE_ACTION_HINTS)
         or bool(re.search(r"\.(docx?|xlsx?|pptx?)\b", text, re.I))
     )

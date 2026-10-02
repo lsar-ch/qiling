@@ -22,6 +22,9 @@ WorkKind = Literal[
     "word",
     "excel",
     "ppt",
+    "pdf",
+    "image",
+    "email",
     "project",
 ]
 

@@ -153,6 +153,23 @@ def update_local_default_executor(catalog_path: Path, name: str) -> None:
     _write_local_overlay(local_path, name, executors)
 
 
+def add_local_executor(catalog_path: Path, entry: dict[str, Any]) -> None:
+    """把用户自定义执行器整条写进覆盖层；同名时整条替换。"""
+    local_path = local_catalog_path(catalog_path)
+    default_executor, executors = _read_local_overlay(local_path)
+    name = str(entry.get("name") or "").strip()
+    if not name:
+        raise ValueError("自定义执行器缺少 name")
+    for item in executors:
+        if item.get("name") == name:
+            item.clear()
+            item.update(entry)
+            break
+    else:
+        executors.append(dict(entry))
+    _write_local_overlay(local_path, default_executor, executors)
+
+
 def update_local_executor_enabled(catalog_path: Path, name: str, enabled: bool) -> None:
     """写 name 执行器的 enabled 开关；写入后由调用方重载目录生效。"""
     local_path = local_catalog_path(catalog_path)
@@ -174,11 +191,34 @@ def load_agent_catalog(path: Path | None = None) -> AgentCatalog:
 
     raw_version = data.get("version", "1")
     raw_default = local_default or data.get("default_executor") or "codex"
+    shipped_default = str(data.get("default_executor") or "codex")
     return AgentCatalog(
         version=str(raw_version),
-        default_executor=str(raw_default),
+        default_executor=_usable_default(entries, str(raw_default), shipped_default),
         executors=entries,
     )
+
+
+def _usable_default(
+    entries: list[AgentCatalogEntry],
+    chosen: str,
+    shipped: str,
+) -> str:
+    """默认执行器必须真实存在且处于启用态。
+
+    覆盖层可能留下一个指向「已被停用/已移除条目」的默认值（例如某个执行器改成
+    按需安装后，老用户的 agents.local.yaml 仍写着它）——那时不能让整个应用带着
+    一个跑不起来的默认执行器启动，回退到出厂默认，再回退到第一个启用的条目。
+    """
+    by_name = {entry.name: entry for entry in entries}
+    if chosen in by_name and by_name[chosen].enabled:
+        return chosen
+    if shipped in by_name and by_name[shipped].enabled:
+        return shipped
+    for entry in entries:
+        if entry.enabled:
+            return entry.name
+    return chosen
 
 
 def _read_yaml_file(path: Path) -> dict[str, Any]:
@@ -327,6 +367,7 @@ def _as_bool(value: object, label: str, source: Path) -> bool:
 
 __all__ = [
     "AgentCatalog",
+    "add_local_executor",
     "AgentCatalogEntry",
     "AgentCatalogError",
     "load_agent_catalog",

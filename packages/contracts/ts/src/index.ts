@@ -11,6 +11,8 @@ export type {
   McpToolAccess,
   McpToolInfo,
   McpTransport,
+  OfficeToolInfo,
+  OfficeToolInstallKind,
   SkillDetail,
   SkillInfo,
 } from "./extension";

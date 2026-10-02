@@ -323,7 +323,8 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             )
             mode = (
                 "agent"
-                if web_fetch or task.work_kind in {"word", "excel", "ppt"}
+                if web_fetch
+                or task.work_kind in {"word", "excel", "ppt", "pdf", "image", "email"}
                 else "read-only"
             )
             auto_run = await request.app.state.agent_run_manager.execute(
@@ -573,6 +574,10 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             memory.upsert_entry("L3", "recent", "最近结果", speak_text[:300] or answer[:300], [assistant_trace_id])
     except Exception:
         pass
+    if task is not None and task.category == "answer":
+        # 纯问答在本轮对话里就答完了，没有执行步骤；落终态避免 tasks/ 长期堆 queued。
+        task.status = "completed"
+        request.app.state.task_store.put(task)
     await hub.publish(
         EventEnvelope(
             event_type="conversation.completed",

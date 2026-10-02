@@ -198,3 +198,122 @@ class TestLocalOfficeAdapter:
         result = asyncio.run(run())
         assert result.status == "failed"
         assert "未找到" in result.error
+
+
+# ── 2026-10-01 扩充：PDF / 图片 / 邮件 ─────────────────────────────
+
+
+def _write_min_pdf(path, text: str = "Hello DeskMate PDF") -> None:
+    """手写一份最小可用 PDF（含一段可提取文本），避免为测试引入 reportlab。"""
+    stream = f"BT /F1 24 Tf 20 100 Td ({text}) Tj ET".encode()
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for index, body in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += f"{index} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n".encode() + b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (
+        f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref}\n%%EOF\n"
+    ).encode()
+    Path(path).write_bytes(bytes(out))
+
+
+def _write_min_png(path, size=(64, 48)) -> None:
+    from PIL import Image
+
+    Image.new("RGB", size, (200, 120, 60)).save(str(path))
+
+
+def _write_min_eml(path) -> None:
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["Subject"] = "周报汇总"
+    msg["From"] = "boss@example.com"
+    msg["To"] = "me@example.com"
+    msg["Date"] = "Wed, 01 Oct 2026 09:00:00 +0800"
+    msg.set_content("本周完成了三件事：ACP 接入、办公扩充、回归测试。")
+    msg.add_attachment(b"col1,col2\n1,2\n", maintype="text", subtype="csv", filename="data.csv")
+    Path(path).write_bytes(bytes(msg))
+
+
+class TestWidenedReaders:
+    def test_reads_pdf_text(self, tmp_path):
+        from app.agents.local_office import _read_pdf
+
+        target = tmp_path / "report.pdf"
+        _write_min_pdf(target, "Quarterly numbers")
+        content = _read_pdf(target)
+        assert "Quarterly numbers" in content
+
+    def test_pdf_without_text_hints_ocr(self, tmp_path):
+        from PIL import Image
+        from app.agents.local_office import _read_pdf
+
+        # 用一张图存成 PDF 近似扫描件；pypdf 提不到文字。
+        target = tmp_path / "scan.pdf"
+        Image.new("RGB", (32, 32), (10, 10, 10)).save(str(target))
+        out = _read_pdf(target)
+        assert "PDF" in out or "OCR" in out
+
+    def test_reads_image_metadata(self, tmp_path):
+        from app.agents.local_office import _read_image
+
+        target = tmp_path / "pic.png"
+        _write_min_png(target, (64, 48))
+        content = _read_image(target)
+        assert "64" in content and "48" in content
+        assert "PNG" in content
+
+    def test_reads_email_headers_body_and_attachments(self, tmp_path):
+        from app.agents.local_office import _read_email
+
+        target = tmp_path / "mail.eml"
+        _write_min_eml(target)
+        content = _read_email(target)
+        assert "周报汇总" in content
+        assert "boss@example.com" in content
+        assert "ACP 接入" in content
+        assert "data.csv" in content
+
+    def test_finds_pdf_image_email_files(self, tmp_path):
+        _write_min_pdf(tmp_path / "a.pdf")
+        _write_min_png(tmp_path / "b.png")
+        _write_min_eml(tmp_path / "c.eml")
+        assert _find_office_files(str(tmp_path), "pdf")[0].name == "a.pdf"
+        assert _find_office_files(str(tmp_path), "image")[0].name == "b.png"
+        assert _find_office_files(str(tmp_path), "email")[0].name == "c.eml"
+
+    def test_local_adapter_handles_pdf_work_kind(self, tmp_path):
+        adapter = LocalOfficeAdapter()
+        _write_min_pdf(tmp_path / "handbook.pdf", "Employee handbook")
+
+        async def on_update(kind, payload):
+            pass
+
+        async def run():
+            return await adapter.run(
+                AgentTaskRequest(
+                    task_id="test_pdf",
+                    prompt="总结这份 PDF",
+                    cwd=str(tmp_path),
+                    config={"work_kind": "pdf"},
+                ),
+                on_update,
+            )
+
+        result = asyncio.run(run())
+        assert result.status == "completed"
+        assert "Employee handbook" in result.message

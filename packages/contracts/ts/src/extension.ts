@@ -48,3 +48,16 @@ export interface McpServerInfo {
   tool_count: number;
   detail: string;
 }
+
+export type OfficeToolInstallKind = "builtin" | "pip" | "link";
+
+export interface OfficeToolInfo {
+  name: string;
+  label: string;
+  detail: string;
+  homepage: string | null;
+  license: string;
+  powers: string[];
+  install_kind: OfficeToolInstallKind;
+  installed: boolean;
+}

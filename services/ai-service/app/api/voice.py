@@ -423,8 +423,10 @@ async def recognize(request: Request, language: str = "zh") -> dict:
         except OSError:
             pass
 
-    if not text.strip():
-        raise HTTPException(status_code=422, detail="未识别到有效语音内容")
+    # 识别结果为空不是错误：用户可能只是没说话，或环境噪声触发了一次分段。
+    # 返回 200 + 空文本，由客户端决定提示方式（web 侧显示「没听清，再说一次？」，
+    # 挂件侧静默丢弃）。422 只留给真正的坏请求（见上方 WAV 校验），
+    # 否则前端只能靠字符串匹配错误文案来区分，非常脆弱。
     return {
         "text": text.strip(),
         "provider": stack.recognizer.name,

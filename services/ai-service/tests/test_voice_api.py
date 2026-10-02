@@ -125,6 +125,25 @@ def test_recognize_rejects_non_wav() -> None:
         assert resp.status_code == 422
 
 
+def test_recognize_empty_result_is_not_an_error() -> None:
+    """空识别结果（用户没说话 / 噪声误触）应是 200 + 空文本，不是 422。
+
+    422 只保留给真正的坏请求（非 WAV）。否则前端只能靠匹配错误文案来区分
+    「没听清」与「识别失败」，且 web 侧「没听清，再说一次？」分支永远不可达。
+    """
+    with _client(recognizer=FakeRecognizer("")) as client:
+        resp = client.post(
+            "/api/voice/recognize?language=zh",
+            content=_wav_bytes(),
+            headers={"Content-Type": "audio/wav", "X-Voice-Client": "widget"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["text"] == ""
+        assert body["provider"] == "fake-stt"
+        assert body["available"] is True
+
+
 def test_synthesize_returns_audio_and_drives_widget() -> None:
     with _client() as client:
         resp = client.post(

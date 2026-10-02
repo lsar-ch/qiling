@@ -9,9 +9,12 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from fastapi.testclient import TestClient
 
+from deskmate_contracts.voice import VoiceParams
+
 from app.config import load_settings
 from app.core.vrm_validator import REQUIRED_VRMA_BONES
 from app.main import create_app
+from app.speech.base import AudioResult, SpeechRecognizer, SpeechStack, SpeechSynthesizer
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -781,3 +784,59 @@ def test_motion_library_serves_shared_clips_only(tmp_path: Path, monkeypatch) ->
         assert client.get("/api/motion-library/female/nope.vrma").status_code == 404
         escaped = client.get("/api/motion-library/female/%2e%2e%2f%2e%2e%2fconfig%2fagents.yaml")
         assert escaped.status_code == 404, escaped.text
+
+
+class _StubRecognizer(SpeechRecognizer):
+    name = "stub-stt"
+
+    async def recognize(self, wav_path: str, language: str = "zh") -> str:
+        return "你好"
+
+
+class _StubSynthesizer(SpeechSynthesizer):
+    name = "stub-tts"
+
+    async def synthesize(self, text: str, params: VoiceParams | None = None) -> AudioResult:
+        return AudioResult(data=b"FAKE", format="wav", sample_rate=24000)
+
+
+def test_disabling_voice_resets_widget_state(tmp_path: Path, monkeypatch) -> None:
+    """关掉语音后挂件状态应回到 idle，不能残留关闭前的 listening 快照。
+
+    挂件状态注册表只由事件推动，而「关语音」是前端停循环、不发事件，
+    因此需要后端在下降沿补发 speech.stopped（见 app/api/settings.py 的 _voice_active）。
+    """
+    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text(
+        "app:/n  version: 0.1.0\n", encoding="utf-8"
+    )
+    (tmp_path / "config" / "personas" / "default.yaml").write_text(
+        "id: default\nname: 千问\nkind: assistant\nlanguage: zh-CN\n",
+        encoding="utf-8",
+    )
+    stack = SpeechStack(
+        recognizer=_StubRecognizer(),
+        synthesizer=_StubSynthesizer(),
+        tts_model="cosyvoice-v2",
+        tts_voice="longxiaochun_v2",
+    )
+    with TestClient(create_app(load_settings(), speech=stack)) as client:
+        assert client.get("/api/voice/status").json()["enabled"] is True
+
+        # 造一个「正在聆听」的状态快照
+        published = client.post(
+            "/api/events/publish",
+            json={"event_type": "speech.started", "source": "speech", "payload": {}},
+        )
+        assert published.status_code == 200
+        assert client.get("/api/widget/state").json()["widget_state"]["state"] == "listening"
+
+        # 关掉语音激活 → 补发 speech.stopped，状态回到 idle
+        client.put("/api/settings", json={"activation_enabled": False})
+        assert client.get("/api/widget/state").json()["widget_state"]["state"] == "idle"
+
+        # 已处于不可用状态时再保存别的设置：不重复补发，状态保持 idle
+        client.put("/api/settings", json={"voice_auto_speak": False})
+        assert client.get("/api/widget/state").json()["widget_state"]["state"] == "idle"

@@ -43,13 +43,14 @@ Obsidian 记忆库：
 
 继续工作前优先阅读：
 
-1. `docs/V2-P1-PROGRESS-2026-09-18.md`（**V2 P1 唯一进度入口：状态/实现位置/坑位/下一步**）
-2. `docs/HANDOVER-2026-09-17.md`（昨夜交接：真机待验收清单、环境坑位）
-3. `docs/PROJECT-ROADMAP.md` 与 `docs/P1-P2-TASK-CARDS.md`
-4. `docs/HANDOVER-2026-09-13.md`（V1 收口过程）
-5. `docs/V1-IMPLEMENTATION-PLAN.md`
-6. `docs/WINDOWS-MIGRATION-2026-09.md`（Windows 迁移主题唯一入口）
-7. 与当前任务相关的专题文档，例如 `docs/STEP9-UI-POLISH.md`、`docs/STEP8-RELEASE-DEGRADATION.md`、`docs/VOICE-ACTIVATION.md`、`docs/TASK-ROUTING.md`、`docs/MAIN-INTERFACE.md`
+1. `docs/HANDOVER-2026-10-01.md`（**最近一次交接：今天完成项、明天待办、环境坑位**）
+2. `docs/V2-P1-PROGRESS-2026-09-18.md`（V2 P1 进度入口：状态/实现位置/坑位/下一步）
+3. `docs/HANDOVER-2026-09-17.md`（更早交接：真机待验收清单）
+4. `docs/PROJECT-ROADMAP.md` 与 `docs/P1-P2-TASK-CARDS.md`
+5. `docs/HANDOVER-2026-09-13.md`（V1 收口过程）
+6. `docs/V1-IMPLEMENTATION-PLAN.md`
+7. `docs/WINDOWS-MIGRATION-2026-09.md`（Windows 迁移主题唯一入口）
+8. 与当前任务相关的专题文档，例如 `docs/OFFICE-TOOLS-2026-10-01.md`、`docs/ACP-DECISION-PACK-2026-10-01.md`、`docs/STEP9-UI-POLISH.md`、`docs/STEP8-RELEASE-DEGRADATION.md`、`docs/VOICE-ACTIVATION.md`、`docs/TASK-ROUTING.md`、`docs/MAIN-INTERFACE.md`
 
 ## 工具路由
 

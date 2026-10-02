@@ -11,11 +11,34 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi import UploadFile, File
 from pydantic import BaseModel
 
+from app.agents import office_tools
+
 router = APIRouter(prefix="/api", tags=["extensions"])
 
 
 def _registry(request: Request):
     return request.app.state.skill_registry
+
+
+@router.get("/office-tools")
+def list_office_tools() -> dict:
+    """办公引擎清单：探测本机是否已装，供「技能扩展」页展示与安装。"""
+    try:
+        tools = office_tools.list_tools()
+    except office_tools.OfficeToolError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"tools": [item.model_dump(mode="json") for item in tools]}
+
+
+@router.post("/office-tools/{name}/install")
+def install_office_tool(name: str) -> dict:
+    """按目录声明安装办公引擎（pip 类型真装；link 类型提示走下载页）。"""
+    try:
+        ok, message = office_tools.install(name)
+        tools = office_tools.list_tools()
+    except office_tools.OfficeToolError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": ok, "message": message, "tools": [item.model_dump(mode="json") for item in tools]}
 
 
 @router.get("/skills")

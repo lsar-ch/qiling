@@ -22,6 +22,8 @@ from .extension import (
     McpToolAccess,
     McpToolInfo,
     McpTransport,
+    OfficeToolInfo,
+    OfficeToolInstallKind,
     SkillDetail,
     SkillInfo,
 )
@@ -84,6 +86,8 @@ __all__ = [
     "McpServerStatus",
     "McpToolAccess",
     "McpToolInfo",
+    "OfficeToolInfo",
+    "OfficeToolInstallKind",
     "McpTransport",
     "RecordingFormat",
     "RecordingMode",
