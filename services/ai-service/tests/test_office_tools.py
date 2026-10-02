@@ -209,3 +209,36 @@ def test_convert_markdown_source_without_pandoc_reports_install(
     with pytest.raises(office_tools.OfficeToolError) as exc:
         office_tools.convert(source, "word")
     assert "Pandoc" in str(exc.value)
+
+
+def test_convert_markdown_to_pptx_routes_to_marp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "deck.md"
+    source.write_text("# T\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        (tmp_path / "deck.pptx").write_bytes(b"PK")
+        return _FakeProc(0)
+
+    monkeypatch.setattr(
+        office_tools.shutil, "which",
+        lambda name: "/fake/marp" if name == "marp" else None,
+    )
+    monkeypatch.setattr(office_tools.subprocess, "run", fake_run)
+
+    produced = office_tools.convert(source, "ppt")
+    assert produced == tmp_path / "deck.pptx"
+    assert calls[0][0] == "/fake/marp"
+    assert calls[0][2] == "-o"
+
+
+def test_convert_markdown_to_pptx_without_marp_reports_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "deck.md"
+    source.write_text("# T\n", encoding="utf-8")
+    monkeypatch.setattr(office_tools.shutil, "which", lambda name: None)
+    with pytest.raises(office_tools.OfficeToolError) as exc:
+        office_tools.convert(source, "ppt")
+    assert "Marp" in str(exc.value)

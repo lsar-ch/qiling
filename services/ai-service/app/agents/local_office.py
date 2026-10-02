@@ -120,7 +120,7 @@ def _find_conversion_source(cwd: str, prompt: str, target_kind: str) -> Path | N
     return latest[1] if latest else None
 
 
-_ENGINE_LABELS = {"pandoc": "Pandoc", "libreoffice": "LibreOffice"}
+_ENGINE_LABELS = {"pandoc": "Pandoc", "marp": "Marp", "libreoffice": "LibreOffice"}
 
 
 def _convert_file(source: Path, target_kind: str) -> tuple[Path, str]:

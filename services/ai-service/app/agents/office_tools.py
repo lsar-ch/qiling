@@ -138,10 +138,29 @@ def soffice_binary() -> str | None:
     return shutil.which("soffice") or shutil.which("libreoffice")
 
 
+def pandoc_binary() -> str | None:
+    """Pandoc 可执行文件（在 PATH 即算装了）。"""
+    return shutil.which("pandoc")
+
+
+def marp_binary() -> str | None:
+    """Marp CLI 可执行文件（在 PATH 即算装了）。"""
+    return shutil.which("marp")
+
+
+def engine_for(source: Path, target_kind: str) -> str:
+    """这次转换用哪个引擎（分发与提示文案共用，避免两处逻辑走偏）。"""
+    if source.suffix.lower() in _PANDOC_SOURCE_SUFFIXES:
+        # Markdown 源：幻灯片交给 Marp（有主题），其余交给 Pandoc。
+        return "marp" if target_kind == "ppt" else "pandoc"
+    if target_kind == "markdown":
+        return "pandoc"
+    return "libreoffice"
+
+
 def convert(source: Path, target_kind: str, outdir: Path | None = None) -> Path:
     """用已装引擎把办公文件转成目标格式，返回产物路径。
 
-    涉及 Markdown 的转换走 Pandoc（md <-> docx/pptx/md），其余走 LibreOffice；
     引擎没装、目标格式不支持或转换失败时抛 ``OfficeToolError``，由调用方转成可读提示。
     产物落在源文件同目录（``outdir`` 可覆盖）。
     """
@@ -150,21 +169,12 @@ def convert(source: Path, target_kind: str, outdir: Path | None = None) -> Path:
         raise OfficeToolError(f"不支持的目标格式：{target_kind}")
     if source.suffix.lower() == f".{fmt}":
         raise OfficeToolError(f"源文件已经是 {fmt}，无需转换。")
-    if engine_for(source, target_kind) == "pandoc":
+    engine = engine_for(source, target_kind)
+    if engine == "marp":
+        return _marp_convert(source, fmt, outdir)
+    if engine == "pandoc":
         return _pandoc_convert(source, fmt, outdir)
     return _libreoffice_convert(source, fmt, outdir)
-
-
-def engine_for(source: Path, target_kind: str) -> str:
-    """这次转换会用哪个引擎：Markdown 相关走 Pandoc，其余 LibreOffice。"""
-    if target_kind == "markdown" or source.suffix.lower() in _PANDOC_SOURCE_SUFFIXES:
-        return "pandoc"
-    return "libreoffice"
-
-
-def pandoc_binary() -> str | None:
-    """Pandoc 可执行文件（在 PATH 即算装了）。"""
-    return shutil.which("pandoc")
 
 
 def _output_path(source: Path, fmt: str, outdir: Path | None) -> Path:
@@ -173,24 +183,36 @@ def _output_path(source: Path, fmt: str, outdir: Path | None) -> Path:
     return destination / f"{source.stem}.{fmt}"
 
 
-def _pandoc_convert(source: Path, fmt: str, outdir: Path | None = None) -> Path:
-    binary = pandoc_binary()
-    if binary is None:
-        raise OfficeToolError("未检测到 Pandoc：请到「技能扩展 → 办公工具」安装后重试。")
-    target = _output_path(source, fmt, outdir)
-    command = [binary, str(source), "-o", str(target)]
+def _run_converter(label: str, command: list[str], target: Path) -> Path:
+    """跑一次命令行转换器：超时/启动失败/非零退出都转成可读的 OfficeToolError。"""
     try:
         proc = subprocess.run(
             command, capture_output=True, text=True, timeout=_CONVERT_TIMEOUT_S
         )
     except subprocess.TimeoutExpired:
-        raise OfficeToolError(f"Pandoc 转换超时（>{_CONVERT_TIMEOUT_S}s）") from None
+        raise OfficeToolError(f"{label} 转换超时（>{_CONVERT_TIMEOUT_S}s）") from None
     except OSError as exc:
-        raise OfficeToolError(f"Pandoc 启动失败：{exc}") from exc
+        raise OfficeToolError(f"{label} 启动失败：{exc}") from exc
     if proc.returncode != 0 or not target.exists():
         tail = ((proc.stdout or "") + (proc.stderr or "")).strip()[-_OUTPUT_TAIL_CHARS:]
-        raise OfficeToolError(f"Pandoc 转换失败：{tail or '未知错误'}")
+        raise OfficeToolError(f"{label} 转换失败：{tail or '未知错误'}")
     return target
+
+
+def _pandoc_convert(source: Path, fmt: str, outdir: Path | None = None) -> Path:
+    binary = pandoc_binary()
+    if binary is None:
+        raise OfficeToolError("未检测到 Pandoc：请到「技能扩展 → 办公工具」安装后重试。")
+    target = _output_path(source, fmt, outdir)
+    return _run_converter("Pandoc", [binary, str(source), "-o", str(target)], target)
+
+
+def _marp_convert(source: Path, fmt: str, outdir: Path | None = None) -> Path:
+    binary = marp_binary()
+    if binary is None:
+        raise OfficeToolError("未检测到 Marp：请到「技能扩展 → 办公工具」安装后重试。")
+    target = _output_path(source, fmt, outdir)
+    return _run_converter("Marp", [binary, str(source), "-o", str(target)], target)
 
 
 def _libreoffice_convert(source: Path, fmt: str, outdir: Path | None = None) -> Path:
@@ -211,16 +233,6 @@ def _libreoffice_convert(source: Path, fmt: str, outdir: Path | None = None) -> 
             str(destination),
             str(source),
         ]
-        try:
-            proc = subprocess.run(
-                command, capture_output=True, text=True, timeout=_CONVERT_TIMEOUT_S
-            )
-        except subprocess.TimeoutExpired:
-            raise OfficeToolError(f"LibreOffice 转换超时（>{_CONVERT_TIMEOUT_S}s）") from None
-        except OSError as exc:
-            raise OfficeToolError(f"LibreOffice 启动失败：{exc}") from exc
-    target = destination / f"{source.stem}.{fmt}"
-    if proc.returncode != 0 or not target.exists():
-        tail = ((proc.stdout or "") + (proc.stderr or "")).strip()[-_OUTPUT_TAIL_CHARS:]
-        raise OfficeToolError(f"LibreOffice 转换失败：{tail or '未知错误'}")
-    return target
+        return _run_converter(
+            "LibreOffice", command, destination / f"{source.stem}.{fmt}"
+        )

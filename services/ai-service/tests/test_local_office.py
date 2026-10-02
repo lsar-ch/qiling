@@ -461,3 +461,39 @@ class TestLocalOfficeConversion:
         result = asyncio.run(run())
         assert result.status == "completed"
         assert "test.md" in result.message
+
+
+    def test_converts_markdown_to_pptx_via_marp(self, tmp_path, monkeypatch):
+        from app.agents import office_tools
+
+        (tmp_path / "deck.md").write_text("# Slide\n\n- a\n", encoding="utf-8")
+
+        def fake_run(command, **kwargs):
+            (tmp_path / "deck.pptx").write_bytes(b"PK")
+            return _FakeConvertProc(0)
+
+        monkeypatch.setattr(
+            office_tools.shutil, "which",
+            lambda name: "/fake/marp" if name == "marp" else None,
+        )
+        monkeypatch.setattr(office_tools.subprocess, "run", fake_run)
+        adapter = LocalOfficeAdapter()
+
+        async def on_update(kind, payload):
+            pass
+
+        async def run():
+            return await adapter.run(
+                AgentTaskRequest(
+                    task_id="c5",
+                    prompt="把 deck.md 转成 pptx",
+                    cwd=str(tmp_path),
+                    config={"work_kind": "ppt"},
+                ),
+                on_update,
+            )
+
+        result = asyncio.run(run())
+        assert result.status == "completed"
+        assert "deck.pptx" in result.message
+        assert "Marp" in result.message

@@ -78,8 +78,9 @@ markdown」「把 readme.md 转成 docx」就走本机引擎转换，产物落�
 
 | 目标 | 引擎 | 说明 |
 | --- | --- | --- |
-| pdf / docx / xlsx / pptx 互转 | LibreOffice | `soffice --headless --convert-to`（独立 profile） |
-| md <-> docx / pptx、任意 -> md | Pandoc | `pandoc <src> -o <dst>` |
+| pdf / docx / xlsx / pptx 互转（非 Markdown 源） | LibreOffice | `soffice --headless --convert-to`（独立 profile） |
+| md -> docx、任意 -> md | Pandoc | `pandoc <src> -o <dst>` |
+| md -> pptx | Marp | 有主题；但 PowerPoint 里是文本框、没有真标题占位符（大纲/朗读读不到） |
 | md -> pdf | 内置渲染器 | 避免 Pandoc 转 PDF 依赖 LaTeX |
 
 装了就用、没装则提示到本页安装；目标格式取整句里最后一个格式词（源在前、目标在后，
@@ -87,6 +88,8 @@ markdown」「把 readme.md 转成 docx」就走本机引擎转换，产物落�
 
 ## 未做（明确记录）
 
-- Marp / WeasyPrint 仍是"可安装、可探测"，尚未接进调用链路；LibreOffice 与 Pandoc 已接转换。
+- WeasyPrint 未接：它需要 pango（macOS 要 brew）+ GTK 运行库，且吃 HTML/CSS，得先补一层
+  Markdown -> HTML；PDF 已有内置 reportlab 与 Typst 两条路，边际价值低。要有 CSS 主题排版
+  需求时再接。
 - 不支持用户自行添加任意 pip 包：清单是白名单，避免把任意包名当命令执行。
 - docxtpl 默认模板已入库（2026-10-02）：装了 docxtpl 即生效；用户可整份替换成公司模板。
