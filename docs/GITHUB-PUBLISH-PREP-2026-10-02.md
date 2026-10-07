@@ -40,7 +40,7 @@
 | --- | --- |
 | Tauri `productName` | `Qiling`（`apps/desktop/src-tauri/tauri.conf.json`） |
 | Bundle identifier | `app.qiling.desktop` |
-| 仓库名 | 拟改 `qiling`；GitHub remote 目前仍是 `my-desktop-project` |
+| 仓库名 | `qiling`（GitHub 已于 2026-10-07 改名） |
 | 包名 | `@qiling/desktop` / `@qiling/contracts`（`package.json`） |
 | Python 包 / 服务名 | `services/ai-service`、`栖灵` 出现在日志/健康检查/通知文案 |
 | 安装包文件名、README 标题、关于页、默认人格叫法、图标资源名 | 需逐一替换 |
@@ -195,6 +195,6 @@
 
 ## 4. 现状速查
 
-**已 OK**：`.env` 未入库；运行数据 / `settings.local.json` / `agent_runs` 未入库；git 历史无真实密钥；办公工具与写作链路已闭环（`369 passed`）；4 个提交已推送 `origin/main`。
+**已 OK**：`.env` 未入库；运行数据 / `settings.local.json` / `agent_runs` 未入库；git 历史无真实密钥；办公工具与写作链路已闭环（`369 passed`）；远端已改名 `lsar-ch/qiling` 并推送 `origin/main`（2026-10-07）。
 
 **待办**：§2.1 改名本地已落地（GitHub remote 改名待做）；§2.2 图标、§2.3 UI 美化、§2.4 审计、§2.5 合规清理、§2.6 打包全部待办。其中 §2.2、§2.5 是**硬阻塞**，§2.3、§2.4 是质量项。
