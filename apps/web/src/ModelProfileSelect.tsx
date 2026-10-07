@@ -46,7 +46,7 @@ export default function ModelProfileSelect({
     <div ref={rootRef} className={`relative min-w-0 ${className}`}>
       <button
         type="button"
-        className={`inline-flex min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-white px-2.5 text-ink shadow-sm transition-colors hover:border-brand/60 hover:bg-brand-50/50 ${buttonClassName}`}
+        className={`inline-flex min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-surface px-2.5 text-ink shadow-sm transition-colors hover:border-brand/60 hover:bg-brand-50/50 ${buttonClassName}`}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -66,7 +66,7 @@ export default function ModelProfileSelect({
         <div
           role="listbox"
           aria-label={ariaLabel}
-          className={`absolute top-full z-50 mt-1.5 max-h-64 overflow-y-auto rounded-xl border border-line bg-white p-1.5 shadow-elevated scroll-thin ${menuClassName}`}
+          className={`absolute top-full z-50 mt-1.5 max-h-64 overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-elevated scroll-thin ${menuClassName}`}
         >
           {options.map((option, index) => {
             const active = value === option.id;

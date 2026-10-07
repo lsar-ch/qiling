@@ -108,5 +108,5 @@ export default function VrmPreview({ personaId, library, trigger, clipBase, loop
     };
   }, [personaId, library, trigger, clipBase, loop, crossfadeMs]);
 
-  return <div ref={mountRef} className="h-64 w-full rounded-lg bg-black/5" />;
+  return <div ref={mountRef} className="h-64 w-full rounded-lg bg-ink/5" />;
 }

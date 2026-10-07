@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { fetchHealth, type HealthResponse } from "./api";
 
 const CARD_CLS =
-  "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0";
+  "rounded-lg border border-line bg-surface shadow-card p-4 flex flex-col gap-3 min-w-0";
 const TITLE_CLS = "text-sm font-semibold text-ink";
 const BODY_CLS = "text-xs text-muted leading-relaxed";
 

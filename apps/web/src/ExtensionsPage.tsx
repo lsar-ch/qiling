@@ -25,7 +25,7 @@ import type {
 } from "@qiling/contracts";
 
 const CARD_CLS =
-  "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-2.5 min-w-0";
+  "rounded-lg border border-line bg-surface shadow-card p-4 flex flex-col gap-2.5 min-w-0";
 
 type Tab = "skills" | "mcp" | "tools";
 
@@ -75,7 +75,7 @@ function SkillDrawer({
       onClick={onClose}
     >
       <aside
-        className="w-full max-w-md h-full bg-white p-6 overflow-y-auto"
+        className="w-full max-w-md h-full bg-surface p-6 overflow-y-auto"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 mb-4">
@@ -100,7 +100,7 @@ function SkillDrawer({
             {skill.enabled ? "已启用" : "已停用"}
           </span>
           {skill.has_scripts && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-500">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-line-subtle text-muted">
               含脚本
             </span>
           )}
@@ -173,7 +173,7 @@ function AddSkillDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white rounded-xl p-6 mx-4"
+        className="w-full max-w-md bg-surface rounded-xl p-6 mx-4"
         onClick={(event) => event.stopPropagation()}
       >
         <h3 className="text-base font-semibold text-ink mb-4">添加技能</h3>
@@ -214,7 +214,7 @@ function AddSkillDialog({
             取消
           </button>
           <button
-            className="px-4 py-2 text-sm rounded-lg bg-brand text-white disabled:opacity-60"
+            className="px-4 py-2 text-sm rounded-lg bg-brand text-onbrand disabled:opacity-60"
             disabled={busy}
             onClick={submit}
           >
@@ -307,7 +307,7 @@ function AddMcpDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white rounded-xl p-6 mx-4"
+        className="w-full max-w-md bg-surface rounded-xl p-6 mx-4"
         onClick={(event) => event.stopPropagation()}
       >
         <h3 className="text-base font-semibold text-ink mb-4">添加 MCP 服务器</h3>
@@ -404,7 +404,7 @@ function AddMcpDialog({
               取消
             </button>
             <button
-              className="text-sm px-3 py-2 rounded-lg bg-brand text-white"
+              className="text-sm px-3 py-2 rounded-lg bg-brand text-onbrand"
               onClick={() => void submit()}
               disabled={busy}
             >
@@ -487,7 +487,7 @@ function McpPanel() {
           MCP 服务器懒启动：仅在使用工具时拉起进程，空闲后自动回收。
         </p>
         <button
-          className="text-sm px-3 py-2 rounded-lg bg-brand text-white shrink-0"
+          className="text-sm px-3 py-2 rounded-lg bg-brand text-onbrand shrink-0"
           onClick={() => setShowAdd(true)}
         >
           + 添加服务器
@@ -501,7 +501,7 @@ function McpPanel() {
       )}
       {!servers && !error && <p className="text-sm text-muted">加载中…</p>}
       {servers && servers.length === 0 && (
-        <div className="rounded-lg border border-dashed border-line bg-white px-5 py-10 text-center">
+        <div className="rounded-lg border border-dashed border-line bg-surface px-5 py-10 text-center">
           <p className="text-sm text-ink font-medium mb-1.5">还没有 MCP 服务器</p>
           <p className="text-xs text-muted">
             添加本地 stdio 进程或远程 streamablehttp 服务器，为对话接入可调用工具。
@@ -585,7 +585,7 @@ function McpPanel() {
           onClick={() => setViewing(null)}
         >
           <aside
-            className="w-full max-w-md h-full bg-white p-6 overflow-y-auto"
+            className="w-full max-w-md h-full bg-surface p-6 overflow-y-auto"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 mb-4">
@@ -604,7 +604,7 @@ function McpPanel() {
               {viewing.tools.map((tool) => (
                 <div
                   key={tool.name}
-                  className="rounded-lg border border-line bg-white p-3"
+                  className="rounded-lg border border-line bg-surface p-3"
                 >
                   <p className="text-sm font-semibold text-ink">{tool.name}</p>
                   <p className="text-xs text-muted leading-relaxed mt-1">
@@ -691,7 +691,7 @@ export default function ExtensionsPage() {
         </div>
         {tab === "skills" && (
           <button
-            className="text-sm px-3 py-2 rounded-lg bg-brand text-white shrink-0"
+            className="text-sm px-3 py-2 rounded-lg bg-brand text-onbrand shrink-0"
             onClick={() => setShowAdd(true)}
           >
             + 添加技能
@@ -900,7 +900,7 @@ function OfficeToolsPanel() {
                 <div className="flex items-center justify-end gap-2 mt-auto pt-1">
                   {!tool.installed && tool.install_kind === "pip" && (
                     <button
-                      className="text-[11px] px-2.5 py-1 rounded bg-brand text-white disabled:opacity-50"
+                      className="text-[11px] px-2.5 py-1 rounded bg-brand text-onbrand disabled:opacity-50"
                       disabled={Boolean(busy)}
                       onClick={() => void install(tool)}
                     >
@@ -909,7 +909,7 @@ function OfficeToolsPanel() {
                   )}
                   {!tool.installed && tool.install_kind === "link" && tool.homepage && (
                     <a
-                      className="text-[11px] px-2.5 py-1 rounded bg-brand text-white"
+                      className="text-[11px] px-2.5 py-1 rounded bg-brand text-onbrand"
                       href={tool.homepage}
                       target="_blank"
                       rel="noreferrer"

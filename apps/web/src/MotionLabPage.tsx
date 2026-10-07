@@ -104,9 +104,9 @@ function OverviewMatrix({
   onJump: (t: ActionTrigger) => void;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-white">
+    <div className="overflow-hidden rounded-lg border border-line bg-surface">
       <table className="w-full text-left text-sm">
-        <thead className="bg-black/5 text-xs text-muted">
+        <thead className="bg-ink/5 text-xs text-muted">
           <tr>
             <th className="px-3 py-1.5 font-medium">状态</th>
             <th className="px-3 py-1.5 font-medium">动作（时长/冷却/权重）</th>
@@ -122,7 +122,7 @@ function OverviewMatrix({
             return (
               <tr
                 key={trigger}
-                className="border-t border-line align-top hover:bg-black/[0.02]"
+                className="border-t border-line align-top hover:bg-ink/[0.02]"
                 onClick={() => onJump(trigger)}
               >
                 <td className="whitespace-nowrap px-3 py-1.5 font-medium">{trigger}</td>
@@ -144,8 +144,8 @@ function OverviewMatrix({
                   {!isVrm ? <span className="text-muted">—</span> : (
                     <span className="flex items-start gap-1.5">
                       {present === undefined ? <span className="text-muted">…</span>
-                        : present ? <span className="text-emerald-600">有</span>
-                        : <span className="text-red-500">缺失</span>}
+                        : present ? <span className="text-ok">有</span>
+                        : <span className="text-bad">缺失</span>}
                       <span className="flex flex-wrap gap-x-1.5">
                         {candidates.map((c) => (
                           <span key={c.clip} className="whitespace-nowrap" title={`权重 ${c.weight}`}>
@@ -350,7 +350,7 @@ export default function MotionLabPage() {
     <div className="mx-auto max-w-6xl px-6 py-6">
       <div className="mb-4 flex items-center justify-end gap-4">
         <button
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-onbrand disabled:opacity-50"
           disabled={saving || !dirty || !personaId}
           onClick={() => void save()}
         >
@@ -358,12 +358,12 @@ export default function MotionLabPage() {
         </button>
       </div>
 
-      {notice && <div className="mb-4 rounded-lg bg-black/5 px-3 py-2 text-sm">{notice}</div>}
+      {notice && <div className="mb-4 rounded-lg bg-ink/5 px-3 py-2 text-sm">{notice}</div>}
 
       <div className="mb-4 flex items-center gap-3">
         <label className="text-sm text-muted">角色</label>
         <select
-          className="rounded-lg border border-line bg-white px-3 py-2 text-sm"
+          className="rounded-lg border border-line bg-surface px-3 py-2 text-sm"
           value={personaId}
           onChange={(e) => setPersonaId(e.target.value)}
         >
@@ -375,7 +375,7 @@ export default function MotionLabPage() {
           {FAMILIES.map((f) => (
             <button
               key={f}
-              className={`rounded-md px-3 py-1 text-sm ${family === f ? "bg-brand text-white" : "text-muted"}`}
+              className={`rounded-md px-3 py-1 text-sm ${family === f ? "bg-brand text-onbrand" : "text-muted"}`}
               onClick={() => setFamily(f)}
             >
               {f}
@@ -407,10 +407,10 @@ export default function MotionLabPage() {
             TRIGGERS.map((trigger) => {
               const specs = actions[family]?.[trigger] ?? [];
               return (
-                <details key={trigger} className="rounded-lg border border-line bg-white">
+                <details key={trigger} className="rounded-lg border border-line bg-surface">
                   <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm font-medium">
                     <button
-                      className="rounded bg-black/5 px-2 py-0.5 text-xs"
+                      className="rounded bg-ink/5 px-2 py-0.5 text-xs"
                       onClick={(e) => { e.preventDefault(); setPreviewTrigger(trigger); }}
                     >
                       预览
@@ -423,7 +423,7 @@ export default function MotionLabPage() {
                       <span className="flex items-center gap-2 overflow-hidden">
                         <span className="truncate" title={spec.id}>{spec.id}</span>
                         <select
-                          className="rounded border border-line bg-white px-1 py-0.5 text-xs text-black"
+                          className="rounded border border-line bg-surface px-1 py-0.5 text-xs text-ink"
                           value={spec.className ?? ""}
                           onChange={(e) => setAction(trigger, i, { className: e.target.value })}
                         >
@@ -447,7 +447,7 @@ export default function MotionLabPage() {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-lg border border-line bg-white p-3">
+          <div className="rounded-lg border border-line bg-surface p-3">
             <h2 className="mb-2 text-sm font-semibold">预览 {previewTrigger}</h2>
             {isVrm && (
               <VrmPreview
@@ -460,20 +460,20 @@ export default function MotionLabPage() {
               />
             )}
             {!isVrm && (
-              <div className="flex h-64 items-center justify-center rounded-lg bg-black/5 text-sm text-muted">
+              <div className="flex h-64 items-center justify-center rounded-lg bg-ink/5 text-sm text-muted">
                 <span className="mascot-preview">{previewSpecs[0]?.className ?? "—"}</span>
               </div>
             )}
             <div className="mt-2 flex flex-wrap gap-1.5">
               {previewSpecs.map((s) => (
-                <button key={s.id} className="rounded bg-black/5 px-2 py-0.5 text-xs">{s.className}</button>
+                <button key={s.id} className="rounded bg-ink/5 px-2 py-0.5 text-xs">{s.className}</button>
               ))}
             </div>
             {isVrm && (
               <label className="mt-3 block text-xs text-muted">
                 动作库（3D）
                 <select
-                  className="mt-1 w-full rounded-lg border border-line bg-white px-2 py-1 text-sm text-black"
+                  className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-1 text-sm text-ink"
                   value={vrm.library ?? ""}
                   onChange={(e) => {
                     const next = e.target.value || undefined;
@@ -492,7 +492,7 @@ export default function MotionLabPage() {
               <label className="mt-3 block text-xs text-muted">
                 VRMA 素材（3D）
                 <select
-                  className="mt-1 w-full rounded-lg border border-line bg-white px-2 py-1 text-sm text-black"
+                  className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-1 text-sm text-ink"
                   value={resolveClip(vrm.actions?.[previewTrigger], previewTrigger).clip}
                   onChange={(e) => setClipRef(previewTrigger, e.target.value)}
                 >
@@ -507,7 +507,7 @@ export default function MotionLabPage() {
             )}
           </div>
 
-          <div className="rounded-lg border border-line bg-white p-3">
+          <div className="rounded-lg border border-line bg-surface p-3">
             <h2 className="mb-2 text-sm font-semibold">调度节奏</h2>
             <div className="space-y-2">
               {ANIMATION_FIELDS.map((f) => (
@@ -516,7 +516,7 @@ export default function MotionLabPage() {
                   <input
                     type="number"
                     step={f.step}
-                    className="w-28 rounded border border-line px-1.5 py-0.5 text-sm text-black"
+                    className="w-28 rounded border border-line px-1.5 py-0.5 text-sm text-ink"
                     value={animations[f.key] ?? DEFAULT_ANIMATIONS[f.key]}
                     onChange={(e) => {
                       setAnimations((p) => ({ ...p, [f.key]: Number(e.target.value) }));
@@ -531,14 +531,14 @@ export default function MotionLabPage() {
             </p>
           </div>
 
-          <div className="rounded-lg border border-line bg-white p-3">
+          <div className="rounded-lg border border-line bg-surface p-3">
             <h2 className="mb-2 text-sm font-semibold">VRM 播放参数</h2>
             <label className="mb-2 block text-xs text-muted">循环 trigger</label>
             <div className="mb-3 flex flex-wrap gap-1.5">
               {TRIGGERS.map((t) => (
                 <button
                   key={t}
-                  className={`rounded px-2 py-0.5 text-xs ${(vrm.loop_triggers ?? []).includes(t) ? "bg-brand text-white" : "bg-black/5"}`}
+                  className={`rounded px-2 py-0.5 text-xs ${(vrm.loop_triggers ?? []).includes(t) ? "bg-brand text-onbrand" : "bg-ink/5"}`}
                   onClick={() => toggleLoopTrigger(t)}
                 >
                   {t}

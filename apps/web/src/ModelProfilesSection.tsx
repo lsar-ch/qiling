@@ -282,7 +282,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
   };
 
   return (
-    <section className="rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-4 min-w-0">
+    <section className="rounded-lg border border-line bg-surface shadow-card p-4 flex flex-col gap-4 min-w-0">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-ink">多模型档案</h3>
@@ -445,7 +445,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
             </label>
           </div>
           <div className="flex justify-end">
-            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50" onClick={() => void save()} disabled={busy}>
+            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-onbrand hover:bg-brand-600 disabled:opacity-50" onClick={() => void save()} disabled={busy}>
               {busy ? "保存中…" : "保存档案"}
             </button>
           </div>

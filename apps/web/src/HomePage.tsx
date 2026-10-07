@@ -121,7 +121,7 @@ export default function HomePage({
               <button
                 type="button"
                 onClick={() => onNavigate("chat")}
-                className="inline-flex items-center gap-2 rounded-md bg-ink py-2.5 px-5 text-sm font-medium text-white hover:bg-ink/88 transition-all duration-200 ease-expo cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-md bg-ink py-2.5 px-5 text-sm font-medium text-surface hover:bg-ink/88 transition-all duration-200 ease-expo cursor-pointer"
               >
                 <MessagesSquare size={16} strokeWidth={2} />
                 开始对话
@@ -255,7 +255,7 @@ export default function HomePage({
                 <button
                   type="button"
                   onClick={() => void runSequence()}
-                  className="px-4 py-2 text-xs font-medium rounded-md bg-brand text-white hover:bg-brand-600 transition-colors cursor-pointer"
+                  className="px-4 py-2 text-xs font-medium rounded-md bg-brand text-onbrand hover:bg-brand-600 transition-colors cursor-pointer"
                 >
                   演示完整流程
                 </button>

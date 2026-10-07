@@ -24,7 +24,7 @@ import VoiceSelect from "./VoiceSelect";
 
 const inputCls =
   "w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20";
-const cardCls = "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0";
+const cardCls = "rounded-lg border border-line bg-surface shadow-card p-4 flex flex-col gap-3 min-w-0";
 
 const personaPresetOptions = [
   { value: "", label: "自定义" },
@@ -68,7 +68,7 @@ function PersonaAvatar({ persona, className }: { persona: PersonaCard; className
     );
   }
   return (
-    <div className={`${className} bg-brand text-white grid place-items-center font-bold shrink-0`}>
+    <div className={`${className} bg-brand text-onbrand grid place-items-center font-bold shrink-0`}>
       {(persona.name || "?").slice(0, 1)}
     </div>
   );
@@ -499,7 +499,7 @@ export default function CharacterPage() {
         {noticeBlock}
         <div className={cardCls}>
           <p className="text-sm text-muted break-words">{error}</p>
-          <button className="rounded-lg px-4 py-2 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors self-start" type="button" onClick={() => void load()}>
+          <button className="rounded-lg px-4 py-2 bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors self-start" type="button" onClick={() => void load()}>
             重试加载
           </button>
         </div>
@@ -515,7 +515,7 @@ export default function CharacterPage() {
         <div className={`${cardCls} items-center justify-center text-center py-10 gap-3`}>
           <p className="text-sm text-ink font-medium">还没有角色卡</p>
           <p className="text-xs text-muted">新建第一个角色卡，为栖灵配置身份、音色与唤醒方式。</p>
-          <button className="rounded-lg px-4 py-2.5 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors" type="button" onClick={() => void createNewPersona()}>
+          <button className="rounded-lg px-4 py-2.5 bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors" type="button" onClick={() => void createNewPersona()}>
             新建第一个角色卡
           </button>
         </div>
@@ -548,7 +548,7 @@ export default function CharacterPage() {
                   key={persona.id}
                   role="button"
                   tabIndex={0}
-                  className={`rounded-lg border bg-white shadow-card p-3.5 flex flex-col gap-2.5 min-w-0 cursor-pointer transition-colors ${
+                  className={`rounded-lg border bg-surface shadow-card p-3.5 flex flex-col gap-2.5 min-w-0 cursor-pointer transition-colors ${
                     isSelected ? "border-brand ring-1 ring-brand/20" : "border-line hover:border-brand"
                   }`}
                   onClick={() => selectPersona(persona)}
@@ -582,7 +582,7 @@ export default function CharacterPage() {
                     </span>
                     <button
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors shrink-0 ${
-                        isActive ? "bg-line-subtle text-muted cursor-default" : "bg-brand text-white hover:bg-brand-600"
+                        isActive ? "bg-line-subtle text-muted cursor-default" : "bg-brand text-onbrand hover:bg-brand-600"
                       }`}
                       type="button"
                       disabled={isActive || isBusy}
@@ -759,7 +759,7 @@ export default function CharacterPage() {
                 <div className="flex items-start gap-3 min-w-0">
                   <PersonaAvatar persona={draft} className="w-20 h-20 rounded-lg text-2xl" />
                   <div className="flex flex-col gap-2 min-w-0">
-                    <label className="inline-flex items-center justify-center rounded-lg px-3 py-2 bg-brand text-white text-xs font-medium hover:bg-brand-600 transition-colors cursor-pointer w-fit">
+                    <label className="inline-flex items-center justify-center rounded-lg px-3 py-2 bg-brand text-onbrand text-xs font-medium hover:bg-brand-600 transition-colors cursor-pointer w-fit">
                       {uploadingAvatar ? "上传中…" : "上传本地图片"}
                       <input
                         className="sr-only"
@@ -952,7 +952,7 @@ export default function CharacterPage() {
                     {deleting ? "删除中…" : "删除角色"}
                   </button>
                   <button
-                    className="rounded-lg px-4 py-2.5 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-55"
+                    className="rounded-lg px-4 py-2.5 bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-55"
                     type="button"
                     disabled={saving}
                     onClick={() => void save()}

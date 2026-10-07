@@ -101,7 +101,7 @@ function ProjectNodeCard({
           <div className="text-[10px] font-medium text-muted">{KIND_LABEL[node.kind]}</div>
           <h3 className="mt-1 text-sm font-semibold text-ink break-words">{node.title}</h3>
         </div>
-        <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] text-muted">
+        <span className="shrink-0 rounded-full bg-surface/70 px-2 py-0.5 text-[10px] text-muted">
           {STATUS_LABEL[node.status]}
         </span>
       </div>
@@ -181,7 +181,7 @@ function TreeView({
   const render = (parentId: string, depth = 0): JSX.Element[] =>
     (byParent.get(parentId) ?? []).flatMap((node) => [
       <div key={node.node_id} className="flex flex-col gap-1.5" style={{ marginLeft: depth * 18 }}>
-        <div className="flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2">
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
           <span className={`h-2 w-2 rounded-full ${node.status === "completed" ? "bg-ok" : node.status === "blocked" ? "bg-bad" : "bg-brand"}`} />
           <span className="text-xs text-muted">{KIND_LABEL[node.kind]}</span>
           <b className="min-w-0 break-words text-sm text-ink">{node.title}</b>
@@ -338,7 +338,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
 
   return (
     <section className="flex flex-col gap-3.5">
-      <section className="rounded-lg border border-line bg-white p-4 shadow-card">
+      <section className="rounded-lg border border-line bg-surface p-4 shadow-card">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <label className="flex min-w-0 flex-1 flex-col gap-1.5">
             <span className="text-xs font-medium text-muted">项目目录</span>
@@ -350,7 +350,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
               onKeyDown={(event) => { if (event.key === "Enter") selectProject(); }}
             />
           </label>
-          <button className="h-10 rounded-lg bg-brand px-4 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50" onClick={selectProject} disabled={!draftPath.trim()}>
+          <button className="h-10 rounded-lg bg-brand px-4 text-sm font-medium text-onbrand hover:bg-brand-600 disabled:opacity-50" onClick={selectProject} disabled={!draftPath.trim()}>
             打开项目
           </button>
         </div>
@@ -382,7 +382,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
       </section>
 
       {!project && (
-        <section className="rounded-lg border border-dashed border-line bg-white px-4 py-12 text-center shadow-card">
+        <section className="rounded-lg border border-dashed border-line bg-surface px-4 py-12 text-center shadow-card">
           <h2 className="text-sm font-semibold text-ink">还没有打开项目</h2>
           <p className="mt-1 text-xs text-muted">输入项目目录后，这里会集中显示项目对话、节点、任务和产物。</p>
         </section>
@@ -397,13 +397,13 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
               ["任务", tasks.length],
               ["进行中", activeRuns.length],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-line bg-white p-4 shadow-card">
+              <div key={label} className="rounded-lg border border-line bg-surface p-4 shadow-card">
                 <div className="text-xs text-muted">{label}</div>
                 <div className="mt-1 text-2xl font-semibold text-ink">{value}</div>
               </div>
             ))}
           </div>
-          <section className="rounded-lg border border-line bg-white p-4 shadow-card">
+          <section className="rounded-lg border border-line bg-surface p-4 shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-ink">当前进度</h2>
               <span className="text-xs text-muted">
@@ -436,7 +436,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
       )}
 
       {tab === "conversations" && project && (
-        <section className="rounded-lg border border-line bg-white p-4 shadow-card">
+        <section className="rounded-lg border border-line bg-surface p-4 shadow-card">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-ink">项目对话</h2>
             {onOpenChat && <button className="text-xs text-brand hover:underline" onClick={onOpenChat}>进入对话</button>}
@@ -453,7 +453,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
       )}
 
       {tab === "tasks" && project && (
-        <section className="rounded-lg border border-line bg-white p-4 shadow-card">
+        <section className="rounded-lg border border-line bg-surface p-4 shadow-card">
           <h2 className="text-sm font-semibold text-ink">项目任务</h2>
           <div className="mt-3 flex flex-col gap-2">
             {tasks.length === 0 ? <p className="text-sm text-muted">暂无项目任务。</p> : tasks.map((task) => (
@@ -468,7 +468,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
       )}
 
       {tab === "files" && project && (
-        <section className="rounded-lg border border-line bg-white p-4 shadow-card">
+        <section className="rounded-lg border border-line bg-surface p-4 shadow-card">
           <h2 className="text-sm font-semibold text-ink">项目产物</h2>
           <div className="mt-3 flex flex-col gap-2">
             {artifacts.length === 0 ? <p className="text-sm text-muted">暂无关联文件。任务完成后可从项目节点关联产物。</p> : artifacts.map((path) => (
@@ -480,7 +480,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
 
       {tab === "nodes" && (
       <section className="grid grid-cols-1 gap-3.5 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="min-w-0 rounded-lg border border-line bg-white p-4 shadow-card">
+        <section className="min-w-0 rounded-lg border border-line bg-surface p-4 shadow-card">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold text-ink">项目进度</h2>
@@ -499,7 +499,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
           )}
         </section>
 
-        <section className="rounded-lg border border-line bg-white p-4 shadow-card">
+        <section className="rounded-lg border border-line bg-surface p-4 shadow-card">
           <div className="flex items-start justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold text-ink">{editingId ? "编辑节点" : "新增节点"}</h2>
@@ -546,7 +546,7 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
                 </div>
               )}
             </div>
-            <button className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50" onClick={() => void saveNode()} disabled={!project || !draft.title.trim()}>
+            <button className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-onbrand hover:bg-brand-600 disabled:opacity-50" onClick={() => void saveNode()} disabled={!project || !draft.title.trim()}>
               {editingId ? "保存修改" : "添加节点"}
             </button>
             {editingId && (

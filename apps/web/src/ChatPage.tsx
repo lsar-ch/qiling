@@ -949,12 +949,12 @@ export default function ChatPage({
   }, [voiceLeaseOwned]);
 
   return (
-    <section className="bg-white border border-line rounded-xl flex flex-col h-[calc(100vh-180px)] overflow-hidden shadow-card">
+    <section className="bg-surface border border-line rounded-xl flex flex-col h-[calc(100vh-180px)] overflow-hidden shadow-card">
       {/* Toolbar */}
       <div className="relative z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-3 border-b border-line text-xs text-muted">
         <div className="flex items-center gap-2 min-w-0">
           <button
-            className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors disabled:opacity-50"
+            className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors disabled:opacity-50"
             onClick={newConversation}
             disabled={busy}
           >
@@ -962,7 +962,7 @@ export default function ChatPage({
           </button>
           <button
             className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
-              showProjects ? "border-brand bg-brand-50 text-brand" : "border-line bg-white text-ink hover:border-brand hover:text-brand"
+              showProjects ? "border-brand bg-brand-50 text-brand" : "border-line bg-surface text-ink hover:border-brand hover:text-brand"
             }`}
             onClick={() => {
               setShowProjects((prev) => !prev);
@@ -973,7 +973,7 @@ export default function ChatPage({
           </button>
           <button
             className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
-              showHistory ? "border-brand bg-brand-50 text-brand" : "border-line bg-white text-ink hover:border-brand hover:text-brand"
+              showHistory ? "border-brand bg-brand-50 text-brand" : "border-line bg-surface text-ink hover:border-brand hover:text-brand"
             }`}
             onClick={() => {
               setShowHistory((prev) => !prev);
@@ -1041,18 +1041,18 @@ export default function ChatPage({
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-ink">项目工程</span>
             <button
-              className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
+              className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
               onClick={() => setProjectDraftOpen((prev) => !prev)}
             >
               {projectDraftOpen ? "取消新建" : "新建"}
             </button>
           </div>
           {projectDraftOpen && (
-            <div className="flex flex-wrap items-end gap-2 mb-2 rounded-lg border border-line bg-white p-2.5">
+            <div className="flex flex-wrap items-end gap-2 mb-2 rounded-lg border border-line bg-surface p-2.5">
               <label className="flex min-w-[160px] flex-1 flex-col gap-1 text-[11px] text-muted">
                 项目名称
                 <input
-                  className="w-full rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-brand"
+                  className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-brand"
                   value={projectNameInput}
                   onChange={(e) => setProjectNameInput(e.target.value)}
                   placeholder="例如：栖灵"
@@ -1061,20 +1061,20 @@ export default function ChatPage({
               <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-[11px] text-muted">
                 项目文件夹
                 <input
-                  className="w-full rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-brand"
+                  className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-brand"
                   value={projectInput}
                   readOnly
                   placeholder="点击右侧选择文件夹"
                 />
               </label>
               <button
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
+                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
                 onClick={() => void chooseProjectFolder()}
               >
                 选择文件夹
               </button>
               <button
-                className="rounded-lg bg-brand px-2.5 py-1.5 text-xs font-medium text-white hover:bg-brand-600 transition-colors disabled:opacity-50"
+                className="rounded-lg bg-brand px-2.5 py-1.5 text-xs font-medium text-onbrand hover:bg-brand-600 transition-colors disabled:opacity-50"
                 onClick={createProjectConversation}
                 disabled={busy}
               >
@@ -1089,7 +1089,7 @@ export default function ChatPage({
             {projectConversations.map((project) => (
               <button
                 key={project.path}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
+                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink hover:border-brand hover:text-brand transition-colors"
                 onClick={() => void openProject(project.path)}
               >
                 {project.name}
@@ -1122,7 +1122,7 @@ export default function ChatPage({
                       className={`text-left rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                         item.conversation_id === conversationId
                           ? "border-brand bg-brand-50 text-brand"
-                          : "border-line bg-white text-ink hover:border-brand"
+                          : "border-line bg-surface text-ink hover:border-brand"
                       }`}
                       onClick={() => void openConversation(item.conversation_id)}
                     >
@@ -1163,13 +1163,13 @@ export default function ChatPage({
                 : "常开已关闭"}
           </span>
           <span className="text-xs text-muted whitespace-nowrap">唤醒词：你好，{personaName}</span>
-          <button className="border border-line bg-white rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={toggleAlwaysListen}>
+          <button className="border border-line bg-surface rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={toggleAlwaysListen}>
             {voiceMode === "off" ? "常开：关" : "常开：开"}
           </button>
-          <button className="border border-line bg-white rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={forceSilence}>
+          <button className="border border-line bg-surface rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={forceSilence}>
             静默
           </button>
-          <button className="border border-line bg-white rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={forceWake}>
+          <button className="border border-line bg-surface rounded-lg px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors whitespace-nowrap" onClick={forceWake}>
             唤醒
           </button>
         </div>
@@ -1197,7 +1197,7 @@ export default function ChatPage({
             </span>
             <div className={`break-words break-anywhere min-w-0 px-3.5 py-2.5 text-sm leading-relaxed ${
               m.role === "user"
-                ? "bg-brand text-white rounded-xl rounded-br-sm"
+                ? "bg-brand text-onbrand rounded-xl rounded-br-sm"
                 : m.role === "tool"
                   ? "bg-surface-secondary border border-line text-ink rounded-xl rounded-bl-sm"
                   : "bg-surface-chat text-ink rounded-xl rounded-bl-sm"
@@ -1219,7 +1219,7 @@ export default function ChatPage({
             )}
             {m.role === "assistant" && m.content && voiceStatus?.enabled && (
               <button
-                className="border border-line bg-white rounded-lg px-2 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors self-start mt-1.5"
+                className="border border-line bg-surface rounded-lg px-2 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors self-start mt-1.5"
                 onClick={() => {
                   stopSpeaking();
                   void speak(m.content.length > 1900 ? `${m.content.slice(0, 1900)}…` : m.content);
@@ -1308,7 +1308,7 @@ export default function ChatPage({
 
       {/* 记忆写入气泡（ponytail：简单 toast，5s 自动消失） */}
       {memoryBubble && (
-        <div className="px-4 py-2 text-xs bg-blue-50 text-blue-700 border-t border-blue-200 transition-opacity">
+        <div className="px-4 py-2 text-xs bg-brand-50 text-brand border-t border-brand/25 transition-opacity">
           <Save size={12} className="inline mr-1 -mt-0.5" />
           {memoryBubble}
         </div>
@@ -1380,8 +1380,8 @@ export default function ChatPage({
         <button
           className={`h-[46px] min-w-[46px] px-2.5 rounded-xl border text-lg transition-colors ${
             recording
-              ? "bg-bad text-white border-bad animate-typing"
-              : "bg-white border-line hover:border-brand"
+              ? "bg-bad text-onbrand border-bad animate-typing"
+              : "bg-surface border-line hover:border-brand"
           } disabled:opacity-50 disabled:cursor-default`}
           onClick={() => void toggleMic()}
           disabled={busy || voiceMode !== "off"}
@@ -1407,7 +1407,7 @@ export default function ChatPage({
         )}
         <button
           type="button"
-          className="h-[46px] min-w-[46px] px-2.5 rounded-xl border border-line bg-white hover:border-brand transition-colors disabled:opacity-50 disabled:cursor-default"
+          className="h-[46px] min-w-[46px] px-2.5 rounded-xl border border-line bg-surface hover:border-brand transition-colors disabled:opacity-50 disabled:cursor-default"
           onClick={() => fileInputRef.current?.click()}
           disabled={busy || uploadingFiles}
           title="添加附件（Excel / Word / PPT / PDF / 图片）"
@@ -1448,7 +1448,7 @@ export default function ChatPage({
                 className={`rounded-md border px-1.5 py-0.5 transition-colors ${
                   chatMode === item.mode
                     ? "border-brand bg-brand-50 text-brand"
-                    : "border-line bg-white text-muted hover:border-brand hover:text-brand"
+                    : "border-line bg-surface text-muted hover:border-brand hover:text-brand"
                 }`}
               >
                 {item.label}
@@ -1477,7 +1477,7 @@ export default function ChatPage({
           className="hidden"
           onChange={(e) => void handleFilesPicked(e.target.files)}
         />
-        <button className="h-[46px] px-5 rounded-xl bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-default" onClick={send} disabled={busy || !input.trim()}>
+        <button className="h-[46px] px-5 rounded-xl bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-default" onClick={send} disabled={busy || !input.trim()}>
           发送
         </button>
       </div>

@@ -157,7 +157,7 @@ const AGENT_PILL: Record<AgentIntegrationStatus, { pill: string; dot: string; no
   error: { pill: "bg-bad-50 text-bad", dot: "bg-bad", note: "接入异常，请检查配置后刷新。", noteCls: "text-bad" },
 };
 const AGENT_CARD_CLS: Record<AgentIntegrationStatus, string> = {
-  ready: "border-line bg-white",
+  ready: "border-line bg-surface",
   pending: "border-warn/40 bg-warn-50/40",
   auth_required: "border-warn/40 bg-warn-50/40",
   not_installed: "border-line-subtle bg-surface-tertiary",
@@ -397,7 +397,7 @@ function KnowledgeBasePage() {
   return (
     <div className="flex flex-col gap-5">
       {/* Vault config card */}
-      <div className="rounded-lg border border-line bg-white shadow-card">
+      <div className="rounded-lg border border-line bg-surface shadow-card">
         <div className="px-5 py-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-ink">Obsidian 知识库</h3>
@@ -440,7 +440,7 @@ function KnowledgeBasePage() {
             )}
             {!linked ? (
               <button
-                className="h-[38px] px-4 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                className="h-[38px] px-4 rounded-lg bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
                 onClick={() => void enableVault()}
                 disabled={saving}
               >
@@ -449,7 +449,7 @@ function KnowledgeBasePage() {
             ) : (
               <>
                 <button
-                  className="h-[38px] px-4 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                  className="h-[38px] px-4 rounded-lg bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
                   onClick={() => void enableVault()}
                   disabled={saving}
                 >
@@ -496,7 +496,7 @@ function KnowledgeBasePage() {
       </div>
 
       {/* Search bar */}
-      <div className="rounded-lg border border-line bg-white shadow-card">
+      <div className="rounded-lg border border-line bg-surface shadow-card">
         <div className="px-5 py-4">
           <h3 className="text-sm font-semibold text-ink mb-3">全文检索</h3>
           <div className="flex items-center gap-2.5">
@@ -509,7 +509,7 @@ function KnowledgeBasePage() {
               disabled={!vaultConfigured}
             />
             <button
-              className="h-[38px] px-4 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-default"
+              className="h-[38px] px-4 rounded-lg bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-default"
               onClick={() => void runSearch()}
               disabled={searching || !query.trim() || !vaultConfigured}
             >
@@ -537,7 +537,7 @@ function KnowledgeBasePage() {
 
       {/* Results */}
       {results && !error && (
-        <div className="rounded-lg border border-line bg-white shadow-card">
+        <div className="rounded-lg border border-line bg-surface shadow-card">
           <div className="px-5 py-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-ink">搜索结果</h3>
@@ -719,7 +719,7 @@ function MemoryPage() {
       {/* Top grid: list + editor */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_minmax(0,1fr)] gap-3.5">
         {/* Memory list */}
-        <section className="rounded-lg border border-line bg-white shadow-card p-4 min-w-0">
+        <section className="rounded-lg border border-line bg-surface shadow-card p-4 min-w-0">
           <div className="flex items-center justify-between gap-2.5 mb-1.5">
             <h3 className="text-sm font-semibold text-ink">记忆概览</h3>
             <button className="text-brand text-xs hover:underline" onClick={() => void reload()}>刷新</button>
@@ -766,7 +766,7 @@ function MemoryPage() {
         </section>
 
         {/* Editor */}
-        <section className="rounded-lg border border-line bg-white shadow-card p-4 min-w-0">
+        <section className="rounded-lg border border-line bg-surface shadow-card p-4 min-w-0">
           <div className="flex items-center justify-between gap-2.5 mb-3">
             <h3 className="text-sm font-semibold text-ink min-w-0 break-anywhere">{selected ? `${selected.layer}/${selected.key}` : "未选择记忆"}</h3>
             <div className="flex items-center gap-2 shrink-0 min-w-0">
@@ -793,7 +793,7 @@ function MemoryPage() {
                           <b className="text-[13px] leading-relaxed break-words">{entry.text}</b>
                           <div className="text-[11px] text-muted">{entry.refs.join(" · ") || "无引用"}</div>
                         </div>
-                        <button className="border border-line bg-white rounded-lg px-2 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors shrink-0" onClick={async () => {
+                        <button className="border border-line bg-surface rounded-lg px-2 py-1 text-xs text-ink hover:border-brand hover:text-brand transition-colors shrink-0" onClick={async () => {
                           await deleteMemoryEntry(entry.entry_id);
                           if (selected) setDoc(await fetchMemoryDoc(selected.layer, selected.key));
                           await reload();
@@ -815,12 +815,12 @@ function MemoryPage() {
       </div>
 
       {/* Bottom tools grid */}
-      <section className="rounded-lg border border-line bg-white shadow-card p-4 grid grid-cols-1 md:grid-cols-3 gap-3.5">
+      <section className="rounded-lg border border-line bg-surface shadow-card p-4 grid grid-cols-1 md:grid-cols-3 gap-3.5">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-ink mb-2.5">记忆检索</h3>
           <div className="flex gap-2 items-center">
             <input className="flex-1 min-w-0 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="输入关键词" />
-            <button className="h-[38px] px-3.5 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors" onClick={() => void runSearch()}>搜索</button>
+            <button className="h-[38px] px-3.5 rounded-lg bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors" onClick={() => void runSearch()}>搜索</button>
           </div>
           {results.length > 0 && (
             <p className="text-[11px] text-muted mt-2.5">「{search.trim()}」共 {results.length} 条命中</p>
@@ -862,14 +862,14 @@ function MemoryPage() {
           {memMode === "export_import" && (
             <div className="flex flex-col gap-2">
               <div className="rounded-lg bg-warn-50 text-warn px-3 py-2.5 text-xs leading-relaxed">导入导出模式仅使用本地档案，可导出记忆包；导入向导将在后续版本补充。</div>
-              <button className="h-[38px] self-start px-3.5 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50" onClick={() => void exportMemory()} disabled={exporting}>{exporting ? "导出中…" : "导出记忆包"}</button>
+              <button className="h-[38px] self-start px-3.5 rounded-lg bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50" onClick={() => void exportMemory()} disabled={exporting}>{exporting ? "导出中…" : "导出记忆包"}</button>
             </div>
           )}
           {memMode === "obsidian_linked" && vaultConfigured && (
             <>
               <div className="flex gap-2 items-center">
                 <input className="flex-1 min-w-0 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={obsidianQuery} onChange={(e) => setObsidianQuery(e.target.value)} placeholder="搜索知识库" />
-                <button className="h-[38px] px-3.5 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors" onClick={() => void runObsidianSearch()}>搜索</button>
+                <button className="h-[38px] px-3.5 rounded-lg bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors" onClick={() => void runObsidianSearch()}>搜索</button>
               </div>
               <p className="flex items-center gap-1.5 text-[11px] text-muted mt-1.5 min-w-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-ok shrink-0" />
@@ -1327,14 +1327,14 @@ function MyAgentsPage() {
   return (
     <section className="flex flex-col gap-3.5">
       {/* Task routing card */}
-      <section className="rounded-lg border border-line bg-white shadow-card p-4">
+      <section className="rounded-lg border border-line bg-surface shadow-card p-4">
         <div className="flex items-center justify-between gap-2.5 mb-3">
           <h3 className="text-sm font-semibold text-ink">任务路由</h3>
           <button className="text-brand text-xs hover:underline" onClick={() => void reload()}>刷新</button>
         </div>
         <div className="flex gap-2 items-center">
           <input className="flex-1 min-w-0 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20" value={input} onChange={(e) => setInput(e.target.value)} placeholder="输入一句话试着分流" />
-          <button className="h-[38px] px-3.5 rounded-lg bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50" onClick={() => void classify()} disabled={loading}>{loading ? "分流中…" : "分流"}</button>
+          <button className="h-[38px] px-3.5 rounded-lg bg-brand text-onbrand text-sm font-medium hover:bg-brand-600 transition-colors disabled:opacity-50" onClick={() => void classify()} disabled={loading}>{loading ? "分流中…" : "分流"}</button>
         </div>
         {routing.task && (
           <div className="mt-3 rounded-lg border border-ok/30 bg-ok-50 px-3 py-2.5 text-xs text-ok">
@@ -1344,7 +1344,7 @@ function MyAgentsPage() {
       </section>
 
       {/* Executor status card */}
-      <section className="rounded-lg border border-line bg-white shadow-card p-4 min-w-0">
+      <section className="rounded-lg border border-line bg-surface shadow-card p-4 min-w-0">
         <div className="flex items-center justify-between gap-2.5 mb-3">
           <h3 className="text-sm font-semibold text-ink">执行器状态</h3>
           <button className="text-brand text-xs hover:underline" onClick={() => void loadAgents()} disabled={agentLoading}>
@@ -1423,7 +1423,7 @@ function MyAgentsPage() {
                         <div>
                           <p className="text-[11px] text-muted mb-1">{agent.label} 可执行文件路径</p>
                           <input
-                            className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                            className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-surface focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
                             value={configCommand}
                             onChange={(e) => setConfigCommand(e.target.value)}
                             placeholder="留空 = 自动检测"
@@ -1434,7 +1434,7 @@ function MyAgentsPage() {
                           <div className="border-t border-line pt-2.5">
                             <p className="text-[11px] text-muted mb-1">API Key（自备凭据）</p>
                             <input
-                              className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                              className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-surface focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
                               type="password"
                               autoComplete="off"
                               value={configApiKey}
@@ -1500,7 +1500,7 @@ function MyAgentsPage() {
                         {configError && <p className="text-[11px] text-bad break-anywhere">{configError}</p>}
                         <div className="flex flex-wrap gap-2">
                           <button
-                            className="px-2.5 py-1 rounded-md bg-brand text-white text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                            className="px-2.5 py-1 rounded-md bg-brand text-onbrand text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
                             onClick={() => void saveAgentConfig(agent.name)}
                             disabled={configSaving}
                           >
@@ -1530,7 +1530,7 @@ function MyAgentsPage() {
                         <div className="flex items-center gap-1.5 shrink-0">
                           {!agent.enabled && (
                             <button
-                              className="px-2.5 py-1 rounded-md bg-brand text-white text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                              className="px-2.5 py-1 rounded-md bg-brand text-onbrand text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
                               disabled={Boolean(flagBusy)}
                               onClick={() => void setExecutorFlag(
                                 agent.name,
@@ -1564,7 +1564,7 @@ function MyAgentsPage() {
                   <div>
                     <p className="text-[11px] text-muted mb-1">名称</p>
                     <input
-                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-surface focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
                       value={customName}
                       onChange={(e) => setCustomName(e.target.value)}
                       placeholder="my-agent"
@@ -1573,7 +1573,7 @@ function MyAgentsPage() {
                   <div>
                     <p className="text-[11px] text-muted mb-1">启动命令</p>
                     <input
-                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-surface focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
                       value={customCommand}
                       onChange={(e) => setCustomCommand(e.target.value)}
                       placeholder="my-agent --acp"
@@ -1582,7 +1582,7 @@ function MyAgentsPage() {
                   <div>
                     <p className="text-[11px] text-muted mb-1">凭据环境变量名（可选）</p>
                     <input
-                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-surface focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
                       value={customKeyEnv}
                       onChange={(e) => setCustomKeyEnv(e.target.value)}
                       placeholder="MY_AGENT_API_KEY"
@@ -1591,7 +1591,7 @@ function MyAgentsPage() {
                   <div>
                     <p className="text-[11px] text-muted mb-1">API Key（可选）</p>
                     <input
-                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                      className="w-full border border-line rounded-md px-2 py-1.5 text-xs font-mono text-ink bg-surface focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
                       type="password"
                       autoComplete="off"
                       value={customKey}
@@ -1603,7 +1603,7 @@ function MyAgentsPage() {
                 {customError && <p className="text-[11px] text-bad break-anywhere">{customError}</p>}
                 <div className="flex flex-wrap gap-2">
                   <button
-                    className="px-2.5 py-1 rounded-md bg-brand text-white text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                    className="px-2.5 py-1 rounded-md bg-brand text-onbrand text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
                     onClick={() => void submitCustomAgent()}
                     disabled={customBusy || !customName.trim() || !customCommand.trim()}
                   >
@@ -1631,7 +1631,7 @@ function MyAgentsPage() {
       </section>
 
       {/* Recent tasks card */}
-      <section className="rounded-lg border border-line bg-white shadow-card p-4">
+      <section className="rounded-lg border border-line bg-surface shadow-card p-4">
         <div className="flex items-center justify-between gap-2.5 mb-3">
           <h3 className="text-sm font-semibold text-ink">最近任务</h3>
           <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">本地任务台</span>
@@ -1750,7 +1750,7 @@ function MyAgentsPage() {
                             ? "bg-brand-100 border-brand-200 text-brand"
                             : isBusyAction
                               ? "bg-brand-50 border-brand text-brand"
-                              : "bg-white border-line text-ink hover:border-brand hover:text-brand"
+                              : "bg-surface border-line text-ink hover:border-brand hover:text-brand"
                         } disabled:opacity-50`}
                         type="button"
                         disabled={isCurrent || isBusy}
@@ -1793,7 +1793,7 @@ function SettingsPage() {
 
   if (!settings) {
     return (
-      <section className="rounded-lg border border-line bg-white shadow-card p-4">
+      <section className="rounded-lg border border-line bg-surface shadow-card p-4">
         <h2 className="text-xl font-bold text-ink mb-3">设置</h2>
         <p className="text-sm text-muted">{error || "加载中…"}</p>
       </section>
@@ -1835,7 +1835,7 @@ function SettingsPage() {
   };
 
   const inputCls = "w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20";
-  const cardCls = "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-3 min-w-0";
+  const cardCls = "rounded-lg border border-line bg-surface shadow-card p-4 flex flex-col gap-3 min-w-0";
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -1845,7 +1845,7 @@ function SettingsPage() {
           {notice && <span className="text-sm text-ok">{notice}</span>}
           {error && <span className="text-sm text-bad">{error}</span>}
           <button
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white hover:bg-brand-600 transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-onbrand hover:bg-brand-600 transition-colors disabled:opacity-50"
             onClick={saveSystem}
             disabled={saving}
           >
@@ -1930,12 +1930,12 @@ function SettingsPage() {
             <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">界面</span>
           </div>
           <label className="flex flex-col gap-1.5 text-xs text-muted">界面主题
-            <select className={inputCls} value={settings.ui.theme} onChange={(e) => setSettings({ ...settings, ui: { ...settings.ui, theme: e.target.value } })}>
+            <select className={inputCls} value={settings.ui.theme} onChange={(e) => { applyTheme(e.target.value); setSettings({ ...settings, ui: { ...settings.ui, theme: e.target.value } }); }}>
               <option value="system">跟随系统</option>
               <option value="light">浅色</option>
-              <option value="dark">深色（预留）</option>
+              <option value="dark">深色</option>
             </select>
-            <small className="text-[11px] text-muted">界面语言跟随系统，后续版本提供独立选项。</small>
+            <small className="text-[11px] text-muted">「跟随系统」会随 macOS / Windows 的浅色·深色外观自动切换。</small>
           </label>
         </section>
 
@@ -1986,11 +1986,11 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
   };
 
   const inputCls =
-    "w-full px-3 py-2 text-sm rounded-lg border border-line bg-white text-ink focus:outline-none focus:border-brand";
+    "w-full px-3 py-2 text-sm rounded-lg border border-line bg-surface text-ink focus:outline-none focus:border-brand";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white shadow-card overflow-hidden">
+      <div className="w-full max-w-md rounded-xl bg-surface shadow-card overflow-hidden">
         <div className="px-6 pt-6 pb-4 border-b border-line">
           <h2 className="text-lg font-bold text-ink">欢迎使用栖灵</h2>
           <p className="text-xs text-muted mt-1">
@@ -2045,7 +2045,7 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
                 跳过全部，稍后配置
               </button>
               <button type="button"
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-onbrand hover:bg-brand/90 disabled:opacity-50"
                 disabled={saving || !baseUrl.trim() || !apiKey.trim()}
                 onClick={() => setStep(1)}>
                 下一步
@@ -2062,7 +2062,7 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
                   跳过语音
                 </button>
                 <button type="button"
-                  className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-white hover:bg-brand/90 disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-onbrand hover:bg-brand/90 disabled:opacity-50"
                   disabled={saving} onClick={() => finish(true)}>
                   {saving ? "保存中…" : "完成"}
                 </button>
@@ -2075,8 +2075,34 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
   );
 }
 
+/** 把设置里的界面主题落到 <html data-theme>；system 跟随系统偏好。 */
+function applyTheme(mode: string): void {
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const dark = mode === "dark" || (mode !== "light" && prefersDark);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}
+
 export default function App() {
   const [page, setPage] = useHashPage();
+
+  // 界面主题：设置项落到 <html data-theme>；system 跟随系统偏好并实时响应切换
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const modeRef = { current: "system" };
+    const apply = (): void => applyTheme(modeRef.current);
+    apply();
+    const onChange = (): void => {
+      if (modeRef.current === "system") apply();
+    };
+    mq.addEventListener("change", onChange);
+    void fetchSettings()
+      .then((next) => {
+        modeRef.current = next.ui.theme;
+        apply();
+      })
+      .catch(() => {});
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   // 主界面被隐藏（关闭按钮走 hide）时让出语音租约，挂件自动接管「听」。
@@ -2475,7 +2501,7 @@ export default function App() {
             <span className="font-medium">栖灵已退出</span>
             <span className="text-xs">本地服务已停止，页面不会再更新，可以直接关闭；重新启动栖灵后再点右侧按钮。</span>
             <button
-              className="ml-auto border border-warn/40 bg-white rounded-lg px-3 py-1 text-xs text-warn hover:bg-warn-50 transition-colors cursor-pointer"
+              className="ml-auto border border-warn/40 bg-surface rounded-lg px-3 py-1 text-xs text-warn hover:bg-warn-50 transition-colors cursor-pointer"
               onClick={() => setRetryTick((tick) => tick + 1)}
             >
               重新连接

@@ -40,6 +40,7 @@ export default {
         },
         line: { DEFAULT: "rgb(var(--line-default) / <alpha-value>)", subtle: "rgb(var(--line-subtle) / <alpha-value>)" },
         ink: "rgb(var(--ink-default) / <alpha-value>)",
+        onbrand: "rgb(var(--on-brand) / <alpha-value>)",
         muted: "rgb(var(--muted-default) / <alpha-value>)",
       },
       fontFamily: {

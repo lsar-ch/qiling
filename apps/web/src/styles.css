@@ -61,8 +61,68 @@
   /* muted */
   --muted-default: 112 106 95;
 
+  /* 实心强调底（品牌/危险色）上的前景：浅色主题白字，暗色主题深字 */
+  --on-brand: 255 255 255;
+
   /* 阴影基色 */
   --shadow-rgb: 60 50 35;
+}
+
+/* ── 暗色主题：同一套 token 的深色取值 ─────────────────────
+   由 <html data-theme="dark"> 触发；组件层无需任何 dark: 变体。 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* brand：深底上提亮，保证正文对比度 ≥ 4.5:1 */
+  --brand-50: 47 34 24;
+  --brand-100: 63 43 28;
+  --brand-200: 92 60 36;
+  --brand-300: 133 85 50;
+  --brand-400: 179 114 68;
+  --brand-500: 217 138 95;
+  --brand-600: 232 160 120;
+  --brand-700: 240 184 148;
+  --brand-800: 245 205 176;
+  --brand-900: 250 226 205;
+
+  /* accent */
+  --accent-50: 58 30 28;
+  --accent-100: 78 37 34;
+  --accent-200: 112 50 45;
+  --accent-300: 150 68 61;
+  --accent-400: 190 90 82;
+  --accent-500: 227 122 113;
+  --accent-600: 236 152 144;
+  --accent-700: 242 183 177;
+
+  /* ok / bad / warn */
+  --ok-50: 22 40 32;
+  --ok-500: 76 195 138;
+  --ok-600: 110 214 162;
+  --bad-50: 46 26 24;
+  --bad-500: 240 138 128;
+  --bad-600: 246 168 160;
+  --warn-50: 44 34 22;
+  --warn-500: 224 164 78;
+  --warn-600: 234 186 116;
+
+  /* surface：暖调深色，卡片比页面底色略亮一档 */
+  --surface-default: 38 33 25;
+  --surface-secondary: 26 22 19;
+  --surface-tertiary: 33 29 25;
+  --surface-chat: 30 26 22;
+
+  /* line */
+  --line-default: 58 51 43;
+  --line-subtle: 47 42 36;
+
+  /* ink / muted */
+  --ink-default: 236 231 223;
+  --muted-default: 164 155 141;
+  --on-brand: 26 22 19;
+
+  /* 阴影基色 */
+  --shadow-rgb: 0 0 0;
 }
 
 * {

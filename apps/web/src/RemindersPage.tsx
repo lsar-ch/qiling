@@ -5,7 +5,7 @@ import { createReminder, deleteReminder, fetchReminders, updateReminder } from "
 
 const inputCls =
   "w-full border border-line rounded-lg px-2.5 py-2 text-sm text-ink focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20";
-const cardCls = "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-2.5 min-w-0";
+const cardCls = "rounded-lg border border-line bg-surface shadow-card p-4 flex flex-col gap-2.5 min-w-0";
 
 const KIND_LABEL: Record<ReminderKind, string> = {
   memo: "备忘录",
@@ -168,7 +168,7 @@ export default function RemindersPage() {
             <button
               type="submit"
               disabled={saving || !text.trim() || !remindAt}
-              className="px-4 py-2 rounded-lg bg-brand text-white text-sm font-medium disabled:opacity-50"
+              className="px-4 py-2 rounded-lg bg-brand text-onbrand text-sm font-medium disabled:opacity-50"
             >
               {saving ? "创建中…" : "创建提醒"}
             </button>
