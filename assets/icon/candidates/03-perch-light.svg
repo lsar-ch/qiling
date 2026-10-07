@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bga3" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#F5F2EA"/><stop offset="1" stop-color="#DFD9CC"/></linearGradient><radialGradient id="haloa3" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#F0A83C" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#F0A83C" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#F0A83C" stop-opacity="0"/></radialGradient><radialGradient id="orba3" cx="0.38" cy="0.30" r="0.78">
+      <stop offset="0" stop-color="#FFF6E0"/><stop offset="0.42" stop-color="#F5B350"/><stop offset="1" stop-color="#D9822A"/></radialGradient>
+    <clipPath id="sqa3"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bga3)"/>
+  <g clip-path="url(#sqa3)">
+    <path d="M232 716 C 392 690, 470 612, 566 552 C 636 508, 690 486, 764 480" fill="none" stroke="#2C3E5C" stroke-width="54" stroke-linecap="round"/>
+    <circle cx="686" cy="374" r="236" fill="url(#haloa3)"/>
+    <circle cx="686" cy="374" r="106" fill="url(#orba3)"/>
+  </g>
+</svg>

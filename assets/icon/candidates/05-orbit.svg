@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bga5" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#123A55"/><stop offset="1" stop-color="#07131F"/></linearGradient><radialGradient id="haloa5" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#7FE3D2" stop-opacity="0.4"/>
+      <stop offset="0.55" stop-color="#7FE3D2" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#7FE3D2" stop-opacity="0"/></radialGradient><radialGradient id="orba5" cx="0.38" cy="0.30" r="0.78">
+      <stop offset="0" stop-color="#FFFBF0"/><stop offset="0.42" stop-color="#FFD07A"/><stop offset="1" stop-color="#E58F33"/></radialGradient>
+    <clipPath id="sqa5"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bga5)"/>
+  <g clip-path="url(#sqa5)">
+    <g transform="rotate(-28 512 512)">
+      <ellipse cx="512" cy="512" rx="268" ry="132" fill="none" stroke="#7FE3D2" stroke-width="30" stroke-opacity="0.75"/>
+    </g>
+    <circle cx="512" cy="512" r="200" fill="url(#haloa5)"/>
+    <circle cx="512" cy="512" r="96" fill="url(#orba5)"/>
+  </g>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bga8" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#2A4B70"/><stop offset="1" stop-color="#0F1E33"/></linearGradient><radialGradient id="haloa8" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD98A" stop-opacity="0.45"/>
+      <stop offset="0.55" stop-color="#FFD98A" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#FFD98A" stop-opacity="0"/></radialGradient><radialGradient id="orba8" cx="0.38" cy="0.30" r="0.78">
+      <stop offset="0" stop-color="#FFFBF0"/><stop offset="0.42" stop-color="#FFD07A"/><stop offset="1" stop-color="#EE8F2E"/></radialGradient>
+    <clipPath id="sqa8"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bga8)"/>
+  <g clip-path="url(#sqa8)">
+    <path d="M512 268 V760" stroke="#DCE7F7" stroke-width="54" stroke-linecap="round"/>
+    <path d="M300 452 H724" stroke="#DCE7F7" stroke-width="50" stroke-linecap="round"/>
+    <path d="M336 636 H688" stroke="#DCE7F7" stroke-width="46" stroke-linecap="round"/>
+    <circle cx="686" cy="352" r="200" fill="url(#haloa8)"/>
+    <circle cx="686" cy="352" r="92" fill="url(#orba8)"/>
+  </g>
+</svg>

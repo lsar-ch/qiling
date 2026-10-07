@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bgw1" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#A2643F"/><stop offset="1" stop-color="#4A2A1A"/></linearGradient>
+    <radialGradient id="halow1" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD98A" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#FFD98A" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#FFD98A" stop-opacity="0"/></radialGradient>
+    <radialGradient id="orbw1" cx="0.38" cy="0.30" r="0.78">
+      <stop offset="0" stop-color="#FFFBF0"/><stop offset="0.42" stop-color="#FFD089"/><stop offset="1" stop-color="#E08A2A"/></radialGradient>
+    <clipPath id="sqw1"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bgw1)"/>
+  <g clip-path="url(#sqw1)">
+    <path d="M232 716 C 392 690, 470 612, 566 552 C 636 508, 690 486, 764 480" fill="none" stroke="#F6EADB" stroke-width="54" stroke-linecap="round"/>
+    <circle cx="686" cy="374" r="236" fill="url(#halow1)"/>
+    <circle cx="686" cy="374" r="106" fill="url(#orbw1)"/>
+  </g>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bga4" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#3B2E6E"/><stop offset="1" stop-color="#150F2E"/></linearGradient><radialGradient id="haloa4" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.45"/>
+      <stop offset="0.55" stop-color="#FFD9A0" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/></radialGradient><radialGradient id="orba4" cx="0.38" cy="0.30" r="0.78">
+      <stop offset="0" stop-color="#FFFBF2"/><stop offset="0.42" stop-color="#FFCF84"/><stop offset="1" stop-color="#E68C2C"/></radialGradient>
+    <clipPath id="sqa4"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bga4)"/>
+  <g clip-path="url(#sqa4)">
+    <circle cx="512" cy="512" r="252" fill="none" stroke="#B9A6FF" stroke-width="30" stroke-opacity="0.55"/>
+    <circle cx="512" cy="512" r="168" fill="none" stroke="#D6C8FF" stroke-width="26" stroke-opacity="0.85"/>
+    <circle cx="512" cy="512" r="212" fill="url(#haloa4)"/>
+    <circle cx="512" cy="512" r="84" fill="url(#orba4)"/>
+  </g>
+</svg>
