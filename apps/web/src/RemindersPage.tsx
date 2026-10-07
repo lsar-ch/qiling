@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { Reminder, ReminderKind, ReminderRepeat, ReminderStatus } from "@deskmate/contracts";
+import type { Reminder, ReminderKind, ReminderRepeat, ReminderStatus } from "@qiling/contracts";
 import { confirmText } from "./dialog";
 import { createReminder, deleteReminder, fetchReminders, updateReminder } from "./api";
 

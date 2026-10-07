@@ -592,7 +592,7 @@ fn settle_worker(app: AppHandle, move_rx: Receiver<()>, dragging: Arc<AtomicBool
         }
         if dragging.swap(false, Ordering::SeqCst) {
             if let Err(error) = settle_and_emit(&app) {
-                eprintln!("DeskMate widget settle failed: {error}");
+                eprintln!("Qiling widget settle failed: {error}");
             }
         }
     }

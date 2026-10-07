@@ -1,4 +1,4 @@
-// Agent 契约 —— 镜像自 deskmate_contracts/agent.py。
+// Agent 契约 —— 镜像自 qiling_contracts/agent.py。
 
 export type AgentIntegrationStatus =
   | "ready"

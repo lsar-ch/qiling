@@ -1,4 +1,4 @@
-// 技能与 MCP 扩展契约 —— 镜像自 deskmate_contracts/extension.py。
+// 技能与 MCP 扩展契约 —— 镜像自 qiling_contracts/extension.py。
 
 export type ExtensionSource = "builtin" | "user";
 

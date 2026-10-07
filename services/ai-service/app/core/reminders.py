@@ -14,8 +14,8 @@ from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from deskmate_contracts.events import EventEnvelope
-from deskmate_contracts.reminder import Reminder, ReminderRepeat
+from qiling_contracts.events import EventEnvelope
+from qiling_contracts.reminder import Reminder, ReminderRepeat
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 """通用 ACP 执行器：任何实现 ACP/stdio 的 CLI 都能直接接入。
 
-ACP 是 DeskMate 的执行器主线（2026-10-01 定案）：对接一次协议，所有实现了
+ACP 是 栖灵 的执行器主线（2026-10-01 定案）：对接一次协议，所有实现了
 ACP 的 agent 都能插进来，不再为每家厂商写专用 adapter。厂商差异只剩两项——
 **启动命令**与**凭据注入方式**——都由 ``config/agents.yaml`` 的 config 下发，
 用户也可在页面覆盖。
@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 from app.agents.acp import (
     AcpClient,
@@ -58,7 +58,7 @@ _DEFAULT_ARGS = ("--acp",)
 
 def _probe_workdir() -> str:
     """探测用工作目录：固定临时目录，不用用户主目录，避免 CLI 白扫大盘。"""
-    base = Path(tempfile.gettempdir()) / "deskmate-acp-cli-probe"
+    base = Path(tempfile.gettempdir()) / "qiling-acp-cli-probe"
     try:
         base.mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -274,7 +274,7 @@ class AcpCliAdapter(AgentAdapter):
                 "fs": {"readTextFile": False, "writeTextFile": False},
                 "terminal": False,
             },
-            "clientInfo": {"name": "DeskMate", "version": "0.1.0"},
+            "clientInfo": {"name": "栖灵", "version": "0.1.0"},
         }
 
     async def _spawn(
@@ -311,7 +311,7 @@ class AcpCliAdapter(AgentAdapter):
         self._outputs[request.task_id] = []
         self._tool_calls[request.task_id] = []
         self._cancel_events[request.task_id] = asyncio.Event()
-        raw_logs = request.config.get("logs_dir") or Path(tempfile.gettempdir()) / "deskmate-acp-logs"
+        raw_logs = request.config.get("logs_dir") or Path(tempfile.gettempdir()) / "qiling-acp-logs"
         logs_dir = Path(str(raw_logs)).expanduser() / request.task_id
         client = await self._spawn(
             resolved,

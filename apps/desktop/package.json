@@ -1,5 +1,5 @@
 {
-  "name": "@deskmate/desktop",
+  "name": "@qiling/desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@deskmate/contracts": "file:../../packages/contracts/ts",
+    "@qiling/contracts": "file:../../packages/contracts/ts",
     "@pixiv/three-vrm": "^3.5.5",
     "@pixiv/three-vrm-animation": "^3.5.5",
     "@tauri-apps/api": "^2.0.0",

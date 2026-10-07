@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 from app.agents.acp import (
     AcpClient,
@@ -67,9 +67,9 @@ logger = logging.getLogger(__name__)
 # 所以「打开桌面端登录」不再是一条可行路径，唯一正门是自备 API Key 注入子进程 env。
 _LOGIN_HINT = (
     "WorkBuddy 的 API Key 需要先订阅付费版才能在 https://copilot.tencent.com/profile/ 申请"
-    "（是否订阅由你决定，DeskMate 不代购也不提供凭据）。"
+    "（是否订阅由你决定，栖灵 不代购也不提供凭据）。"
     "拿到后填入执行器卡片里的「API Key」并保存，再点「测试连接」。"
-    "WorkBuddy 2.147.0 起桌面端登录态只对它自己的子进程可见，DeskMate 无法复用。"
+    "WorkBuddy 2.147.0 起桌面端登录态只对它自己的子进程可见，栖灵 无法复用。"
 )
 
 
@@ -288,7 +288,7 @@ def _probe_workdir() -> str:
     主目录可能非常大（Windows 上尤其），把它当 workspace 会让 CLI 白扫一遍；
     固定目录还让 CLI 自身日志文件名稳定可查。跨平台都落在系统临时目录下。
     """
-    base = Path(tempfile.gettempdir()) / "deskmate-workbuddy-probe"
+    base = Path(tempfile.gettempdir()) / "qiling-workbuddy-probe"
     try:
         base.mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -304,7 +304,7 @@ class WorkBuddyAdapter(AgentAdapter):
     display_name = "WorkBuddy"
     executable = True
 
-    # DeskMate 的执行模式 → WorkBuddy 的 Permission Mode（session/new 下发的
+    # 栖灵 的执行模式 → WorkBuddy 的 Permission Mode（session/new 下发的
     # config_option_update 里可选项，经 session/set_config_option 设置）。
     #
     # 2026-09-16 实测修正（探针报文见 /tmp/wb-probe-traffic.jsonl）：
@@ -461,7 +461,7 @@ class WorkBuddyAdapter(AgentAdapter):
                         "fs": {"readTextFile": False, "writeTextFile": False},
                         "terminal": False,
                     },
-                    "clientInfo": {"name": "DeskMate", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
                 },
                 timeout_s=20.0,
             )
@@ -517,7 +517,7 @@ class WorkBuddyAdapter(AgentAdapter):
                         "fs": {"readTextFile": False, "writeTextFile": False},
                         "terminal": False,
                     },
-                    "clientInfo": {"name": "DeskMate", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
                 },
                 timeout_s=20.0,
             )
@@ -657,9 +657,9 @@ class WorkBuddyAdapter(AgentAdapter):
         self._outputs[request.task_id] = []
         self._tool_calls[request.task_id] = []
         self._cancel_events[request.task_id] = asyncio.Event()
-        # 与 codex.py 一致默认落 /tmp/deskmate-acp-logs；按 task 分目录，
+        # 与 codex.py 一致默认落 /tmp/qiling-acp-logs；按 task 分目录，
         # 否则多次运行的 stderr 日志会互相覆盖，出问题时没有证据可查。
-        raw_logs_dir = request.config.get("logs_dir") or Path(tempfile.gettempdir()) / "deskmate-acp-logs"
+        raw_logs_dir = request.config.get("logs_dir") or Path(tempfile.gettempdir()) / "qiling-acp-logs"
         logs_dir = Path(str(raw_logs_dir)).expanduser() / request.task_id
         client = await self._spawn(
             runtime,
@@ -679,7 +679,7 @@ class WorkBuddyAdapter(AgentAdapter):
                         "fs": {"readTextFile": False, "writeTextFile": False},
                         "terminal": False,
                     },
-                    "clientInfo": {"name": "DeskMate", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
                 },
                 timeout_s=30.0,
             )

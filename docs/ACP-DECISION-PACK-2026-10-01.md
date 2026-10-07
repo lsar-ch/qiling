@@ -64,11 +64,11 @@
 
 客户端侧同样成规模：Zed、JetBrains AI Assistant、VS Code 系列扩展、neovim 多个插件、
 Sublime、Emacs、Qt Creator、Unity、Chrome 扩展，以及 **Obsidian 的 ACP 插件**
-（Agent Client / Copilot for Obsidian / Obsidian Harness）—— 后者与 DeskMate 定位最接近：
+（Agent Client / Copilot for Obsidian / Obsidian Harness）—— 后者与 栖灵 定位最接近：
 宿主应用 + ACP agent + 本地上下文。
 来源：<https://agentclientprotocol.com/get-started/clients>
 
-## 4. DeskMate 现状对照
+## 4. 栖灵 现状对照
 
 - `services/ai-service/app/agents/acp.py` 已实现：initialize、session 生命周期、
   streamed updates、permission 请求、cancel、close，以及 16 MiB 单行上限。

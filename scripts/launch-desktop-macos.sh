@@ -9,12 +9,12 @@ mkdir -p "$RUN_DIR"
 
 exec >>"$LOG" 2>&1
 echo
-echo "=== DeskMate desktop launch $(date '+%Y-%m-%d %H:%M:%S') ==="
+echo "=== 栖灵 desktop launch $(date '+%Y-%m-%d %H:%M:%S') ==="
 
 export PATH="/Users/lxb/.local/bin:/Users/lxb/.cargo/bin:/opt/homebrew/bin:$PATH"
-export DESKMATE_HOME="$ROOT"
+export QILING_HOME="$ROOT"
 
-pkill -f 'target/debug/deskmate-desktop' 2>/dev/null || true
+pkill -f 'target/debug/qiling-desktop' 2>/dev/null || true
 pkill -f "$ROOT/.venv/bin/python -m uvicorn app.main:app" 2>/dev/null || true
 
 for port in 1420 8736; do

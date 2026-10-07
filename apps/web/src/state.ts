@@ -1,4 +1,4 @@
-// 挂件状态展示辅助（镜像 deskmate_contracts/widget.py）
+// 挂件状态展示辅助（镜像 qiling_contracts/widget.py）
 export type WidgetState =
   | "idle"
   | "listening"

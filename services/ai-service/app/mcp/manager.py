@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from deskmate_contracts import McpServerInfo
+from qiling_contracts import McpServerInfo
 
 from .http_client import McpHttpClient
 from .stdio_client import McpStdioClient, McpStdioError, McpTool

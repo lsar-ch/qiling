@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 from app.agents.acp import AcpClient
 from app.agents.base import (
@@ -222,7 +222,7 @@ class CodexAdapter(AgentAdapter):
         self._outputs[request.task_id] = []
         self._run_errors[request.task_id] = []
         self._cancel_events[request.task_id] = asyncio.Event()
-        logs_dir = Path(str(request.config.get("logs_dir") or Path(tempfile.gettempdir()) / "deskmate-acp-logs"))
+        logs_dir = Path(str(request.config.get("logs_dir") or Path(tempfile.gettempdir()) / "qiling-acp-logs"))
         client = await AcpClient.spawn(
             acp_bin,
             cwd=request.cwd,
@@ -249,7 +249,7 @@ class CodexAdapter(AgentAdapter):
                         "terminal": False,
                         "auth": {"terminal": False},
                     },
-                    "clientInfo": {"name": "DeskMate", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
                 },
                 timeout_s=30.0,
             )

@@ -1,8 +1,8 @@
 """办公引擎目录：探测本机可用性、按需安装、把已装引擎用于转换。
 
-DeskMate 只做三件事：读 ``config/office_tools.yaml``、探测本机是否已装、按
+栖灵 只做三件事：读 ``config/office_tools.yaml``、探测本机是否已装、按
 ``install.kind`` 安装或跳转下载页；装好的引擎由这里统一调用（目前是 LibreOffice 转换）。
-工具本体不随 DeskMate 分发（内置渲染器除外），
+工具本体不随 栖灵 分发（内置渲染器除外），
 以此避开包体膨胀与许可证问题 —— 与「技能扩展」页的插件模式一致。
 
 安装方式（``install.kind``）：
@@ -25,7 +25,7 @@ from typing import Any
 import yaml
 
 from app.config import repo_root
-from deskmate_contracts import OfficeToolInfo
+from qiling_contracts import OfficeToolInfo
 
 _INSTALL_TIMEOUT_S = 600
 _OUTPUT_TAIL_CHARS = 1500
@@ -36,8 +36,8 @@ class OfficeToolError(RuntimeError):
 
 
 def catalog_path() -> Path:
-    """办公引擎目录路径（支持 ``DESKMATE_OFFICE_TOOLS_CONFIG`` 覆盖）。"""
-    configured = os.environ.get("DESKMATE_OFFICE_TOOLS_CONFIG")
+    """办公引擎目录路径（支持 ``QILING_OFFICE_TOOLS_CONFIG`` 覆盖）。"""
+    configured = os.environ.get("QILING_OFFICE_TOOLS_CONFIG")
     return Path(configured) if configured else repo_root() / "config" / "office_tools.yaml"
 
 
@@ -222,7 +222,7 @@ def _libreoffice_convert(source: Path, fmt: str, outdir: Path | None = None) -> 
     destination = Path(outdir) if outdir else source.parent
     destination.mkdir(parents=True, exist_ok=True)
     # 独立 profile，避免和用户正在用的 LibreOffice 实例抢锁。
-    with tempfile.TemporaryDirectory(prefix="deskmate-lo-profile-") as profile:
+    with tempfile.TemporaryDirectory(prefix="qiling-lo-profile-") as profile:
         command = [
             binary,
             f"-env:UserInstallation=file://{profile}",

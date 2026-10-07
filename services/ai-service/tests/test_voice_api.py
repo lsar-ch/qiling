@@ -20,7 +20,7 @@ from app.speech.base import (
     SpeechUnavailable,
     VoiceOption,
 )
-from deskmate_contracts.voice import VoiceParams
+from qiling_contracts.voice import VoiceParams
 
 
 class FakeRecognizer(SpeechRecognizer):
@@ -48,7 +48,7 @@ class ListedSynthesizer(FakeSynthesizer):
     async def list_voices(self) -> list[VoiceOption]:
         return [
             VoiceOption(id="Chinese (Mandarin)_Soft_Girl", name="温柔女声", kind="system"),
-            VoiceOption(id="deskmate_voice_01", name="我的克隆音", kind="cloned"),
+            VoiceOption(id="qiling_voice_01", name="我的克隆音", kind="cloned"),
         ]
 
 
@@ -148,11 +148,11 @@ def test_synthesize_returns_audio_and_drives_widget() -> None:
     with _client() as client:
         resp = client.post(
             "/api/voice/synthesize",
-            json={"text": "你好呀，我是 DeskMate", "params": {"voice": "longxiaoxia_v2"}},
+            json={"text": "你好呀，我是 栖灵", "params": {"voice": "longxiaoxia_v2"}},
             headers={"X-Voice-Client": "widget"},
         )
         assert resp.status_code == 200
-        assert resp.content == ("FAKE-AUDIO:" + "你好呀，我是 DeskMate").encode("utf-8")
+        assert resp.content == ("FAKE-AUDIO:" + "你好呀，我是 栖灵").encode("utf-8")
         assert resp.headers["content-type"].startswith("audio/wav")
         assert resp.headers["x-speech-format"] == "wav"
         # 合成（播报）期间 → speaking
@@ -276,7 +276,7 @@ def test_voices_lists_provider_options() -> None:
         assert body["reason"] is None
         assert [item["id"] for item in body["voices"]] == [
             "Chinese (Mandarin)_Soft_Girl",
-            "deskmate_voice_01",
+            "qiling_voice_01",
         ]
         assert body["voices"][1]["kind"] == "cloned"
 
@@ -303,13 +303,13 @@ def test_voices_rejects_unknown_profile() -> None:
 
 
 def _prepare_tts_home(tmp_path, monkeypatch) -> None:
-    """临时 DESKMATE_HOME：只有一个 openai_compatible 的 TTS 档案。"""
+    """临时 QILING_HOME：只有一个 openai_compatible 的 TTS 档案。"""
     import json
     import shutil
     from pathlib import Path
 
     project_root = Path(__file__).resolve().parents[3]
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     for key in ("DASHSCOPE_API_KEY", "MINIMAX_API_KEY", "VOICE_TTS_PROVIDER", "VOICE_TTS_VOICE"):
         monkeypatch.delenv(key, raising=False)
     (tmp_path / "config" / "personas").mkdir(parents=True)

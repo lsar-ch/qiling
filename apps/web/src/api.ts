@@ -1,14 +1,14 @@
 // 主界面与 ai-service 通信（同源 /api；开发模式由 Vite 代理转发）。
 
-import type { AgentInfo, AgentIntegrationStatus } from "@deskmate/contracts";
-import type { EventEnvelope } from "@deskmate/contracts";
+import type { AgentInfo, AgentIntegrationStatus } from "@qiling/contracts";
+import type { EventEnvelope } from "@qiling/contracts";
 import type {
   McpServerInfo,
   OfficeToolInfo,
   SkillDetail,
   SkillInfo,
-} from "@deskmate/contracts";
-import type { CompiledMemory, DocOverview, MemoryDoc, SearchHit } from "@deskmate/contracts";
+} from "@qiling/contracts";
+import type { CompiledMemory, DocOverview, MemoryDoc, SearchHit } from "@qiling/contracts";
 import type {
   InteractionKind,
   ProjectNode,
@@ -17,8 +17,8 @@ import type {
   Task,
   TaskCategory,
   TaskStatus,
-} from "@deskmate/contracts";
-import type { Reminder, ReminderKind, ReminderRepeat, ReminderStatus } from "@deskmate/contracts";
+} from "@qiling/contracts";
+import type { Reminder, ReminderKind, ReminderRepeat, ReminderStatus } from "@qiling/contracts";
 
 export interface HealthResponse {
   status: string;

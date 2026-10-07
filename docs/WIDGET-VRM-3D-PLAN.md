@@ -1,4 +1,4 @@
-# DeskMate 挂件 3D 形象（three-vrm）实施方案
+# 栖灵 挂件 3D 形象（three-vrm）实施方案
 
 日期：2026-09-20　状态：步骤 0-5 已实施（2026-09-20），剩步骤 6 人工验收与 Windows 真机
 
@@ -47,7 +47,7 @@ html/body/canvas 背景全透明。首帧 shader 编译卡 0.5-1.9s → 必须�
 
 ### 步骤 1：契约扩展
 
-- `packages/contracts/py/deskmate_contracts/character.py:11`：`AvatarDriver` 增加 `"vrm_3d"`
+- `packages/contracts/py/qiling_contracts/character.py:11`：`AvatarDriver` 增加 `"vrm_3d"`
 - `packages/contracts/ts/src/character.ts:4`：同步镜像（`test_contracts_sync.py` 强制一致）
 - 默认值保持 `procedural_2d`，存量 persona 行为不变
 
@@ -94,7 +94,7 @@ html/body/canvas 背景全透明。首帧 shader 编译卡 0.5-1.9s → 必须�
 
 - 验收演示 persona：`config/personas/vrm_demo.yaml` + `data/persona-assets/vrm_demo/`（klee.vrm + idle/thinking/success 三个 VRMA），设置里切到它即可看 3D；不切则一切照旧
 - `./scripts/check.sh` 全绿 + `apps/desktop` `npm run build`（已完成：244 passed + 构建通过）
-- 浏览器冒烟已通过：`?deskmate=widget` 下 canvas 渲染 Klee、idle VRMA 循环播放、占位图按预期撤下
+- 浏览器冒烟已通过：`?qiling=widget` 下 canvas 渲染 Klee、idle VRMA 循环播放、占位图按预期撤下
 - 2D persona 回归：现有角色表现与之前完全一致
 - macOS 人工验收：透明、拖动、置顶、双击、动作、口型 —— **2026-09-29 实机 6/6 通过**
 

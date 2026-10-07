@@ -1,9 +1,9 @@
 {
-  "name": "@deskmate/contracts",
+  "name": "@qiling/contracts",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DeskMate TS 类型镜像（单一事实源：packages/contracts/py）",
+  "description": "栖灵 TS 类型镜像（单一事实源：packages/contracts/py）",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {

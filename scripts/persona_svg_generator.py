@@ -1,4 +1,4 @@
-"""DeskMate 角色生成器 POC：结构化参数 → 可动画 SVG 角色。
+"""栖灵 角色生成器 POC：结构化参数 → 可动画 SVG 角色。
 
 用法：
     python scripts/persona_svg_generator.py [params.json] [--out preview.html]
@@ -162,7 +162,7 @@ def build_preview_html(svg: str, params: dict) -> str:
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<title>DeskMate 参考图生成角色 POC</title>
+<title>栖灵 参考图生成角色 POC</title>
 <style>
   body {{ margin:0; background:#1e2230; color:#cdd3e0; font-family:-apple-system,"PingFang SC",sans-serif; }}
   .page {{ padding:24px; }}
@@ -231,7 +231,7 @@ def main() -> int:
             "coverage": "full_body",
         }
     svg = build_persona_svg(params)
-    out = args.out or Path("/tmp/deskmate_svg_poc.html")
+    out = args.out or Path("/tmp/qiling_svg_poc.html")
     out.write_text(build_preview_html(svg, params), encoding="utf-8")
     print(f"已生成 {out}")
     return 0

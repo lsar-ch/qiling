@@ -1,4 +1,4 @@
-// 录制契约 —— 镜像自 deskmate_contracts/recording.py（Step 10 接口预留）。
+// 录制契约 —— 镜像自 qiling_contracts/recording.py（Step 10 接口预留）。
 
 export type RecordingFormat =
   | "video/webm"

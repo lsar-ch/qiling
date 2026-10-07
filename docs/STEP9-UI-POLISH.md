@@ -14,7 +14,7 @@ Run Step 9 after Step 8 automated regression and real Codex acceptance, and befo
 
 Recommended visual direction:
 
-- DeskMate is a desktop workbench with character, not a toy desktop pet dashboard.
+- Qiling is a desktop workbench with character, not a toy desktop pet dashboard.
 - Default content should feel calm, dense enough for repeated work, and clearly organized.
 - Primary pages are functional surfaces; avoid oversized hero text, decorative card grids, or tutorial copy.
 - Character/status can appear on Home and in widget states, but should not interrupt long-form content.
@@ -127,7 +127,7 @@ Completed（视觉回归）：
 顺带修掉的回归噪音：
 
 - `tests/test_activation.py` 的接口级用例此前读开发者本地角色配置，本机启用「蓝猫」后
-  「你好，千问」被判成 chat，长期红。改为用临时 `DESKMATE_HOME` 固定角色名，测试不再随环境漂移。
+  「你好，千问」被判成 chat，长期红。改为用临时 `QILING_HOME` 固定角色名，测试不再随环境漂移。
 
 ## 2026-09-13 晚（挂件角色化表现收口）
 

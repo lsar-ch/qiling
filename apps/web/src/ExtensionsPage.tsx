@@ -22,7 +22,7 @@ import type {
   OfficeToolInfo,
   SkillDetail,
   SkillInfo,
-} from "@deskmate/contracts";
+} from "@qiling/contracts";
 
 const CARD_CLS =
   "rounded-lg border border-line bg-white shadow-card p-4 flex flex-col gap-2.5 min-w-0";
@@ -839,7 +839,7 @@ function OfficeToolsPanel() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted">
-          写作与排版用的外部引擎（Progressive Enhancement）：DeskMate 只做探测、安装和调用，
+          写作与排版用的外部引擎（Progressive Enhancement）：栖灵只做探测、安装和调用，
           工具本体由各项目自行分发。
         </p>
         <button

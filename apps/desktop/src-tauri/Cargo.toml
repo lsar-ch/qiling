@@ -1,7 +1,7 @@
 [package]
-name = "deskmate-desktop"
+name = "qiling-desktop"
 version = "0.1.0"
-description = "DeskMate desktop runtime"
+description = "Qiling desktop runtime"
 edition = "2021"
 
 [build-dependencies]
@@ -14,5 +14,5 @@ serde_json = "1"
 tauri-plugin-dialog = "2.7.3"
 
 [lib]
-name = "deskmate_desktop_lib"
+name = "qiling_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

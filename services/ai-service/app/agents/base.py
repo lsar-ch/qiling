@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 AgentEventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
 
@@ -24,7 +24,7 @@ class AgentExecutionError(RuntimeError):
 
 
 class AgentCancelled(RuntimeError):
-    """任务被 DeskMate 主动取消，不再作为普通失败处理。"""
+    """任务被 栖灵 主动取消，不再作为普通失败处理。"""
 
 
 @dataclass

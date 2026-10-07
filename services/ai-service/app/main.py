@@ -1,4 +1,4 @@
-"""DeskMate AI Service 入口。
+"""栖灵 AI Service 入口。
 
 启动方式（工作目录 services/ai-service）：
     .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8736
@@ -118,7 +118,7 @@ def create_app(
         yield
 
     app = FastAPI(
-        title="DeskMate AI Service",
+        title="栖灵 AI Service",
         version=settings.version,
         lifespan=lifespan,
     )

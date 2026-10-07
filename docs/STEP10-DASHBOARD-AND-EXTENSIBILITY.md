@@ -1,12 +1,12 @@
 # Step 10: Dashboard 信息可视化 + 扩展性预留
 
 > 状态：已完成 2026-09-09（规划 → 实现 → 复查 → 修复）
-> 依据：灵言 LingYan 开源数字人系统调研 + DeskMate 当前架构
+> 依据：灵言 LingYan 开源数字人系统调研 + 栖灵 当前架构
 
 ## 背景
 
 灵言项目展示了数字人系统的完整链路：LLM → TTS → 口型驱动 → 输出。
-DeskMate 当前已完成 Step 1~9，主链路功能齐全但信息可视化不足。
+栖灵 当前已完成 Step 1~9，主链路功能齐全但信息可视化不足。
 本 step 聚焦四个方向：
 
 1. **信息可视化** — Home 页面加入系统仪表盘
@@ -17,7 +17,7 @@ DeskMate 当前已完成 Step 1~9，主链路功能齐全但信息可视化不�
 ## 目录变更总览
 
 ```
-packages/contracts/py/deskmate_contracts/
+packages/contracts/py/qiling_contracts/
 ├── recording.py          ← 新增：RecordingSession 契约
 └── character.py          ← 新增：CharacterConfig 契约
 
@@ -110,7 +110,7 @@ export interface HealthResponse {
 │ 性能模式: 均衡│ 降级原因: 未配置Key │ 上次编译: 今天 08:30  │               │
 └──────────────┴──────────────┴──────────────┴───────────────┘
 最近活动 (近30分钟):
-  • 08:34  conversation.completed — "DeskMate 项目状态检查"
+  • 08:34  conversation.completed — "栖灵 项目状态检查"
   • 08:30  task.completed — "MCP 进程清理"
   • 08:26  memory.updated — L2/user_preferences.md
 ```
@@ -131,7 +131,7 @@ export interface HealthResponse {
 
 ### 2.1 新增契约
 
-**`packages/contracts/py/deskmate_contracts/recording.py`**：
+**`packages/contracts/py/qiling_contracts/recording.py`**：
 
 ```python
 from __future__ import annotations
@@ -304,7 +304,7 @@ performance_mode: "quality" | "balanced" | "lite";
 
 ### 4.1 新增契约
 
-**`packages/contracts/py/deskmate_contracts/character.py`**：
+**`packages/contracts/py/qiling_contracts/character.py`**：
 
 ```python
 from __future__ import annotations
@@ -373,7 +373,7 @@ class CharacterConfig(BaseModel):
 
 ## 与灵言的差距说明
 
-| 能力 | 灵言 | DeskMate 规划 |
+| 能力 | 灵言 | 栖灵 规划 |
 |:---|:---|:---|
 | 口型同步驱动 | ✅ 实时 | V2 预留接口，V1 不做 |
 | WebRTC 实时预览 | ✅ | V1 不需要（桌面应用） |
@@ -384,14 +384,14 @@ class CharacterConfig(BaseModel):
 | CPU/GPU 双模式 | ✅ | **本 step 实现** |
 | 录制导出 | ✅ | **本 step 预留接口** |
 
-核心差异：灵言是独立的数字人产品，DeskMate 是桌面 AI 助理。数字人能力作为扩展点预留，不抢占 V1 主线。
+核心差异：灵言是独立的数字人产品，栖灵 是桌面 AI 助理。数字人能力作为扩展点预留，不抢占 V1 主线。
 
 ---
 
 ## 实施记录（2026-09-09）
 
 **合入范围**
-- 契约：`packages/contracts/py/deskmate_contracts/recording.py`（新建）、`character.py`（新建）、TS 镜像 `recording.ts` / `character.ts`（新建），py/ts `__init__`/`index` 导出同步
+- 契约：`packages/contracts/py/qiling_contracts/recording.py`（新建）、`character.py`（新建）、TS 镜像 `recording.ts` / `character.ts`（新建），py/ts `__init__`/`index` 导出同步
 - 后端：`config.py`（PerformanceMode + 持久化）、`api/settings.py`、`api/health.py`（performance_mode / voice_pipeline / recent_activity / memory_stats）、`api/voice.py`（lite 禁用识别/合成 + status 报告一致）、`api/recording.py`（3 个 stub）、`core/bus.py`（EventHub.recent）、`main.py`（注册 router）
 - 前端：`apps/web/src/api.ts`（类型扩展）、`App.tsx`（Home「系统状态」仪表盘 + Settings 性能模式/角色形象占位）
 - 测试：`tests/test_contracts_sync.py`（MIRROR_MAP +2）、`tests/test_step10_backend.py`（新建 4 组用例）

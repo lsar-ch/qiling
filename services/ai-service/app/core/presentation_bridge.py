@@ -11,8 +11,8 @@ from typing import Any
 
 import yaml
 
-from deskmate_contracts.events import EventEnvelope
-from deskmate_contracts.widget import PersonaPresentation
+from qiling_contracts.events import EventEnvelope
+from qiling_contracts.widget import PersonaPresentation
 
 logger = logging.getLogger(__name__)
 

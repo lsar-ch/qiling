@@ -20,7 +20,7 @@ def test_health_ok() -> None:
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "ok"
-        assert body["service"] == "deskmate-ai-service"
+        assert body["service"] == "qiling-ai-service"
         assert "features" in body
 
 

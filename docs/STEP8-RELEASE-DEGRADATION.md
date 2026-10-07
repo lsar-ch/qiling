@@ -4,7 +4,7 @@ Status: in progress 2026-09-07. Automated degradation checks and a real Codex re
 
 ## Goal
 
-Before treating DeskMate as a V1 release candidate, verify that the local service and desktop shell can start, and that missing cloud keys, unavailable Codex, failed LLM calls, missing microphones, or full user data never take down the core text/memory workflow.
+Before treating 栖灵 as a V1 release candidate, verify that the local service and desktop shell can start, and that missing cloud keys, unavailable Codex, failed LLM calls, missing microphones, or full user data never take down the core text/memory workflow.
 
 ## Non-goals
 
@@ -71,7 +71,7 @@ Detailed macOS/Windows permission and source-copy steps are in `docs/CROSS-PLATF
 ## Real Executor Record
 
 - 2026-09-07: Codex provider/model switched from `agnes-2.5-flash` to `deepseek-v4-flash` in `~/.codex/config.toml`.
-- DeskMate `read-only` real ACP run completed: task `task_eff6a657ae`, run `run_c560a3ca9c`.
+- 栖灵 `read-only` real ACP run completed: task `task_eff6a657ae`, run `run_c560a3ca9c`.
 - Codex returned a useful project-doc review despite a non-fatal metadata fallback warning for `deepseek-v4-flash`.
 
 ## Verification

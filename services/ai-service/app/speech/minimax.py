@@ -15,7 +15,7 @@ import binascii
 
 import httpx
 
-from deskmate_contracts.voice import VoiceParams
+from qiling_contracts.voice import VoiceParams
 
 from app.speech.base import (
     AudioResult,

@@ -1,5 +1,5 @@
 """
-DeskMate - 桌面 AI 精灵主入口。
+栖灵 - 桌面 AI 精灵主入口。
 
 用法:
     python -m src.main              # 启动 GUI
@@ -38,10 +38,10 @@ def run_gui(settings: dict) -> None:
     """启动 GUI 版本。"""
     from PyQt6.QtWidgets import QApplication
     from src.ui.controller import FloatController
-    from src.agent import DeskMateAgent
+    from src.agent import QilingAgent
 
     app = QApplication(sys.argv)
-    app.setApplicationName("DeskMate")
+    app.setApplicationName("栖灵")
 
     # 创建精灵窗口
     ui_cfg = settings.get("ui", {})
@@ -65,11 +65,11 @@ def run_gui(settings: dict) -> None:
         llm_cfg["system_prompt"] = prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else ""
 
     # 创建 Agent
-    agent = DeskMateAgent(controller, settings)
+    agent = QilingAgent(controller, settings)
     agent.start()
 
     controller.show()
-    logger.info("DeskMate is running. Click the sphere to interact.")
+    logger.info("栖灵 is running. Click the sphere to interact.")
 
     # 连接点击事件
     controller.clicked.connect(lambda: logger.info("Sphere clicked"))
@@ -103,7 +103,7 @@ def run_cli(settings: dict) -> None:
     retriever = MemoryRetriever(memory)
 
     print("=" * 50)
-    print("  DeskMate CLI Mode")
+    print("  栖灵 CLI Mode")
     print("  Type 'quit' to exit, 'clear' to clear history")
     print("=" * 50)
 
@@ -128,7 +128,7 @@ def run_cli(settings: dict) -> None:
         messages.append({"role": "user", "content": user_input})
         memory.add_message(role="user", content=user_input)
 
-        print("DeskMate: ", end="", flush=True)
+        print("栖灵: ", end="", flush=True)
         response = client.chat(messages, stream=True)
         full_response = ""
         for chunk in response:
@@ -141,7 +141,7 @@ def run_cli(settings: dict) -> None:
 
 def run_test(settings: dict) -> None:
     """测试模式：验证各模块是否正常初始化。"""
-    print("Running DeskMate self-test...\n")
+    print("Running 栖灵 self-test...\n")
 
     # 测试配置加载
     print("[OK] Settings loaded")
@@ -183,7 +183,7 @@ def run_test(settings: dict) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="DeskMate - 桌面 AI 精灵")
+    parser = argparse.ArgumentParser(description="栖灵 - 桌面 AI 精灵")
     parser.add_argument("--test", action="store_true", help="运行自测")
     parser.add_argument("--cli", action="store_true", help="CLI 对话模式")
     parser.add_argument("--config", default="config/settings.yaml", help="配置文件路径")

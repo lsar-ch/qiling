@@ -20,7 +20,7 @@ import logging
 import re
 from pathlib import Path
 
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 from app.agents import office_tools
 from app.agents.base import (
@@ -134,7 +134,7 @@ def _convert_file(source: Path, target_kind: str) -> tuple[Path, str]:
 
 
 _AUTHOR_SYSTEM = (
-    "你是 DeskMate 的办公写作助手。只输出 Markdown 正文，不要寒暄、不要解释你的做法。"
+    "你是 栖灵 的办公写作助手。只输出 Markdown 正文，不要寒暄、不要解释你的做法。"
     "标题用 # / ## / ###，要点用 - 开头，表格用 | 列 | 列 | 的 Markdown 表格。"
     "内容要具体、可直接交给上级或客户，不要写占位符。"
 )
@@ -474,7 +474,7 @@ class LocalOfficeAdapter(AgentAdapter):
         if not text:
             return AgentTaskResult(status="failed", error="模型没有返回可用内容")
         blocks = parse_markdown(text)
-        title = title_of(blocks, fallback=f"DeskMate {work_kind}")
+        title = title_of(blocks, fallback=f"栖灵 {work_kind}")
         target = Path(request.cwd) / default_filename(work_kind, title)
         try:
             write_file(target, work_kind, blocks, raw_text=text)

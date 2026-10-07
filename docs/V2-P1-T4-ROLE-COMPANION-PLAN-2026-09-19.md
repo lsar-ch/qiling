@@ -57,7 +57,7 @@ persona:
 
 ### 契约层
 
-- `packages/contracts/py/deskmate_contracts/widget.py`：`PersonaStyle` 扩展 `"anime"`（语义可理解为动作族）；`PersonaPresentation` 增加 `motion_family` 与可选 `art_style`；保留旧 `style` 做兼容映射。
+- `packages/contracts/py/qiling_contracts/widget.py`：`PersonaStyle` 扩展 `"anime"`（语义可理解为动作族）；`PersonaPresentation` 增加 `motion_family` 与可选 `art_style`；保留旧 `style` 做兼容映射。
 - `packages/contracts/ts/src/widget.ts`：同步镜像。
 - `packages/contracts/ts/src/character.ts`：`CharacterConfig` 增加 `motion_family`、`art_style` 可选字段（与 `style` 渲染方式区分）。
 - 老角色兼容：配置缺省按 `human` 处理，现有挂件无需强制升级。
@@ -177,5 +177,5 @@ function pickAction(
 - `docs/CHARACTER-STAGE-DESIGN-2026-09-10.md`
 - `docs/EXTERNAL-INSIGHTS.md`
 - `docs/HANAAGENT-ANALYSIS.md`
-- `packages/contracts/py/deskmate_contracts/widget.py`
-- `packages/contracts/py/deskmate_contracts/character.py`
+- `packages/contracts/py/qiling_contracts/widget.py`
+- `packages/contracts/py/qiling_contracts/character.py`

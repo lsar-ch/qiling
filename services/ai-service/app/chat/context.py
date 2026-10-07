@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from deskmate_contracts.conversation import Conversation
+from qiling_contracts.conversation import Conversation
 
 
 def build_llm_messages(

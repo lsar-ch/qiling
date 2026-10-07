@@ -1,11 +1,11 @@
-# DeskMate Windows 3D 挂件真机验收任务卡（2026-09-30 轮）
+# 栖灵 Windows 3D 挂件真机验收任务卡（2026-09-30 轮）
 
 > **给 WorkBuddy 的读法**：本轮任务书就是本文。
 > 总流程、交互节奏、禁止事项沿用 `WORKBUDDY-WINDOWS-MIGRATION.md`（下称总文档）第 5 / 12 / 13 节；
 > 上一轮任务卡 `WORKBUDDY-WINDOWS-REGRESSION-2026-09-14.md` 只作格式参考，预期结果以本文为准。
 >
 > 项目目录：`D:\Projects\desktop-assistant`
-> 源码获取：**网盘路线**，源码包 `DeskMate-Windows-src-2026-09-30.zip`（HEAD `2fdcb7f`）
+> 源码获取：**网盘路线**，源码包 `栖灵-Windows-src-2026-09-30.zip`（HEAD `2fdcb7f`）
 > 用户角色：手动执行命令、回传原始输出；WorkBuddy 只做只读检查、解释、判断和记录，一次只推进一个阶段。
 > 说明：Windows 侧无网络，本轮**不用 git**，源码走夸克网盘传包。
 
@@ -38,7 +38,7 @@
 
 Windows 侧无网络，源码走夸克网盘传包，**不需要也不能 `git clone`**。
 
-- 源码包：`DeskMate-Windows-src-2026-09-30.zip`（约 177MB，550 个文件）
+- 源码包：`栖灵-Windows-src-2026-09-30.zip`（约 177MB，550 个文件）
 - 内含 HEAD：`2fdcb7f`（打包时 `origin/main` 的提交，见包内 `SOURCE-VERSION.txt`）
 - 已含全部 3D 资产：`data\persona-assets\`（含 k81 / vrm_demo / komano 的 `model.vrm` 与 `vrma\`）、
   `data\motion-library\{male,female}\`
@@ -47,8 +47,8 @@ Windows 侧无网络，源码走夸克网盘传包，**不需要也不能 `git c
 1. **先处理旧目录（只读检查，不改不删）**：确认 `D:\Projects\desktop-assistant` 是否已存在。
    - 若存在旧内容：由用户确认后，把它**改名**为 `D:\Projects\desktop-assistant-2026-09-14`（改名可回退，删除不可回退）。
    - 旧目录里的 `.env`、`data\settings.local.json` 要留着，第 3.4 步取回。
-2. **解压**：把 `DeskMate-Windows-src-2026-09-30.zip` 解压到 `D:\Projects\`，
-   得到 `D:\Projects\DeskMate-Windows-src-2026-09-30\`，再由用户确认后改名为
+2. **解压**：把 `栖灵-Windows-src-2026-09-30.zip` 解压到 `D:\Projects\`，
+   得到 `D:\Projects\栖灵-Windows-src-2026-09-30\`，再由用户确认后改名为
    `D:\Projects\desktop-assistant`（与本文约定路径一致）。
 3. **确认落位**：打开包内 `SOURCE-VERSION.txt`，`HEAD commit` 必须是
    `2fdcb7fee3b33274001a8690247febcae42f209d`。不一致就停下报告。
@@ -146,7 +146,7 @@ npm run typecheck
 1. 确认当前角色是 3D 角色。最简单的方式：把 `data\settings.local.json` 里的
    `active_persona_id` 设为 `"k81"`（`k81` 的 `avatar_driver` 就是 `vrm_3d`，模型是 `model.vrm`）。
    备选角色：`vrm_demo`（体积小，适合先跑通）。**不要用 `komano`（约 64MB，先跳过）**。
-2. 启动 DeskMate（**不要手动**起 uvicorn，让 Tauri 自管）：
+2. 启动 栖灵（**不要手动**起 uvicorn，让 Tauri 自管）：
 
    ```powershell
    cd D:\Projects\desktop-assistant\apps\desktop
@@ -199,7 +199,7 @@ npm run typecheck
 ### 7.7 WebGL 上下文健康（补充检查，证明不是「假透明」）
 
 - 目的：确认画面不是「整块透明但模型根本没渲染」。
-- 操作：正常浏览器打开 `http://localhost:1420/?deskmate=widget`（dev server 在跑时可用），
+- 操作：正常浏览器打开 `http://localhost:1420/?qiling=widget`（dev server 在跑时可用），
   按 F12 打开控制台，查看是否出现 WebGL / THREE 相关报错。
 - 通过判据：控制台**没有** `THREE.WebGLRenderer: Error creating WebGL context`、
   `CONTEXT_LOST_WEBGL`、`Failed to create WebGL context` 之类报错；画面里能看到模型本体。
@@ -227,18 +227,18 @@ npm run typecheck
 | 15 | 角色形象显示正常，挂件显示同一形象 | 挂件显示与角色卡一致的 3D 形象 |
 | 16 | 「我的智能体」显示 Codex 状态 | 有明确可用/不可用结论 |
 | 17 | 没有 Codex 时任务保留在队列并显示不可用原因 | 有可读原因，不静默失败 |
-| 18 | 关闭 DeskMate 后没有残留 `uvicorn` 与 `:8736` 监听 | 见第 9 节 |
+| 18 | 关闭 栖灵 后没有残留 `uvicorn` 与 `:8736` 监听 | 见第 9 节 |
 
 ## 9. 阶段 5：退出回收（第 18 项的测法）
 
 测 **Tauri 自管**的服务，不要手动起 uvicorn：
 
 1. 用 `npm run tauri dev` 启动，确认挂件出现、`/api/health` 正常。
-2. 从挂件右键菜单退出 DeskMate。
+2. 从挂件右键菜单退出 栖灵。
 3. 立刻检查：
 
 ```powershell
-tasklist | findstr /i "deskmate uvicorn"
+tasklist | findstr /i "qiling uvicorn"
 netstat -ano | findstr :8736
 ```
 
@@ -251,7 +251,7 @@ netstat -ano | findstr :8736
 - `npm audit` 仍报 2 条（vite high / esbuild moderate）—— 已挂 P2（`docs\DEPENDENCY-VULNERABILITIES.md`），本轮不修。
 - npm 11 对 esbuild postinstall 的拦截警告 —— 忽略即可，`npm run build` 成功即通过。
 - pytest `1 skipped` —— POSIX 专有用例在 Windows 无法构造前提，正常。
-- 退出 DeskMate 后浏览器不会关闭，页面显示「DeskMate 已退出」—— 设计如此。
+- 退出 栖灵 后浏览器不会关闭，页面显示「栖灵 已退出」—— 设计如此。
 - `scripts\check.sh` 在 Windows 不可用 —— 用第 6 节等价命令代替。
 
 ## 11. 禁止事项（沿用总文档第 12 节）

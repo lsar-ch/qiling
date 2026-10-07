@@ -18,7 +18,7 @@ from app.agents import workbuddy as workbuddy_module
 from app.agents.registry import AgentRegistry
 from app.config import load_settings
 from app.main import create_app
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -29,8 +29,8 @@ DEFAULT_EXECUTOR = yaml.safe_load(
 
 
 def prepare_home(tmp_path, monkeypatch) -> None:
-    home = tmp_path / "deskmate-home"
-    monkeypatch.setenv("DESKMATE_HOME", str(home))
+    home = tmp_path / "qiling-home"
+    monkeypatch.setenv("QILING_HOME", str(home))
     (home / "config" / "personas").mkdir(parents=True)
     (home / "data").mkdir(parents=True)
     (home / "config").joinpath("settings.yaml").write_text(
@@ -38,7 +38,7 @@ def prepare_home(tmp_path, monkeypatch) -> None:
         encoding="utf-8",
     )
     (home / "config").joinpath("system_prompt.md").write_text(
-        "你是 DeskMate。",
+        "你是 栖灵。",
         encoding="utf-8",
     )
     shutil.copyfile(
@@ -180,7 +180,7 @@ def test_workbuddy_command_config_is_persisted_and_detected(tmp_path, monkeypatc
     with make_client(tmp_path, monkeypatch) as client:
         updated = client.put(
             "/api/agents/workbuddy/config",
-            json={"command": "/tmp/deskmate-workbuddy-test"},
+            json={"command": "/tmp/qiling-workbuddy-test"},
         )
         assert updated.status_code == 200
         body = updated.json()
@@ -191,7 +191,7 @@ def test_workbuddy_command_config_is_persisted_and_detected(tmp_path, monkeypatc
 
         config = client.get("/api/agents/config").json()
         workbuddy = next(item for item in config["items"] if item["name"] == "workbuddy")
-        assert workbuddy["config"]["workbuddy_command"] == "/tmp/deskmate-workbuddy-test"
+        assert workbuddy["config"]["workbuddy_command"] == "/tmp/qiling-workbuddy-test"
 
 
 def test_load_agent_catalog_merges_local_agents(tmp_path) -> None:
@@ -337,8 +337,8 @@ def test_workbuddy_spawn_passes_cli_acp_args(monkeypatch) -> None:
 
     monkeypatch.setattr(workbuddy_module.AcpClient, "spawn", fake_spawn)
     runtime = workbuddy_module.WorkBuddyRuntime(
-        cli=Path("/tmp/deskmate-workbuddy-cli"),
-        runner=Path("/tmp/deskmate-workbuddy-runner"),
+        cli=Path("/tmp/qiling-workbuddy-cli"),
+        runner=Path("/tmp/qiling-workbuddy-runner"),
         electron=True,
     )
     adapter = workbuddy_module.WorkBuddyAdapter()
@@ -378,7 +378,7 @@ def test_agents_api_set_default_writes_local_overlay(tmp_path, monkeypatch) -> N
         resp = client.put("/api/agents/codex/config", json={"set_default": True})
         assert resp.status_code == 200
         assert client.get("/api/agents").json()["default_executor"] == "codex"
-        local = tmp_path / "deskmate-home" / "config" / "agents.local.yaml"
+        local = tmp_path / "qiling-home" / "config" / "agents.local.yaml"
         assert "default_executor: codex" in local.read_text(encoding="utf-8")
 
         # workbuddy 默认停用，先启用再设为默认。
@@ -433,14 +433,14 @@ def test_agents_api_enable_and_disable_executor(tmp_path, monkeypatch) -> None:
 def test_agents_api_command_update_keeps_other_overrides(tmp_path, monkeypatch) -> None:
     """只改启停不应顺手清掉已保存的命令路径。"""
     with make_client(tmp_path, monkeypatch) as client:
-        client.put("/api/agents/codex/config", json={"command": "/tmp/deskmate-codex-test"})
+        client.put("/api/agents/codex/config", json={"command": "/tmp/qiling-codex-test"})
         assert client.put(
             "/api/agents/workbuddy/config", json={"enabled": True, "set_default": True}
         ).status_code == 200
         assert client.put("/api/agents/codex/config", json={"enabled": False}).status_code == 200
         config = client.get("/api/agents/config").json()
         codex = next(item for item in config["items"] if item["name"] == "codex")
-        assert codex["config"]["codex_command"] == "/tmp/deskmate-codex-test"
+        assert codex["config"]["codex_command"] == "/tmp/qiling-codex-test"
         assert codex["enabled"] is False
 
 # --- WorkBuddy 授权链路（2026-09-16 实测报文：kind 与 optionId 不同名）---
@@ -607,8 +607,8 @@ def test_workbuddy_api_key_is_injected_and_never_returned(tmp_path, monkeypatch)
     在 macOS 与 Windows 双端复现。唯一通道是把 Key 经 env 传给子进程。
     """
     runtime = workbuddy_module.WorkBuddyRuntime(
-        cli=Path("/tmp/deskmate-workbuddy-cli"),
-        runner=Path("/tmp/deskmate-workbuddy-runner"),
+        cli=Path("/tmp/qiling-workbuddy-cli"),
+        runner=Path("/tmp/qiling-workbuddy-runner"),
         electron=True,
     )
     with make_client(tmp_path, monkeypatch) as client:
@@ -647,8 +647,8 @@ def test_workbuddy_exec_probe_flags_refusal(monkeypatch) -> None:
     P1「WorkBuddy 拒绝执行该任务」的形态，握手探针看不出来。
     """
     runtime = workbuddy_module.WorkBuddyRuntime(
-        cli=Path("/tmp/deskmate-workbuddy-cli"),
-        runner=Path("/tmp/deskmate-workbuddy-runner"),
+        cli=Path("/tmp/qiling-workbuddy-cli"),
+        runner=Path("/tmp/qiling-workbuddy-runner"),
         electron=True,
     )
 
@@ -700,8 +700,8 @@ def test_workbuddy_exec_probe_flags_refusal(monkeypatch) -> None:
 def test_workbuddy_exec_probe_is_off_the_request_path(monkeypatch) -> None:
     """探测必须后台跑：健康检查只有 3~5s 超时，真实 prompt 要十几秒。"""
     runtime = workbuddy_module.WorkBuddyRuntime(
-        cli=Path("/tmp/deskmate-workbuddy-cli"),
-        runner=Path("/tmp/deskmate-workbuddy-runner"),
+        cli=Path("/tmp/qiling-workbuddy-cli"),
+        runner=Path("/tmp/qiling-workbuddy-runner"),
         electron=True,
     )
 
@@ -768,8 +768,8 @@ def test_workbuddy_probe_uses_dedicated_workdir_not_home(monkeypatch) -> None:
 
     monkeypatch.setattr(workbuddy_module.AcpClient, "spawn", fake_spawn)
     runtime = workbuddy_module.WorkBuddyRuntime(
-        cli=Path("/tmp/deskmate-workbuddy-cli"),
-        runner=Path("/tmp/deskmate-workbuddy-runner"),
+        cli=Path("/tmp/qiling-workbuddy-cli"),
+        runner=Path("/tmp/qiling-workbuddy-runner"),
         electron=True,
     )
     adapter = workbuddy_module.WorkBuddyAdapter()

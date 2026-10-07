@@ -1,4 +1,4 @@
-// 语音契约 —— 镜像自 deskmate_contracts/voice.py。
+// 语音契约 —— 镜像自 qiling_contracts/voice.py。
 
 export type VoiceProvider =
   | "auto"

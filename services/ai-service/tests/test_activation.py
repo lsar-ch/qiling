@@ -50,7 +50,7 @@ def test_classify_priority_and_default() -> None:
 
 
 def _client(tmp_path, monkeypatch):
-    """临时 DESKMATE_HOME：固定角色名为「千问」。
+    """临时 QILING_HOME：固定角色名为「千问」。
 
     接口级用例不能读开发者本地的角色配置，否则本机启用别的角色后
     唤醒词会变，测试结果随环境漂移。
@@ -59,7 +59,7 @@ def _client(tmp_path, monkeypatch):
     from pathlib import Path
 
     project_root = Path(__file__).resolve().parents[3]
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(project_root / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")

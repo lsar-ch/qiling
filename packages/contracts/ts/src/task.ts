@@ -1,4 +1,4 @@
-// 任务契约 —— 镜像自 deskmate_contracts/task.py。
+// 任务契约 —— 镜像自 qiling_contracts/task.py。
 export type TaskCategory =
   | "answer"
   | "execute_frontend"

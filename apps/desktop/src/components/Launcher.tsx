@@ -93,7 +93,7 @@ export default function Launcher() {
       <header className="l-head">
         <span className="dot" data-state={healthy ? "ok" : "off"} />
         <div>
-          <h1>DeskMate</h1>
+          <h1>栖灵</h1>
           <p className="sub">桌面运行时 · Step 2（挂件 + 主界面）</p>
         </div>
       </header>

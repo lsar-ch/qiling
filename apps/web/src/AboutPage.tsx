@@ -139,7 +139,7 @@ export default function AboutPage() {
       <section className={CARD_CLS}>
         <h3 className={TITLE_CLS}>本地优先与数据边界</h3>
         <p className={BODY_CLS}>
-          DeskMate 默认在本机运行：服务、模型调用与文件处理均可在本地完成，数据不出设备；只有你主动授权的网络任务才会访问外部服务。
+          栖灵默认在本机运行：服务、模型调用与文件处理均可在本地完成，数据不出设备；只有你主动授权的网络任务才会访问外部服务。
         </p>
         <div className="flex flex-col gap-1.5 min-w-0">
           {DIRS.map((d) => (
@@ -185,7 +185,7 @@ export default function AboutPage() {
       <section className={CARD_CLS}>
         <h3 className={TITLE_CLS}>致谢与第三方</h3>
         <p className={BODY_CLS}>
-          DeskMate 由本地优先的组件与工具构建，核心能力均可脱离云端在本机运行：
+          栖灵由本地优先的组件与工具构建，核心能力均可脱离云端在本机运行：
         </p>
         <ul className="flex flex-wrap gap-1.5">
           {STACK.map((name) => (

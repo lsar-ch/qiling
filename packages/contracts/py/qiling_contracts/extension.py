@@ -83,7 +83,7 @@ OfficeToolInstallKind = Literal["builtin", "pip", "link"]
 class OfficeToolInfo(BaseModel):
     """办公引擎：本机可用的渲染/排版工具及其安装方式。
 
-    DeskMate 只负责探测与调用，工具本体由用户按需安装（``config/office_tools.yaml``）。
+    栖灵 只负责探测与调用，工具本体由用户按需安装（``config/office_tools.yaml``）。
     """
 
     name: str

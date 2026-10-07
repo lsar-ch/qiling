@@ -1,6 +1,6 @@
-# DeskMate 办公引擎目录：写作 / 排版 / 格式转换用的外部工具。
+# 栖灵办公引擎目录：写作 / 排版 / 格式转换用的外部工具。
 #
-# 只登记「外部工具本体」，不复制它们的代码：DeskMate 负责探测本机是否可用、
+# 只登记「外部工具本体」，不复制它们的代码：栖灵负责探测本机是否可用、
 # 按需安装、调用。工具由用户自行获取，避免包体膨胀与许可证问题。
 #
 # install.kind:
@@ -49,7 +49,7 @@ tools:
 
   - name: typst
     label: Typst（出版级 PDF 排版）
-    detail: 装好后 DeskMate 的 PDF 自动改用它排版（两端对齐、表格与页码更精致），排版质量接近 LaTeX；未安装时用内置 PDF 渲染器。
+    detail: 装好后栖灵的 PDF 自动改用它排版（两端对齐、表格与页码更精致），排版质量接近 LaTeX；未安装时用内置 PDF 渲染器。
     homepage: https://github.com/typst/typst/releases
     license: Apache-2.0
     powers: [pdf]

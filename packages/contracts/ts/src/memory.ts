@@ -1,4 +1,4 @@
-// 记忆契约 —— 镜像自 deskmate_contracts/memory.py。
+// 记忆契约 —— 镜像自 qiling_contracts/memory.py。
 export type MemoryLayer = "L2" | "L3" | "persona";
 
 export interface MemoryEntrySummary {

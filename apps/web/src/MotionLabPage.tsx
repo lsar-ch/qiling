@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DEFAULT_ACTIONS, type ActionSpec, type ActionTrigger } from "@deskmate/contracts";
+import { DEFAULT_ACTIONS, type ActionSpec, type ActionTrigger } from "@qiling/contracts";
 import { fetchMotions, fetchPersonas, motionLibraryUrl, personaAssetUrl, saveMotions, type MotionOverrides, type PersonaCard, type VrmMotionConfig, type VrmClipRef } from "./api";
 import VrmPreview from "./VrmPreview";
 

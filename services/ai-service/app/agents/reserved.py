@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import shutil
 
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 from app.agents.base import AgentAdapter
 from app.agents.catalog import AgentCatalogEntry

@@ -2,7 +2,7 @@
 
 ## 结论
 
-写作/排版走**插件市场模式**：DeskMate 只提供清单、探测、安装入口与调用，
+写作/排版走**插件市场模式**：栖灵 只提供清单、探测、安装入口与调用，
 工具本体由社区项目自行分发，我们不复制它们的代码。位置在「技能扩展 → 办公工具」。
 
 这套模式与「我的智能体」的执行器目录、「技能扩展」的 Skill / MCP 是同一个思路：
@@ -12,7 +12,7 @@
 
 | 环节 | 实现 |
 | --- | --- |
-| 清单 | `config/office_tools.yaml`（支持 `DESKMATE_OFFICE_TOOLS_CONFIG` 覆盖） |
+| 清单 | `config/office_tools.yaml`（支持 `QILING_OFFICE_TOOLS_CONFIG` 覆盖） |
 | 探测 | `app/agents/office_tools.py`：`builtin` 恒真 / `python-module` 看 import / `command` 看 PATH |
 | 接口 | `GET /api/office-tools`、`POST /api/office-tools/{name}/install`（挂在 extensions 路由下） |
 | 界面 | `apps/web/src/ExtensionsPage.tsx` 的「办公工具」tab |
@@ -65,7 +65,7 @@ docxtpl 的模板可由用户提供（公司抬头、页眉页脚、品牌样式
 
 ```
 title           字符串，文档标题（取第一个 H1）
-subtitle        字符串，固定「由 DeskMate 生成」
+subtitle        字符串，固定「由 栖灵 生成」
 sections[]      heading / level / paragraphs[] / bullets[] / tables[][][]
 ```
 

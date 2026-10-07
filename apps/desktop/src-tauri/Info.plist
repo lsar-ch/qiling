@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>DeskMate 需要使用麦克风听取你的语音指令和唤醒词。</string>
+  <string>栖灵需要使用麦克风听取你的语音指令和唤醒词。</string>
 </dict>
 </plist>

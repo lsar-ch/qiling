@@ -306,7 +306,7 @@ export default function Widget() {
   const [busy, setBusy] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceEndpointStatus | null>(null);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("off");
-  const [personaName, setPersonaName] = useState("DeskMate");
+  const [personaName, setPersonaName] = useState("栖灵");
   const [speaking, setSpeaking] = useState(false);
   const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   const [alert, setAlert] = useState(false);
@@ -356,7 +356,7 @@ export default function Widget() {
   const lastSpokenAtRef = useRef(0);
   const voiceModeRef = useRef<VoiceMode>("off");
   const voiceStatusRef = useRef<VoiceEndpointStatus | null>(null);
-  const personaNameRef = useRef("DeskMate");
+  const personaNameRef = useRef("栖灵");
   const activeRef = useRef(false);
   const inputOpenRef = useRef(false);
   const autoVoiceRef = useRef(false);
@@ -1677,7 +1677,7 @@ export default function Widget() {
   };
 
   // 菜单高度随内容与角色缩放浮动，渲染后按实测尺寸再收一次窗口边界，
-  // 确保最下面的「退出 DeskMate」不会被挂件窗口裁掉。
+  // 确保最下面的「退出栖灵」不会被挂件窗口裁掉。
   useLayoutEffect(() => {
     if (!ctxMenu) return;
     const el = ctxMenuRef.current;
@@ -1843,7 +1843,7 @@ export default function Widget() {
               className="mascot-base"
               ref={mascotRef}
               src={mascotArt}
-              alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+              alt={`栖灵 ${bubble || (connected ? "状态正常" : "服务未连接")}`}
               draggable={false}
               data-hidden="1"
             />
@@ -1865,7 +1865,7 @@ export default function Widget() {
               className="mascot-base"
               ref={mascotRef}
               src={mascotArt}
-              alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+              alt={`栖灵 ${bubble || (connected ? "状态正常" : "服务未连接")}`}
               draggable={false}
               data-hidden="1"
             />
@@ -1882,7 +1882,7 @@ export default function Widget() {
               className="mascot-base"
               ref={mascotRef}
               src={mascotArt}
-              alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+              alt={`栖灵 ${bubble || (connected ? "状态正常" : "服务未连接")}`}
               draggable={false}
               data-hidden="1"
             />
@@ -1903,7 +1903,7 @@ export default function Widget() {
             className="mascot"
             ref={mascotRef}
             src={mascotArt}
-            alt={`DeskMate ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+            alt={`栖灵 ${bubble || (connected ? "状态正常" : "服务未连接")}`}
             draggable={false}
           />
         )}
@@ -2012,7 +2012,7 @@ export default function Widget() {
               void invoke("quit_app");
             }}
           >
-            退出 DeskMate
+            退出栖灵
           </button>
         </div>
       )}

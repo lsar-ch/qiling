@@ -63,7 +63,7 @@ def test_link_and_already_installed_branches(tmp_path: Path, monkeypatch: pytest
         "    detect: {kind: python-module, value: json}\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("DESKMATE_OFFICE_TOOLS_CONFIG", str(catalog))
+    monkeypatch.setenv("QILING_OFFICE_TOOLS_CONFIG", str(catalog))
 
     assert {tool.name for tool in office_tools.list_tools()} == {"linky", "pippy"}
 
@@ -110,15 +110,15 @@ def test_pip_install_reports_success_and_failure(monkeypatch: pytest.MonkeyPatch
 
 
 def test_office_tools_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    home = tmp_path / "deskmate-home"
-    monkeypatch.setenv("DESKMATE_HOME", str(home))
+    home = tmp_path / "qiling-home"
+    monkeypatch.setenv("QILING_HOME", str(home))
     (home / "config" / "personas").mkdir(parents=True)
     (home / "data").mkdir(parents=True)
     (home / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
-    (home / "config" / "system_prompt.md").write_text("你是 DeskMate。", encoding="utf-8")
+    (home / "config" / "system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     for name in ("agents.yaml", "office_tools.yaml"):
         shutil.copyfile(PROJECT_ROOT / "config" / name, home / "config" / name)
-    monkeypatch.delenv("DESKMATE_OFFICE_TOOLS_CONFIG", raising=False)
+    monkeypatch.delenv("QILING_OFFICE_TOOLS_CONFIG", raising=False)
 
     with TestClient(create_app(load_settings())) as client:
         listed = client.get("/api/office-tools")

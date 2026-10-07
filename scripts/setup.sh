@@ -1,5 +1,5 @@
 #!/bin/bash
-# DeskMate 一键安装脚本（P2-T1）
+# 栖灵 一键安装脚本（P2-T1）
 # 用法:
 #   ./scripts/setup.sh                  # 基础安装：工具链检测 + .venv + 前端依赖/构建 + smoke test
 #   ./scripts/setup.sh --with-voice     # 追加本地语音依赖（麦克风采集 + VAD）
@@ -25,7 +25,7 @@ warn() { printf '⚠️  %s\n' "$*"; }
 
 usage() {
   cat <<'EOF'
-DeskMate 安装脚本（macOS / Linux）
+栖灵 安装脚本（macOS / Linux）
 
 用法：
   ./scripts/setup.sh [--with-voice] [--with-browser]
@@ -120,7 +120,7 @@ pkg_hint() {  # $1=macOS 命令 $2=Linux 命令
 }
 
 # 变量后紧跟全角字符时必须加花括号：bash 在部分 locale 下会把高位字节并入变量名
-say "🔧 DeskMate 安装开始（系统：${OS_NAME}，目录：${ROOT}）"
+say "🔧 栖灵 安装开始（系统：${OS_NAME}，目录：${ROOT}）"
 
 # ── 1. 工具链检测 ────────────────────────────────────────────
 say ""

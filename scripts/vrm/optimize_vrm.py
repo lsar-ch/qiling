@@ -4,10 +4,10 @@
   blender --background --python scripts/vrm/optimize_vrm.py
 
 环境变量：
-  DESKMATE_VRM_SRC   源 .vrm（VRM 0.x）
-  DESKMATE_VRM_OUT   输出 .vrm
-  DESKMATE_VRM_THUMB 缩略图输出路径
-  DESKMATE_VRM_BLEND 可选，存中间 .blend
+  QILING_VRM_SRC   源 .vrm（VRM 0.x）
+  QILING_VRM_OUT   输出 .vrm
+  QILING_VRM_THUMB 缩略图输出路径
+  QILING_VRM_BLEND 可选，存中间 .blend
 
 对芙宁娜这个模型的实测结论（改前先读）：
   1. 38MB 里 36MB 是 morph target，共 340 个；但 VRM0 的 blendShapeGroup
@@ -51,20 +51,20 @@ import re
 import bpy
 from mathutils import Vector
 
-SRC = os.environ.get("DESKMATE_VRM_SRC", "/tmp/furina/source.vrm")
+SRC = os.environ.get("QILING_VRM_SRC", "/tmp/furina/source.vrm")
 OUT = os.environ.get(
-    "DESKMATE_VRM_OUT",
+    "QILING_VRM_OUT",
     "/Users/lxb/Documents/desktop assistant project/build/vrm/furina/model.vrm",
 )
-THUMB = os.environ.get("DESKMATE_VRM_THUMB", "")
-BLEND = os.environ.get("DESKMATE_VRM_BLEND", "")
+THUMB = os.environ.get("QILING_VRM_THUMB", "")
+BLEND = os.environ.get("QILING_VRM_BLEND", "")
 
-THUMB_SIZE = int(os.environ.get("DESKMATE_VRM_THUMB_SIZE", "512"))
-SPRING_BUDGET = int(os.environ.get("DESKMATE_SPRING_BUDGET", "30"))
+THUMB_SIZE = int(os.environ.get("QILING_VRM_THUMB_SIZE", "512"))
+SPRING_BUDGET = int(os.environ.get("QILING_SPRING_BUDGET", "30"))
 MAX_TRIS = 40000
 MAX_MATERIALS = 16
 # 需减面的模型分轮削，单轮下限避免一次削过头把脸削崩
-DECIMATE_MIN_RATIO = float(os.environ.get("DESKMATE_DECIMATE_MIN_RATIO", "0.35"))
+DECIMATE_MIN_RATIO = float(os.environ.get("QILING_DECIMATE_MIN_RATIO", "0.35"))
 
 # VRM0 preset -> VRM1 preset 槽位名
 VRM0_TO_VRM1_PRESET = {
@@ -605,7 +605,7 @@ def set_meta(armature, thumbnail=None):
     meta = ext.vrm1.meta
     # 名字/作者/版本优先从源 vrm0.meta 取，别再写死「宁娜」（那份是芙宁娜专用）
     src = read_source_meta(ext)
-    meta.vrm_name = src.get("title") or src.get("name") or "DeskMate 3D"
+    meta.vrm_name = src.get("title") or src.get("name") or "栖灵 3D"
     meta.version = src.get("version") or "1.0.0"
     if not meta.authors:
         meta.authors.add().value = src.get("author") or "原作者"

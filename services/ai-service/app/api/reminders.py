@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from deskmate_contracts.reminder import Reminder, ReminderKind, ReminderRepeat, ReminderStatus
+from qiling_contracts.reminder import Reminder, ReminderKind, ReminderRepeat, ReminderStatus
 
 router = APIRouter(prefix="/api/reminders", tags=["reminders"])
 

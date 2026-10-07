@@ -13,7 +13,7 @@ import re
 import webbrowser
 from pathlib import Path
 
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 from app.agents.base import (
     AgentAdapter,
@@ -79,7 +79,7 @@ def is_browser_task(text: str) -> bool:
 
 def is_web_fetch_task(text: str) -> bool:
     """带链接的消息是网页抓取/提炼任务：交给后台 workbuddy（agent 模式）执行，
-    由 workbuddy 自己抓取网页并提炼，DeskMate 不做网页正文解析。"""
+    由 workbuddy 自己抓取网页并提炼，栖灵 不做网页正文解析。"""
     return bool(_WEB_URL.search(text)) and not _BACKEND_TOPIC.search(text)
 
 

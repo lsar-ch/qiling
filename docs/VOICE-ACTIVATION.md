@@ -1,4 +1,4 @@
-# DeskMate 语音激活方案（常开 / 静默 / 唤醒）
+# 栖灵 语音激活方案（常开 / 静默 / 唤醒）
 
 > 状态：2026-09-04 设计定稿，Step 4 语音闭环验收后落地。
 > 需求来源（用户）：麦克风默认常开，系统自动判断主人说完并执行反馈；
@@ -72,14 +72,14 @@
 server/src/voice/realtime-gateway.mjs）。
 
 - 客户端：麦克风常开、**播报时不关麦**、持续把 PCM 推上实时通道；
-  采集约束与 DeskMate 相同（echoCancellation + noiseSuppression + autoGainControl）。
+  采集约束与 栖灵 相同（echoCancellation + noiseSuppression + autoGainControl）。
 - 客户端播放与采集**共用同一个 AudioContext**（`createBufferSource → context.destination`），
   比独立 `new Audio()` 更有利于浏览器 AEC 取参考信号。
 - 服务端：回合/话语权状态机（voice.state idle/listening、ownership、interrupt）。
   模型播报期间，输入音频只用于「用户抢话打断」，**不会另起一轮把回声变成新指令**——
-  这本质上是「说话期间输入不作为新对话」的门控，与 DeskMate 已上线的
+  这本质上是「说话期间输入不作为新对话」的门控，与 栖灵 已上线的
   「播报窗口丢弃回采段 + 800ms 打断阈值」同一思路，只是他们下沉到了服务端回合层。
 - 他们的「休眠/唤醒」也在服务端（SleepController + sherpa-onnx 本地唤醒词，
-  休眠提示文案见 realtime-gateway），印证 DeskMate 静默/唤醒思路可后续下沉后端。
+  休眠提示文案见 realtime-gateway），印证 栖灵 静默/唤醒思路可后续下沉后端。
 - 启示：V1 若 AEC 仍不理想，第一步改「播放走采集同一 AudioContext」对齐其实现；
   根治双工抢话要靠实时语音通道 + 服务端回合状态机（Step 8 全双工路线）。

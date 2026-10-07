@@ -28,7 +28,7 @@ class CaptureProvider:
 
 
 def _prepare_home(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL", "DASHSCOPE_API_KEY", "MINIMAX_API_KEY"):
         monkeypatch.delenv(key, raising=False)
     (tmp_path / "config" / "personas").mkdir(parents=True)

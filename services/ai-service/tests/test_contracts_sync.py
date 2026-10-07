@@ -46,7 +46,7 @@ def ts_interface_keys(file_stem: str, interface: str) -> set[str]:
 def import_model(model_name: str):
     import importlib
 
-    return getattr(importlib.import_module("deskmate_contracts"), model_name)
+    return getattr(importlib.import_module("qiling_contracts"), model_name)
 
 
 @pytest.mark.parametrize("model_name", sorted(MIRROR_MAP))

@@ -141,7 +141,7 @@ class TestOptionalEngines:
     def test_engines_stand_down_when_not_installed(self, tmp_path, monkeypatch) -> None:
         blocks = parse_markdown("# 标题\n")
         monkeypatch.setattr(office_writer.shutil, "which", lambda _name: None)
-        monkeypatch.setenv("DESKMATE_OFFICE_TEMPLATES", str(tmp_path / "no-such-dir"))
+        monkeypatch.setenv("QILING_OFFICE_TEMPLATES", str(tmp_path / "no-such-dir"))
         assert office_writer._write_pdf_via_typst(tmp_path / "x.pdf", blocks) is False
         assert office_writer._write_docx_via_template(tmp_path / "x.docx", blocks) is False
 

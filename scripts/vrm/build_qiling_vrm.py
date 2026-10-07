@@ -1,13 +1,13 @@
-"""Headless Blender build of DeskMate's original VRM 1.0 mascot.
+"""Headless Blender build of 栖灵's original VRM 1.0 mascot.
 
-Run:  blender --background --python scripts/vrm/build_deskmate_vrm.py
+Run:  blender --background --python scripts/vrm/build_qiling_vrm.py
 Requires the "VRM format" add-on (extension id: vrm) installed and enabled.
 
 Environment variables:
-  DESKMATE_VRM_OUT           output model.vrm       (required)
-  DESKMATE_VRM_BLEND         output source .blend   (optional)
-  DESKMATE_VRM_THUMB         output thumbnail .png  (optional)
-  DESKMATE_VRM_SKIP_THUMB=1  skip the EEVEE render
+  QILING_VRM_OUT           output model.vrm       (required)
+  QILING_VRM_BLEND         output source .blend   (optional)
+  QILING_VRM_THUMB         output thumbnail .png  (optional)
+  QILING_VRM_SKIP_THUMB=1  skip the EEVEE render
 
 Blender space convention: +Z up, -Y forward, +X is the character's left side,
 which the VRM exporter mirrors into the VRM "*Right*" bones.
@@ -396,7 +396,7 @@ def build_morphs(obj):
 def build_rig():
     bpy.ops.icyp.make_basic_armature()
     arm = active()
-    arm.name = "DeskMateRig"
+    arm.name = "栖灵Rig"
     to_object_mode()
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode="EDIT")
@@ -585,7 +585,7 @@ def join_parts(parts, arm):
         p for p in parts if p.name == "skull")
     bpy.ops.object.join()
     body = active()
-    body.name = "DeskMate"
+    body.name = "栖灵"
     body.parent = arm
     body.matrix_parent_inverse = arm.matrix_world.inverted()
     body.modifiers.new("Armature", "ARMATURE").object = arm
@@ -594,11 +594,11 @@ def join_parts(parts, arm):
 
 def set_meta(arm, thumbnail=None):
     meta = arm.data.vrm_addon_extension.vrm1.meta
-    meta.vrm_name = "宁娜 · DeskMate 3D"
+    meta.vrm_name = "宁娜 · 栖灵 3D"
     meta.version = "1.0.0"
     if not meta.authors:
-        meta.authors.add().value = "DeskMate"
-    meta.copyright_information = "Copyright 2026 DeskMate"
+        meta.authors.add().value = "栖灵"
+    meta.copyright_information = "Copyright 2026 栖灵"
     meta.contact_information = "local project"
     if not meta.references:
         meta.references.add().value = "https://vrm-addon-for-blender.info/"
@@ -724,13 +724,13 @@ def render_thumbnail(path, size=512):
 
 
 def main():
-    out = os.environ.get("DESKMATE_VRM_OUT")
+    out = os.environ.get("QILING_VRM_OUT")
     if not out:
-        raise SystemExit("DESKMATE_VRM_OUT is required")
+        raise SystemExit("QILING_VRM_OUT is required")
     out = os.path.abspath(out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    blend_out = os.environ.get("DESKMATE_VRM_BLEND")
-    thumb_out = os.environ.get("DESKMATE_VRM_THUMB")
+    blend_out = os.environ.get("QILING_VRM_BLEND")
+    thumb_out = os.environ.get("QILING_VRM_THUMB")
 
     if not any(m.__name__.endswith("vrm") for m in addon_utils.modules()):
         raise SystemExit("VRM add-on is not installed")
@@ -752,7 +752,7 @@ def main():
         bpy.ops.wm.save_as_mainfile(filepath=blend_out)
         log("BLEND %s" % blend_out)
 
-    if thumb_out and os.environ.get("DESKMATE_VRM_SKIP_THUMB") != "1":
+    if thumb_out and os.environ.get("QILING_VRM_SKIP_THUMB") != "1":
         thumb_out = os.path.abspath(thumb_out)
         os.makedirs(os.path.dirname(thumb_out), exist_ok=True)
         try:

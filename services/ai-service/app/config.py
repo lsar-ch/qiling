@@ -33,7 +33,7 @@ class PerformanceMode(StrEnum):
 
 
 def repo_root() -> Path:
-    env = os.environ.get("DESKMATE_HOME")
+    env = os.environ.get("QILING_HOME")
     if env:
         return Path(env).resolve()
     return Path(__file__).resolve().parents[3]
@@ -141,9 +141,9 @@ class Settings:
         try:
             path = self.repo_root / "config" / "system_prompt.md"
             text = path.read_text(encoding="utf-8")
-            return text.strip() or "你是 DeskMate，一个本地优先的桌面 AI 助理。"
+            return text.strip() or "你是 栖灵，一个本地优先的桌面 AI 助理。"
         except Exception:
-            return "你是 DeskMate，一个本地优先的桌面 AI 助理。"
+            return "你是 栖灵，一个本地优先的桌面 AI 助理。"
 
     @property
     def service_url(self) -> str:
@@ -302,12 +302,12 @@ def load_settings() -> Settings:
             ),
         )
     )
-    settings.host = os.environ.get("DESKMATE_HOST", settings.host)
+    settings.host = os.environ.get("QILING_HOST", settings.host)
     try:
-        settings.port = int(os.environ.get("DESKMATE_PORT", str(settings.port)))
+        settings.port = int(os.environ.get("QILING_PORT", str(settings.port)))
     except ValueError:
         pass
-    origins = os.environ.get("DESKMATE_CORS_ORIGINS", "")
+    origins = os.environ.get("QILING_CORS_ORIGINS", "")
     if origins.strip():
         settings.cors_origins = [o.strip() for o in origins.split(",") if o.strip()]
 

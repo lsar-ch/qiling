@@ -1,16 +1,16 @@
 # 角色级表现方案讨论与桌宠架构分析记录（2026-09-10）
 
 > 日期：2026-09-10 ｜ 状态：历史设计记录；当前实现进度以 `docs/PROJECT-ROADMAP.md` 为准
-> 关联项目：DeskMate（`/Users/lxb/Documents/desktop assistant project`）
+> 关联项目：栖灵（`/Users/lxb/Documents/desktop assistant project`）
 
 ## 0. 背景
 
 两轮对话均为设计讨论，未改动任何代码：
 
 1. **讨论一**：人物角色卡关联的「动态效果配置」里，角色级表现用什么介质展示、如何生成。
-2. **讨论二**：分析一份外部桌宠架构材料（素材渲染 / 状态中枢 / 智能行为 / 角色卡状态数据四层设计），判断哪些可吸收进 DeskMate。
+2. **讨论二**：分析一份外部桌宠架构材料（素材渲染 / 状态中枢 / 智能行为 / 角色卡状态数据四层设计），判断哪些可吸收进 栖灵。
 
-本文档镜像存放于 Obsidian：`Projects/DeskMate/05-角色卡与表现/角色级表现与桌宠架构分析-2026-09-10.md`。
+本文档镜像存放于 Obsidian：`Projects/栖灵/05-角色卡与表现/角色级表现与桌宠架构分析-2026-09-10.md`。
 
 ---
 
@@ -41,7 +41,7 @@
 
 ```text
 完整基础形象
-  → DeskMate 自动检测、去背景、清理、裁切、对齐、缩放
+  → 栖灵 自动检测、去背景、清理、裁切、对齐、缩放
   → 输出 asset-manifest.json
   → V1 程序化动态与状态 overlay
 
@@ -94,7 +94,7 @@
 ### 2.2 总体判断
 
 - 四层划分是桌宠通用架构，方向正确。
-- 但材料面向 DyberPet / Ark-Pets 一类**游戏化桌宠**，而 DeskMate 定位是「角色化、本地优先、懂项目记忆的 AI 工作伙伴」。
+- 但材料面向 DyberPet / Ark-Pets 一类**游戏化桌宠**，而 栖灵 定位是「角色化、本地优先、懂项目记忆的 AI 工作伙伴」。
 - 其中约一半内容我们已有等价实现；照单全收会引入游戏化复杂度，违背 V1「轻量 2D、无 Live2D/3D」约束。
 
 ### 2.3 逐条对照（已有 / 可吸收 / 建议暂缓）
@@ -109,7 +109,7 @@
 
 ### 2.4 收敛结论（回应讨论一）
 
-外部材料给出的是行业通解；落到 DeskMate 应收敛为：
+外部材料给出的是行业通解；落到 栖灵 应收敛为：
 
 - **展示**：轻量立绘/部件 + 状态机 + 分层 CSS 动画；
 - **生成**：imagegen 设定图 → 人工规范拆层 → `assets/personas/<id>/` + `layers.json`；
@@ -140,9 +140,9 @@
 不要求用户自己制作组件，也不把 AI 自动拆层作为 V1 前置条件：
 
 - 用户提供或生成一张高清完整基础形象
-- DeskMate 自动去背景、清理、裁切、对齐和缩放
+- 栖灵 自动去背景、清理、裁切、对齐和缩放
 - V1 用完整图 + 程序化动态表达状态和互动
-- V1.5 可选生成完整状态帧，由 DeskMate 统一规范化
+- V1.5 可选生成完整状态帧，由 栖灵 统一规范化
 - V2 再评估半自动部件识别与分层
 - V3 再评估骨骼、网格和 Live2D 类渲染
 
@@ -150,7 +150,7 @@
 
 对比自建管线：开发成本极低、用户自由度高、资产质量用户自控、V1 上线快。
 
-不再把提示词模板定稿作为 V1 阻塞项；用户可使用任意外部工具生成基础图，DeskMate 只对导入结果做规范化和验收。
+不再把提示词模板定稿作为 V1 阻塞项；用户可使用任意外部工具生成基础图，栖灵 只对导入结果做规范化和验收。
 
 ### 决策 3：挂件简化构图看实际效果 ✅
 
@@ -199,4 +199,4 @@
 
 - 项目文档：`docs/WIDGET-ASSET-PLAN.md`、`docs/WIDGET-STATE-MACHINE.md`、`docs/PROJECT-ROADMAP.md`、`docs/STEP9-UI-POLISH.md`、`docs/PRD.md`
 - 代码证据：`apps/desktop/src/components/Widget.tsx`、`apps/desktop/src/components/widget.css`、`services/ai-service/app/api/settings.py`、`apps/web/src/CharacterPage.tsx`
-- Obsidian 镜像：`Projects/DeskMate/05-角色卡与表现/角色级表现与桌宠架构分析-2026-09-10.md`
+- Obsidian 镜像：`Projects/栖灵/05-角色卡与表现/角色级表现与桌宠架构分析-2026-09-10.md`

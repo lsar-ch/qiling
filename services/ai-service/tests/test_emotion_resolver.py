@@ -6,7 +6,7 @@ from typing import get_args
 
 import pytest
 
-from deskmate_contracts.widget import ExpressionEmotion
+from qiling_contracts.widget import ExpressionEmotion
 from app.core.emotion_resolver import (
     EMOTION_VISUAL_HINTS,
     canonical_emotions,

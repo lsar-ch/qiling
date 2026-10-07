@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DeskMate 音色试听验收脚本（需真实 DASHSCOPE_API_KEY）。
+"""栖灵 音色试听验收脚本（需真实 DASHSCOPE_API_KEY）。
 
 用法：
   # 1) 合成一组预置音色 + 固定词表，输出到 data/voice_samples/<voice>/*.wav
@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / "ai-se
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages" / "contracts" / "py"))
 
 SAMPLE_SENTENCES: dict[str, str] = {
-    "00-greet": "你好呀，我是 DeskMate，今天想让我帮你做点什么呢？",
+    "00-greet": "你好呀，我是 栖灵，今天想让我帮你做点什么呢？",
     "01-cute": "诶～这个任务有点意思，交给我你放心啦！",
     "02-calm": "收到，我先梳理一下步骤，稍等片刻，有结果马上告诉你。",
     "03-done": "搞定啦！已经把结果整理好放到主界面咯。",
@@ -55,7 +55,7 @@ async def _synth_with_retry(synth, text, params, attempts: int = 3):
     raise last  # type: ignore[misc]
 
 async def _synth_batch(settings, voices: list[str]) -> list[Path]:
-    from deskmate_contracts.voice import VoiceParams
+    from qiling_contracts.voice import VoiceParams
     from app.speech.dashscope import DashScopeSynthesizer
 
     base = settings.repo_root / "data" / "voice_samples"
@@ -94,7 +94,7 @@ def _enroll(settings, url: str) -> str:
 
 async def _synth_tones(settings) -> None:
     """按校准目录把每个情绪用载句 + 自然句各合成一段，供语气 A/B。"""
-    from deskmate_contracts.voice import VoiceParams
+    from qiling_contracts.voice import VoiceParams
     from app.speech.dashscope import DashScopeSynthesizer
     from app.speech.tone_catalog import load_validated
 

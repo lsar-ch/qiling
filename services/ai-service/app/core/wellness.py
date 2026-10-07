@@ -12,7 +12,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from deskmate_contracts.events import EventEnvelope
+from qiling_contracts.events import EventEnvelope
 
 logger = logging.getLogger(__name__)
 

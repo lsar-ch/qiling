@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "DeskMate 启动器默认能力",
+  "description": "栖灵启动器默认能力",
   "windows": [
     "main",
     "widget"

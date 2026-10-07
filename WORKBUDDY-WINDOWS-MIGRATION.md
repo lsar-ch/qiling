@@ -1,17 +1,17 @@
-# DeskMate Windows 迁移与验收操作方案
+# 栖灵 Windows 迁移与验收操作方案
 
 > 版本：2026-09-13
-> 用途：在进入 Windows 双系统后，交给 WorkBuddy 读取并分阶段指导 DeskMate 的源码迁移、环境安装、启动和回归测试。WorkBuddy 只负责检查、解释、给出下一步和记录结果；所有安装、启动、测试和修改动作由用户确认后手动执行。
+> 用途：在进入 Windows 双系统后，交给 WorkBuddy 读取并分阶段指导 栖灵 的源码迁移、环境安装、启动和回归测试。WorkBuddy 只负责检查、解释、给出下一步和记录结果；所有安装、启动、测试和修改动作由用户确认后手动执行。
 > 项目目录：`D:\Projects\desktop-assistant`
 > 文档文件名：`WORKBUDDY-WINDOWS-MIGRATION.md`
 
 ## 1. 给 WorkBuddy 的总任务
 
-请协助在 Windows 上恢复并验证 DeskMate 项目，目标是：
+请协助在 Windows 上恢复并验证 栖灵 项目，目标是：
 
 1. 保留当前 macOS 工作区中的全部源码、文档和未提交修改。
 2. 不复用 macOS 的 Python、Node.js 或 Rust 构建产物。
-3. 在 Windows 重新安装依赖并启动 DeskMate。
+3. 在 Windows 重新安装依赖并启动 栖灵。
 4. 按本文档的顺序执行检查。
 5. 每次只处理一个步骤。先检查当前条件，再给出一条或一组明确命令，等待用户手动执行并回报结果后再进入下一步。
 6. 遇到错误先停止当前步骤，报告完整错误、执行目录和已完成步骤，不要擅自删除数据或修改项目架构。
@@ -57,11 +57,11 @@ Windows 上只恢复 `data/persona-assets/`。不要把 macOS 的整个 `data/` 
 
 ```bash
 cd "/Users/lxb/Documents"
-rm -f DeskMate-Windows-src-2026-09-13.zip
+rm -f 栖灵-Windows-src-2026-09-13.zip
 cp "desktop assistant project/WORKBUDDY-WINDOWS-MIGRATION.md" \
   "WORKBUDDY-WINDOWS-MIGRATION.md"
-ditto "desktop assistant project" "DeskMate-Windows-src-2026-09-13"
-cd "DeskMate-Windows-src-2026-09-13"
+ditto "desktop assistant project" "栖灵-Windows-src-2026-09-13"
+cd "栖灵-Windows-src-2026-09-13"
 rm -rf .venv .pytest_cache apps/web/node_modules apps/desktop/node_modules \
   apps/web/dist apps/desktop/dist apps/desktop/src-tauri/target data \
   .research .firecrawl
@@ -71,14 +71,14 @@ find . -type d -name __pycache__ -prune -exec rm -rf {} +
 find . -type f -name .env -delete
 git gc --prune=now --quiet   # 仅压缩副本的 .git；原仓库不受影响
 cd ..
-zip -r DeskMate-Windows-src-2026-09-13.zip "DeskMate-Windows-src-2026-09-13"
-rm -rf "DeskMate-Windows-src-2026-09-13"
+zip -r 栖灵-Windows-src-2026-09-13.zip "栖灵-Windows-src-2026-09-13"
+rm -rf "栖灵-Windows-src-2026-09-13"
 ```
 
 上传夸克网盘时上传两个文件：
 
 ```text
-DeskMate-Windows-src-2026-09-13.zip
+栖灵-Windows-src-2026-09-13.zip
 WORKBUDDY-WINDOWS-MIGRATION.md
 ```
 
@@ -87,9 +87,9 @@ WORKBUDDY-WINDOWS-MIGRATION.md
 源码包打包完成后，手动确认压缩包中包含：
 
 ```text
-DeskMate-Windows-src-2026-09-13/data/persona-assets/default/avatar.png
-DeskMate-Windows-src-2026-09-13/data/persona-assets/persona_2/avatar.png
-DeskMate-Windows-src-2026-09-13/data/persona-assets/*/asset-manifest.json
+栖灵-Windows-src-2026-09-13/data/persona-assets/default/avatar.png
+栖灵-Windows-src-2026-09-13/data/persona-assets/persona_2/avatar.png
+栖灵-Windows-src-2026-09-13/data/persona-assets/*/asset-manifest.json
 ```
 
 如果还要保留 `data/` 中其他用户数据，不要把它们放进源码包；应先单独备份，并在 Windows 上逐项确认后再恢复。
@@ -120,7 +120,7 @@ DeskMate-Windows-src-2026-09-13/data/persona-assets/*/asset-manifest.json
 3. 在磁盘工具中缩小原分区，腾出未分配空间。
 4. 只把腾出的新分区格式化为 `exFAT`。
 5. 在 macOS 和 Windows 分别新建、复制、删除一个测试文件。
-6. 验证通过后再用于 DeskMate 迁移。
+6. 验证通过后再用于 栖灵 迁移。
 
 如果原分区是 NTFS，macOS 可能无法可靠地缩小或写入该分区。此时不要强行操作；优先在 Windows 的“磁盘管理”中调整分区，或者把移动硬盘整体备份后重新分区。
 
@@ -190,7 +190,7 @@ cargo --version
 把结果报给用户，**不要自动删除、移动或覆盖任何旧目录**。需要确认的位置：
 
 ```text
-下载目录中的 DeskMate-Windows-src-2026-09-12.zip
+下载目录中的 栖灵-Windows-src-2026-09-12.zip
 D:\Projects\desktop-assistant（是否已存在上一轮内容）
 其它形如 desktop-assistant-2026-09-12 的旧解压目录
 ```
@@ -370,9 +370,9 @@ npm run tauri dev
 
 ## 11. WorkBuddy 配置接口
 
-DeskMate 当前已经在“我的智能体”页面为 WorkBuddy 留出配置入口：
+栖灵 当前已经在“我的智能体”页面为 WorkBuddy 留出配置入口：
 
-1. 启动 DeskMate 并打开浏览器主界面。
+1. 启动 栖灵 并打开浏览器主界面。
 2. 进入“我的智能体”。
 3. 找到 `WorkBuddy` 卡片。
 4. 点击“配置”。
@@ -410,10 +410,10 @@ WorkBuddy 适配器已完成 ACP/stdio 真实接入：
 
 - 可以保存命令或路径，并自动复用 WorkBuddy 自带 Electron 作为 Node，无需用户另装 Node。
 - 会先通过 `initialize + session/new` 探测安装状态和登录态；未登录会明确提示先登录，不会伪装成可用。
-- 登录后可在 DeskMate 任务台提交真实任务、查看进度、取消和回收子进程。
+- 登录后可在 栖灵 任务台提交真实任务、查看进度、取消和回收子进程。
 - `read-only` 模式已在 macOS 完成真实只读任务、取消和错误路径复验；Windows 仍需按本文档执行平台回归。
 
-WorkBuddy 使用前必须由用户在桌面端完成登录。DeskMate 不保存 WorkBuddy 账号，也不代替用户登录。
+WorkBuddy 使用前必须由用户在桌面端完成登录。栖灵 不保存 WorkBuddy 账号，也不代替用户登录。
 
 ## 12. WorkBuddy / Codex 执行边界
 
@@ -436,7 +436,7 @@ WorkBuddy 协助指导安装和测试时必须遵守：
 ## 13. WorkBuddy 首条指令模板
 
 ```text
-你现在负责协助恢复 Windows 上的 DeskMate 项目。
+你现在负责协助恢复 Windows 上的 栖灵 项目。
 
 项目目录：D:\Projects\desktop-assistant
 权威操作文档：WORKBUDDY-WINDOWS-MIGRATION.md
@@ -463,4 +463,4 @@ Windows 迁移只有在以下条件全部满足后才算完成：
 - 自动播报开关行为符合预期。
 - 长回复自动打开网页的行为保留。
 - Codex 可用或不可用时都有清晰结果。
-- 关闭 DeskMate 后没有残留服务进程。
+- 关闭 栖灵 后没有残留服务进程。

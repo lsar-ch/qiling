@@ -5,13 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from deskmate_contracts.events import (
+from qiling_contracts.events import (
     EventEnvelope,
     EventSource,
     EventType,
     new_event_id,
 )
-from deskmate_contracts.widget import WidgetState
+from qiling_contracts.widget import WidgetState
 
 router = APIRouter(prefix="/api", tags=["widget"])
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from deskmate_contracts.events import EventEnvelope
+from qiling_contracts.events import EventEnvelope
 from app.routing import classify_task_input
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])

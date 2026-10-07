@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from deskmate_contracts.events import EventEnvelope
+from qiling_contracts.events import EventEnvelope
 
 router = APIRouter(prefix="/api", tags=["events"])
 

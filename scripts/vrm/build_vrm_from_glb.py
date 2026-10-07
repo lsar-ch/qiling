@@ -4,10 +4,10 @@
   blender --background --python scripts/vrm/build_vrm_from_glb.py
 
 环境变量：
-  DESKMATE_SRC_GLB   源 GLB 路径
-  DESKMATE_VRM_OUT   输出 .vrm 路径
-  DESKMATE_VRM_BLEND 可选，保存中间 .blend
-  DESKMATE_VRM_THUMB 可选，输出缩略图 .png
+  QILING_SRC_GLB   源 GLB 路径
+  QILING_VRM_OUT   输出 .vrm 路径
+  QILING_VRM_BLEND 可选，保存中间 .blend
+  QILING_VRM_THUMB 可选，输出缩略图 .png
 
 设计要点（都是这个 GLB 的实测结论，改动前先读）：
   1. 源网格的 rest pose 就是标准 T-pose，但 pose bone 上带了一个 A-pose
@@ -26,19 +26,19 @@ import sys
 from mathutils import Matrix, Vector
 
 SRC_GLB = os.environ.get(
-    "DESKMATE_SRC_GLB",
+    "QILING_SRC_GLB",
     "/Users/lxb/Downloads/7c692c80-238a-4dad-b0c7-94e769d7b823.glb",
 )
 OUT_VRM = os.environ.get(
-    "DESKMATE_VRM_OUT",
+    "QILING_VRM_OUT",
     "/Users/lxb/Documents/desktop assistant project/build/vrm/"
-    "deskmate_glb/model.vrm",
+    "qiling_glb/model.vrm",
 )
-OUT_BLEND = os.environ.get("DESKMATE_VRM_BLEND", "")
-OUT_THUMB = os.environ.get("DESKMATE_VRM_THUMB", "")
+OUT_BLEND = os.environ.get("QILING_VRM_BLEND", "")
+OUT_THUMB = os.environ.get("QILING_VRM_THUMB", "")
 
-DECIMATE_RATIO = float(os.environ.get("DESKMATE_DECIMATE", "0.09"))
-TEX_SIZE = int(os.environ.get("DESKMATE_TEX", "1024"))
+DECIMATE_RATIO = float(os.environ.get("QILING_DECIMATE", "0.09"))
+TEX_SIZE = int(os.environ.get("QILING_TEX", "1024"))
 
 MAX_TRIS = 40000
 MAX_MATERIALS = 16
@@ -482,11 +482,11 @@ BINARY = {"blink", "blink_left", "blink_right", "happy", "angry", "sad",
 
 def set_meta(armature, thumbnail=None):
     meta = armature.data.vrm_addon_extension.vrm1.meta
-    meta.vrm_name = "DeskMate GLB Persona"
+    meta.vrm_name = "栖灵 GLB Persona"
     meta.version = "1.0.0"
     if not meta.authors:
-        meta.authors.add().value = "DeskMate"
-    meta.copyright_information = "Copyright 2026 DeskMate"
+        meta.authors.add().value = "栖灵"
+    meta.copyright_information = "Copyright 2026 栖灵"
     meta.contact_information = "local project"
     if not meta.references:
         meta.references.add().value = "https://vrm-addon-for-blender.info/"

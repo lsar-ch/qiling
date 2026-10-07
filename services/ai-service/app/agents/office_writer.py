@@ -78,17 +78,17 @@ def _register_pdf_fonts() -> tuple[str, str] | None:
     if not (Path(regular[0]).exists() and Path(bold[0]).exists()):
         return None
     try:
-        pdfmetrics.registerFont(TTFont("DeskMateCJK", regular[0], subfontIndex=regular[1])
-                                if regular[1] is not None else TTFont("DeskMateCJK", regular[0]))
-        pdfmetrics.registerFont(TTFont("DeskMateCJK-Bold", bold[0], subfontIndex=bold[1])
-                                if bold[1] is not None else TTFont("DeskMateCJK-Bold", bold[0]))
+        pdfmetrics.registerFont(TTFont("栖灵CJK", regular[0], subfontIndex=regular[1])
+                                if regular[1] is not None else TTFont("栖灵CJK", regular[0]))
+        pdfmetrics.registerFont(TTFont("栖灵CJK-Bold", bold[0], subfontIndex=bold[1])
+                                if bold[1] is not None else TTFont("栖灵CJK-Bold", bold[0]))
     except Exception:
         return None
     pdfmetrics.registerFontFamily(
-        "DeskMateCJK", normal="DeskMateCJK", bold="DeskMateCJK-Bold",
-        italic="DeskMateCJK", boldItalic="DeskMateCJK-Bold",
+        "栖灵CJK", normal="栖灵CJK", bold="栖灵CJK-Bold",
+        italic="栖灵CJK", boldItalic="栖灵CJK-Bold",
     )
-    return "DeskMateCJK", "DeskMateCJK-Bold"
+    return "栖灵CJK", "栖灵CJK-Bold"
 
 PAGE_W_IN = 8.5
 PAGE_H_IN = 11.0
@@ -203,7 +203,7 @@ def parse_markdown(text: str) -> list[Block]:
     return blocks
 
 
-def title_of(blocks: list[Block], fallback: str = "DeskMate 生成文档") -> str:
+def title_of(blocks: list[Block], fallback: str = "栖灵 生成文档") -> str:
     for block in blocks:
         if block.kind == "h1" and block.text:
             return block.text
@@ -217,7 +217,7 @@ def default_filename(kind: str, title: str = "") -> str:
     """按工作类型给默认文件名；只用安全字符，避免模型内容变成路径。"""
     suffix = _KIND_SUFFIX.get(kind, ".md")
     stem = re.sub(r"[^\w\u4e00-\u9fff]+", "_", (title or "").strip())[:30].strip("_")
-    return f"{stem or 'deskmate_doc'}{suffix}"
+    return f"{stem or 'qiling_doc'}{suffix}"
 
 
 def write_file(path: Path, kind: str, blocks: list[Block], raw_text: str = "") -> Path:
@@ -523,7 +523,7 @@ def _write_docx(path: Path, blocks: list[Block]) -> None:
     _configure_page(doc)
     _configure_styles(doc)
     num_id = _add_bullet_numbering(doc)
-    _add_footer(doc, "DeskMate")
+    _add_footer(doc, "栖灵")
 
     title = title_of(blocks)
     heading = doc.add_paragraph()
@@ -665,7 +665,7 @@ def _slides_from_blocks(blocks: list[Block]) -> list[tuple[str, list[str]]]:
             flush()
             title = title.replace("（续）", "")
     flush()
-    return slides or [("DeskMate", [])]
+    return slides or [("栖灵", [])]
 
 
 def _write_pptx(path: Path, blocks: list[Block]) -> None:
@@ -725,7 +725,7 @@ def _write_pptx(path: Path, blocks: list[Block]) -> None:
 
     def add_footer(slide, index: int, total: int) -> None:
         add_text(slide, Inches(0.6), Inches(6.95), Inches(6.0), Inches(0.35),
-                 "DeskMate", 10, color=muted)
+                 "栖灵", 10, color=muted)
         add_text(slide, Inches(11.2), Inches(6.95), Inches(1.5), Inches(0.35),
                  f"{index} / {total}", 10, color=muted, align=PP_ALIGN.RIGHT)
 
@@ -738,7 +738,7 @@ def _write_pptx(path: Path, blocks: list[Block]) -> None:
     bar.fill.solid(); bar.fill.fore_color.rgb = accent; bar.line.fill.background()
     set_title(cover, title_text, Inches(1.2), Inches(2.85), Inches(10.9), Inches(1.6), 40)
     add_text(cover, Inches(1.2), Inches(4.5), Inches(10.9), Inches(0.5),
-             "由 DeskMate 生成", 16, color=muted)
+             "由 栖灵 生成", 16, color=muted)
 
     total = len(slides) + 1
     for index, (slide_title, lines) in enumerate(slides, start=2):
@@ -856,14 +856,14 @@ def _write_pdf(path: Path, blocks: list[Block]) -> None:
         canvas.saveState()
         canvas.setFont(font, 9)
         canvas.setFillColor(colors.HexColor("#" + MUTED_INK))
-        canvas.drawRightString(PAGE_W_IN * inch - MARGIN_IN * inch, 0.75 * inch, f"DeskMate　|　{doc.page}")
+        canvas.drawRightString(PAGE_W_IN * inch - MARGIN_IN * inch, 0.75 * inch, f"栖灵　|　{doc.page}")
         canvas.restoreState()
 
     doc = SimpleDocTemplate(
         str(path), pagesize=letter,
         leftMargin=MARGIN_IN * inch, rightMargin=MARGIN_IN * inch,
         topMargin=MARGIN_IN * inch, bottomMargin=MARGIN_IN * inch,
-        title=title_of(blocks), author="DeskMate",
+        title=title_of(blocks), author="栖灵",
     )
     doc.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
 
@@ -893,10 +893,10 @@ _TYPST_BOLD = re.compile(r"\*\*(.+?)\*\*")
 
 
 def template_dir() -> Path:
-    """模板目录（支持 ``DESKMATE_OFFICE_TEMPLATES`` 覆盖）。"""
+    """模板目录（支持 ``QILING_OFFICE_TEMPLATES`` 覆盖）。"""
     from app.config import repo_root
 
-    configured = os.environ.get("DESKMATE_OFFICE_TEMPLATES")
+    configured = os.environ.get("QILING_OFFICE_TEMPLATES")
     return Path(configured) if configured else repo_root() / "config" / "office_templates"
 
 
@@ -941,7 +941,7 @@ def _write_pdf_via_typst(path: Path, blocks: list[Block]) -> bool:
     binary = shutil.which("typst")
     if binary is None:
         return False
-    with tempfile.TemporaryDirectory(prefix="deskmate-typst-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="qiling-typst-") as tmp:
         source = Path(tmp) / "doc.typ"
         source.write_text(typst_source(blocks), encoding="utf-8")
         try:
@@ -978,7 +978,7 @@ def docx_template_context(blocks: list[Block]) -> dict:
             current["paragraphs"].append(block.text)
     return {
         "title": title,
-        "subtitle": "由 DeskMate 生成",
+        "subtitle": "由 栖灵 生成",
         "sections": [s for s in sections if _section_has_content(s)],
     }
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from deskmate_contracts.agent import AgentInfo
+from qiling_contracts.agent import AgentInfo
 
 from app.agents.base import AgentAdapter
 

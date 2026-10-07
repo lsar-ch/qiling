@@ -1,4 +1,4 @@
-// 主动提醒契约 —— 镜像自 deskmate_contracts/reminder.py。
+// 主动提醒契约 —— 镜像自 qiling_contracts/reminder.py。
 
 export type ReminderKind = "memo" | "task";
 export type ReminderRepeat = "none" | "daily" | "weekly" | "monthly";

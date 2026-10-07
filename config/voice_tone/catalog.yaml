@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# DeskMate 语音表现校准目录（Voice Tone Calibration Catalog）
+# 栖灵语音表现校准目录（Voice Tone Calibration Catalog）
 # 版本 0.1 / schema 1 —— 仅供审阅与校准，不是最终语音参数
 # ─────────────────────────────────────────────────────────────
 #
@@ -47,8 +47,8 @@ emotions:
     volcengine:
       emotion: null            # 待实测
     calibration_status: pending
-    test_sentence_zh: "你好呀，我是 DeskMate，今天想让我帮你做点什么呢？"
-    test_sentence_taiwan: "你好呀，我是 DeskMate，今天想让我帮你做点什么吗？"
+    test_sentence_zh: "你好呀，我是栖灵，今天想让我帮你做点什么呢？"
+    test_sentence_taiwan: "你好呀，我是栖灵，今天想让我帮你做点什么吗？"
 
   happy:
     label: "开心 · 带笑意"

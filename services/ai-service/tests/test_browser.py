@@ -58,9 +58,9 @@ def test_parse_search_page_and_read_intent() -> None:
     assert _parse_search_page("搜索 石家庄中考招生政策") == 1
     assert _parse_search_page("搜索 新闻 第十页") == 10
 
-    assert _wants_read("搜索 DeskMate 并读取第一个结果")
+    assert _wants_read("搜索 栖灵 并读取第一个结果")
     assert _wants_read("查一下苹果发布会并读取正文")
-    assert not _wants_read("搜索 DeskMate")
+    assert not _wants_read("搜索 栖灵")
 
 
 def test_sensitive_prompts_are_rejected_before_browser() -> None:

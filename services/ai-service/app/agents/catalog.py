@@ -43,8 +43,8 @@ class AgentCatalog:
 
 
 def default_catalog_path() -> Path:
-    """默认执行器目录路径（支持 DESKMATE_AGENTS_CONFIG 覆盖）。"""
-    configured_path = os.environ.get("DESKMATE_AGENTS_CONFIG")
+    """默认执行器目录路径（支持 QILING_AGENTS_CONFIG 覆盖）。"""
+    configured_path = os.environ.get("QILING_AGENTS_CONFIG")
     return Path(configured_path) if configured_path else repo_root() / "config" / "agents.yaml"
 
 
@@ -70,7 +70,7 @@ def _atomic_write_text(path: Path, text: str) -> None:
 
 
 _LOCAL_HEADER = (
-    "# DeskMate 用户配置覆盖层：由「我的智能体」页面写入，请勿手改。\n"
+    "# 栖灵 用户配置覆盖层：由「我的智能体」页面写入，请勿手改。\n"
     "# 默认目录见 agents.yaml；覆盖优先级：agents.local.yaml > agents.yaml。\n"
 )
 
@@ -225,7 +225,7 @@ def _read_yaml_file(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise AgentCatalogError(
             f"Agent catalog 配置文件不存在：{path}。"
-            "请检查 config/agents.yaml，或设置 DESKMATE_AGENTS_CONFIG 指定目录。"
+            "请检查 config/agents.yaml，或设置 QILING_AGENTS_CONFIG 指定目录。"
         )
 
     try:

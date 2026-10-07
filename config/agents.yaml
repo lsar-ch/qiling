@@ -1,4 +1,4 @@
-# DeskMate external executor catalog.
+# Qiling external executor catalog.
 #
 # Registry 会读取此文件并注册 executors：
 # - adapter: acp-cli      通用 ACP/stdio 执行器（执行器主线）：配 acp_command 即可接入

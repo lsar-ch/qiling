@@ -16,10 +16,10 @@ STATUS_KEYS = {"available", "path", "mirror_dir_exists", "last_sync", "doc_files
 
 
 def prepare_home(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
-    (tmp_path / "config" / "system_prompt.md").write_text("你是 DeskMate。", encoding="utf-8")
+    (tmp_path / "config" / "system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "personas" / "default.yaml").write_text(
         """
@@ -51,7 +51,7 @@ def test_enable_linked_builds_mirror_and_status(tmp_path: Path, monkeypatch) -> 
     prepare_home(tmp_path, monkeypatch)
     vault = tmp_path / "vault"
     (vault / "inbox").mkdir(parents=True)
-    (vault / "inbox" / "keep.md").write_text("# 已有笔记\n\nDeskMate 不应改动我。", encoding="utf-8")
+    (vault / "inbox" / "keep.md").write_text("# 已有笔记\n\n栖灵 不应改动我。", encoding="utf-8")
 
     with TestClient(create_app(load_settings())) as client:
         enable_linked(client, vault)
@@ -67,16 +67,16 @@ def test_enable_linked_builds_mirror_and_status(tmp_path: Path, monkeypatch) -> 
         }
         assert isinstance(status["last_sync"], str) and status["last_sync"]
 
-        mirror = vault / "DeskMate" / "记忆"
+        mirror = vault / "栖灵" / "记忆"
         assert (mirror / "README.md").is_file()
         local_progress = (tmp_path / "data" / "memory" / "L3" / "progress.md").read_text(encoding="utf-8")
         assert (mirror / "档案" / "L3-progress.md").read_text(encoding="utf-8").rstrip("\n") == local_progress.rstrip("\n")
         snapshot = (mirror / "快照" / "记忆快照.md").read_text(encoding="utf-8")
         assert "生成时间" in snapshot
-        assert "# DeskMate 记忆镜像" in (mirror / "README.md").read_text(encoding="utf-8")
+        assert "# 栖灵 记忆镜像" in (mirror / "README.md").read_text(encoding="utf-8")
 
         # 不删除、不改写 vault 其它内容，也不留 .tmp
-        assert (vault / "inbox" / "keep.md").read_text(encoding="utf-8") == "# 已有笔记\n\nDeskMate 不应改动我。"
+        assert (vault / "inbox" / "keep.md").read_text(encoding="utf-8") == "# 已有笔记\n\n栖灵 不应改动我。"
         assert not list(vault.rglob("*.tmp"))
 
 
@@ -87,8 +87,8 @@ def test_disable_linked_stops_mirror_updates(tmp_path: Path, monkeypatch) -> Non
 
     with TestClient(create_app(load_settings())) as client:
         enable_linked(client, vault)
-        archive = vault / "DeskMate" / "记忆" / "档案" / "L3-progress.md"
-        readme = vault / "DeskMate" / "记忆" / "README.md"
+        archive = vault / "栖灵" / "记忆" / "档案" / "L3-progress.md"
+        readme = vault / "栖灵" / "记忆" / "README.md"
         frozen_readme = readme.read_text(encoding="utf-8")
 
         client.post(
@@ -125,7 +125,7 @@ def test_obsidian_search_skips_mirror_tree(tmp_path: Path, monkeypatch) -> None:
             json={"section": "项目进度", "text": "只进镜像不进检索", "refs": []},
         )
         (vault / "note.md").write_text("只进镜像不进检索 的普通笔记。", encoding="utf-8")
-        (vault / "DeskMate" / "记忆" / "档案" / "secret.md").write_text(
+        (vault / "栖灵" / "记忆" / "档案" / "secret.md").write_text(
             "镜像独有短语不应被 Obsidian 检索到。", encoding="utf-8"
         )
 
@@ -170,12 +170,12 @@ def test_mirror_dir_creation_failure_fails_quietly(tmp_path: Path, monkeypatch) 
     prepare_home(tmp_path, monkeypatch)
     vault = tmp_path / "vault"
     vault.mkdir()
-    (vault / "DeskMate").write_text("占住镜像目录名", encoding="utf-8")
+    (vault / "栖灵").write_text("占住镜像目录名", encoding="utf-8")
 
     assert_mirror_write_is_skipped_quietly(vault)
 
-    assert (vault / "DeskMate").is_file()
-    assert (vault / "DeskMate").read_text(encoding="utf-8") == "占住镜像目录名"
+    assert (vault / "栖灵").is_file()
+    assert (vault / "栖灵").read_text(encoding="utf-8") == "占住镜像目录名"
 
 
 def test_readonly_vault_fails_quietly(tmp_path: Path, monkeypatch) -> None:
@@ -193,7 +193,7 @@ def test_readonly_vault_fails_quietly(tmp_path: Path, monkeypatch) -> None:
     vault.chmod(0o500)
     try:
         assert_mirror_write_is_skipped_quietly(vault)
-        assert not (vault / "DeskMate").exists()
+        assert not (vault / "栖灵").exists()
     finally:
         vault.chmod(0o700)
 
@@ -205,7 +205,7 @@ def test_record_event_only_touches_snapshot_timestamp(tmp_path: Path) -> None:
     service = MemoryService(memory_root, persona_dir=tmp_path / "persona")
     service.set_vault_mirror(vault)
 
-    mirror = vault / "DeskMate" / "记忆"
+    mirror = vault / "栖灵" / "记忆"
     archive = mirror / "档案" / "L2-conversation.md"
     readme = mirror / "README.md"
     assert archive.is_file() and readme.is_file()

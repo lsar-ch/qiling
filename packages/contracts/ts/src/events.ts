@@ -1,5 +1,5 @@
 // EventEnvelope v0.2 —— 对应 docs/V1-INTERFACES.md §3。
-// 镜像自 packages/contracts/py/deskmate_contracts/events.py。
+// 镜像自 packages/contracts/py/qiling_contracts/events.py。
 // Step 9.5: 新增 expression / presentation 可选字段与 persona.presentation 事件类型。
 
 export type EventSource =

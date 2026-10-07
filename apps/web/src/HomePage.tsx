@@ -11,7 +11,7 @@ import {
 import type {
   AgentInfo,
   EventEnvelope,
-} from "@deskmate/contracts";
+} from "@qiling/contracts";
 import type {
   HealthResponse,
   SessionResponse,

@@ -1,8 +1,8 @@
-# DeskMate 双系统测试与迁移
+# 栖灵 双系统测试与迁移
 
 ## 建议顺序
 
-DeskMate 目前先在 macOS 完成 V1 功能和整页视觉打磨，再做 macOS 最终验收；Windows 放到 macOS 全部定稿后再做一次完整环境安装和回归。
+栖灵 目前先在 macOS 完成 V1 功能和整页视觉打磨，再做 macOS 最终验收；Windows 放到 macOS 全部定稿后再做一次完整环境安装和回归。
 
 理由：
 
@@ -108,7 +108,7 @@ cp .env.example .env
 
 ```bash
 cd "/Users/lxb/Documents"
-zip -r DeskMate-Windows-src.zip "desktop assistant project" \
+zip -r 栖灵-Windows-src.zip "desktop assistant project" \
   -x "*/.venv/*" \
   -x "*/node_modules/*" \
   -x "*/data/*" \
@@ -118,7 +118,7 @@ zip -r DeskMate-Windows-src.zip "desktop assistant project" \
   -x "*/apps/desktop/dist/*"
 ```
 
-把 `DeskMate-Windows-src.zip` 放到共享分区、U 盘或网盘，再在 Windows 解压。
+把 `栖灵-Windows-src.zip` 放到共享分区、U 盘或网盘，再在 Windows 解压。
 
 ## Windows 环境安装
 

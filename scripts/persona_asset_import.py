@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DeskMate 角色资产导入：基础形象 → 规范化透明立绘 + layers.json。
+"""栖灵 角色资产导入：基础形象 → 规范化透明立绘 + layers.json。
 
 用法：
     python scripts/persona_asset_import.py <输入图片> <persona_id> [--out-dir 输出目录]

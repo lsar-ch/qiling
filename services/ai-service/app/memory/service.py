@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import yaml
 
-from deskmate_contracts.memory import (
+from qiling_contracts.memory import (
     CompiledMemory,
     DocOverview,
     MemoryBlock,
@@ -34,7 +34,7 @@ REF_RE = re.compile(r"\[\^(?P<n>\d+)\]")
 FOOTNOTE_RE = re.compile(r"^\[\^(?P<n>\d+)\]:\s*(?P<ref>.+)$")
 MIRROR_TS_RE = re.compile(r"更新时间[:：]\s*(.+?)\s*$")
 
-MIRROR_ROOT_NAME = "DeskMate"
+MIRROR_ROOT_NAME = "栖灵"
 MIRROR_DIR_NAME = "记忆"
 MIRROR_ARCHIVE_DIR = "档案"
 MIRROR_SNAPSHOT_DIR = "快照"
@@ -43,7 +43,7 @@ MIRROR_SNAPSHOT_FILE = "记忆快照.md"
 
 
 def mirror_dir_for(vault_root: Path | None) -> Path | None:
-    """把 vault 根目录映射到 DeskMate 写入镜像目录；根无效时返回 None。"""
+    """把 vault 根目录映射到 栖灵 写入镜像目录；根无效时返回 None。"""
     if vault_root is None:
         return None
     root = Path(vault_root).expanduser()
@@ -55,7 +55,7 @@ def mirror_dir_for(vault_root: Path | None) -> Path | None:
 def _atomic_write(path: Path, text: str) -> None:
     """原子写入（同目录临时文件 + replace），失败清理临时文件并上抛。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".deskmate-", suffix=".tmp", dir=path.parent)
+    fd, tmp = tempfile.mkstemp(prefix=".qiling-", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text.rstrip() + "\n")
@@ -574,9 +574,9 @@ class MemoryService:
     def _mirror_readme_text(self) -> str:
         return "\n".join(
             [
-                "# DeskMate 记忆镜像",
+                "# 栖灵 记忆镜像",
                 "",
-                "本目录由 DeskMate 自动维护：将本地记忆（L2/L3/persona）整理为只读镜像副本。",
+                "本目录由 栖灵 自动维护：将本地记忆（L2/L3/persona）整理为只读镜像副本。",
                 "请勿手动编辑本目录；本地记忆变化后会自动增量同步，本地删除不会改动此副本。",
                 "",
                 f"更新时间：{_now()}",

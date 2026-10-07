@@ -29,7 +29,7 @@ class McpHttpClient:
             {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "clientInfo": {"name": "deskmate-mcp-client", "version": "0.1.0"},
+                "clientInfo": {"name": "qiling-mcp-client", "version": "0.1.0"},
             },
         )
         await self._notify("notifications/initialized", {})

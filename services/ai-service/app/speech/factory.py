@@ -12,7 +12,7 @@ from app.speech.base import SpeechSynthesizer
 from app.speech.dashscope import DashScopeRecognizer, DashScopeSynthesizer
 from app.speech.minimax import MiniMaxSynthesizer
 from app.speech.openai_tts import OpenAICompatibleSynthesizer
-from deskmate_contracts.voice import VoiceParams
+from qiling_contracts.voice import VoiceParams
 
 
 def build_tts_synthesizer(

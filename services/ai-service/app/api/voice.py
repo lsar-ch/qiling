@@ -15,8 +15,8 @@ import asyncio
 import json
 from pydantic import BaseModel, Field
 
-from deskmate_contracts.events import EventEnvelope
-from deskmate_contracts.voice import VoiceParams
+from qiling_contracts.events import EventEnvelope
+from qiling_contracts.voice import VoiceParams
 
 from app.config import is_lite_mode, resolve_tts_provider
 from app.core.emotion_resolver import resolve_emotion

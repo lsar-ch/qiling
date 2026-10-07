@@ -24,7 +24,7 @@ Windows 侧的 WI-05 真机复验与 18 项回归已于 2026-09-14 回传全绿�
 | 3 | **Windows 侧 18 项回归重跑一遍**（确认 8 项修复在 Windows 上无退化） | ✅ 2026-09-14 通过（18/18，含第 18 项退出回收两次干净验证） | 清单见 `docs/archive/windows-migration-2026-09/WINDOWS-MIGRATION-RUNBOOK-2026-09-13.md` 第 7 节 |
 
 > 2026-09-14 下发任务卡：`WORKBUDDY-WINDOWS-REGRESSION-2026-09-14.md`（遗留 1 与 3 的测法与预期结果都在里面），
-> 随源码包 `DeskMate-Windows-src-2026-09-14.zip` 一起带回 Windows 交给 WorkBuddy。
+> 随源码包 `栖灵-Windows-src-2026-09-14.zip` 一起带回 Windows 交给 WorkBuddy。
 
 ## 3. 问题明细（均已修复）
 
@@ -37,7 +37,7 @@ Windows 侧的 WI-05 真机复验与 18 项回归已于 2026-09-14 回传全绿�
 | WI-05 | WorkBuddy 自动检测在非 C 盘安装时失效 | 新增 `app/agents/windows_install.py`：读 `Uninstall` 注册表（HKLM 64/32 位 + HKCU）+ 固定磁盘根目录兜底。**待真机复验** |
 | WP-01 | 页面无「关闭自动播报回复」开关 | 设置页补开关（绑 `voice.auto_speak`），文案含「任务待确认提醒一并关闭」 |
 | WP-02 | 长回复自动打开浏览器只进主页 | 前端 hash 路由 + `open_main_ui(page)` 带片段打开，两条长回复入口都传 `chat` |
-| WP-03 | 右键退出后浏览器不关闭 | 前端降级：连续 2 次探活失败才判「DeskMate 已退出」+ 横幅 + 重新连接按钮。**不真关浏览器**（`cmd /C start` / `open` 都不回传浏览器 PID） |
+| WP-03 | 右键退出后浏览器不关闭 | 前端降级：连续 2 次探活失败才判「栖灵 已退出」+ 横幅 + 重新连接按钮。**不真关浏览器**（`cmd /C start` / `open` 都不回传浏览器 PID） |
 
 改动落点：`services/ai-service/tests/{test_agent_config,test_vault_mirror}.py`、
 `services/ai-service/app/agents/{workbuddy.py,windows_install.py}`、
@@ -88,17 +88,17 @@ cd D:\Projects\desktop-assistant\services\ai-service
 原第 18 项没测到 Tauri 自管的 uvicorn（那轮 uvicorn 由人工启动）。
 本轮补测，两种场景都通过：
 
-- `npm run tauri dev`：uvicorn 由 Tauri 自动拉起，父进程 = `deskmate-desktop`；
+- `npm run tauri dev`：uvicorn 由 Tauri 自动拉起，父进程 = `qiling-desktop`；
 - 打包后走真实退出路径（`tauri build --debug --bundles app` → `open` → `osascript quit`）：
-  启动时 uvicorn PPID = DeskMate.app 自身，退出后 **DeskMate 进程 0 / uvicorn 进程 0 / `:8736` 监听 0**。
+  启动时 uvicorn PPID = 栖灵.app 自身，退出后 **栖灵 进程 0 / uvicorn 进程 0 / `:8736` 监听 0**。
 
-结论：**Tauri 自管模式下关闭 DeskMate，uvicorn 一并退出，无残留。**
+结论：**Tauri 自管模式下关闭 栖灵，uvicorn 一并退出，无残留。**
 附带观察：手动启动的 uvicorn 在该环境下**不吃 SIGTERM**，需 `kill -9`（与产品无关）。
 
 ## 7. 第二轮修复与 macOS 复验（2026-09-14 补丁 → 2026-09-15 复验）
 
 2026-09-14 第二轮改由 Windows 侧直接改代码交付补丁
-（`DeskMate-Windows-fixes-20260914.patch`，14 文件，逐条说明见随包的 `FIX-NOTES-2026-09-14.md`），
+（`栖灵-Windows-fixes-20260914.patch`，14 文件，逐条说明见随包的 `FIX-NOTES-2026-09-14.md`），
 覆盖 WI-06 长回复重复开标签页、WI-07 提示配色、WI-08 执行器解绑、
 WI-09 右键菜单被窗口裁切、WI-10 贴边保留量/点击穿透。补丁已落地（commit `1cad554`）。
 
@@ -106,7 +106,7 @@ WI-09 右键菜单被窗口裁切、WI-10 贴边保留量/点击穿透。补丁�
 
 | 项 | 结果 |
 |---|---|
-| 右键菜单三处（角色头部 / 身体中部 / 最下沿） | ✅ 三处「退出 DeskMate」都完整可见；最下沿那次菜单自动上移避让裁切 |
+| 右键菜单三处（角色头部 / 身体中部 / 最下沿） | ✅ 三处「退出 栖灵」都完整可见；最下沿那次菜单自动上移避让裁切 |
 | WI-06 长回复只开一个标签页 | ✅ 自动路径只开 1 个，地址 `127.0.0.1:8736/#/chat`；双击挂件手动打开仍照常新开 |
 | WI-08 复杂任务真实落到 WorkBuddy | ✅ 见 7.2 |
 

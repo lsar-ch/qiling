@@ -1,11 +1,11 @@
-# DeskMate 记忆方案（合流版）
+# 栖灵 记忆方案（合流版）
 
 > 2026-09-04 更新：在 DeepTutor 档案式记忆基础上，合流 HanaAgent 的上下文注入思路。
 > 对比依据见 [记忆模块对比留档](./MEMORY-COMPARISON.md)，V1 详细结构与接口见 [V1 记忆模块](./V1-MEMORY.md)。
 
 ## 1. 目标
 
-记忆不是简单聊天记录，而是让 DeskMate 持续理解用户、项目与任务状态，做到「越用越懂你」。
+记忆不是简单聊天记录，而是让 栖灵 持续理解用户、项目与任务状态，做到「越用越懂你」。
 
 记忆系统要支持：
 
@@ -35,7 +35,7 @@
 - 存储：`trace/<surface>/<YYYY-MM-DD>.jsonl`，append-only。
 - 目标：完整留痕，不做判断，写入失败不影响主流程。
 
-DeskMate 的 surface 建议：
+栖灵 的 surface 建议：
 
 - `conversation`：对话（含语音）
 - `task`：任务执行与桌面操作

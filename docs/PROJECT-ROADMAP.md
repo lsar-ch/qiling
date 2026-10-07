@@ -1,8 +1,8 @@
-# DeskMate 项目路线图
+# 栖灵 项目路线图
 
 ## 当前定位
 
-DeskMate 当前收敛为：
+栖灵 当前收敛为：
 
 > 角色化、本地优先、懂项目记忆的 AI 工作伙伴。
 
@@ -111,7 +111,7 @@ DeskMate 当前收敛为：
 - `/api/agents` 探测 API、`/api/agent-runs` 运行/取消/授权 API
 - 前端“我的智能体”执行器状态展示与真实运行/取消/批准控件
 
-验收记录：Codex 本机 provider/model 已调整为当前 relay 支持的 `deepseek-v4-flash`，并通过 DeskMate API 完成一次 `read-only` 真实任务（`task_eff6a657ae` / `run_c560a3ca9c`）。WorkBuddy `2.137.1` 于 2026-09-13 完成真实只读任务、取消、错误路径和进程回收复验（`task_b0a1e73e07` / `run_76f49ee353`）。其他执行器仍按目录接入对应 adapter。
+验收记录：Codex 本机 provider/model 已调整为当前 relay 支持的 `deepseek-v4-flash`，并通过 栖灵 API 完成一次 `read-only` 真实任务（`task_eff6a657ae` / `run_c560a3ca9c`）。WorkBuddy `2.137.1` 于 2026-09-13 完成真实只读任务、取消、错误路径和进程回收复验（`task_b0a1e73e07` / `run_76f49ee353`）。其他执行器仍按目录接入对应 adapter。
 
 ### Step 8：V1 回归与发布
 
@@ -128,7 +128,7 @@ DeskMate 当前收敛为：
 
 已完成：
 
-- Codex 真实成功任务：2026-09-07 通过 DeskMate `read-only` ACP 运行完成并返回有效结论
+- Codex 真实成功任务：2026-09-07 通过 栖灵 `read-only` ACP 运行完成并返回有效结论
 - 人工验收：macOS 启动器和退出进程回收、麦克风授权与无麦克风/拒绝授权降级、Windows 启动与权限回归，已于 2026-09-15 V1 收口完成（见 `docs/WINDOWS-MIGRATION-2026-09.md`）
 
 ### Step 9：V1 视觉与体验打磨
@@ -196,13 +196,13 @@ V1 不做 Live2D / 3D 或复杂情绪动画；那些仍在后续方向。
 采用渐进式方案，完整规划见 `docs/CHARACTER-INTERACTION-ROADMAP.md`：
 
 1. V1：用户只需提供或生成一张高清基础形象
-2. DeskMate 自动去背景、清理边缘、裁切、对齐、缩放
+2. 栖灵 自动去背景、清理边缘、裁切、对齐、缩放
 3. V1 通过完整图和程序化动态表达角色状态
 4. V1.5 才提供可选的完整状态帧生成，不要求用户制作组件
 5. V2 再评估半自动部件识别与分层
 6. V3 再评估骨骼、网格或 Live2D 类渲染
 
-Codex 精灵表只能作为可选导入/导出格式，DeskMate 不依赖 Codex 或 WorkBuddy 才能运行。
+Codex 精灵表只能作为可选导入/导出格式，栖灵 不依赖 Codex 或 WorkBuddy 才能运行。
 
 ## 后续方向
 
@@ -270,7 +270,7 @@ V1 验证成功后再考虑：
 | P1-T1 | TTS 增量分块播报（首响 <1s） | VC-Bundle 建议3 + P1 短播报需求 | ✅ 已完成：Web 端已走分块播放（`app/speech/base.py:66` / `app/api/voice.py:319` / `apps/web/src/api.ts:934` / `ChatPage.tsx:317`）；挂件同样走分块（`apps/desktop/src/components/Widget.tsx:381`、`:434`，保留 barge-in），首块耗时看 dev 日志 `[widget-tts] first chunk ms`（`Widget.tsx:386`），无自动化断言 |
 | P1-T2 | 任务完成/失败主动短播报 | 原 P1 范围 | ✅ 已完成（`app/agents/runtime.py:467` 发 bubble + speak_text，`ChatPage.tsx:469` 自动播报）；挂件侧 2s 合并队列已补（`Widget.tsx:349` `playTts` + `flushAnnouncements`） |
 | P1-T3 | 记忆更新气泡提示（低频 5min） | 原 P1 范围 | ✅ 已完成（2026-09-16 修复）：原 `ChatPage.tsx` 把 `memory.updated` 挡在 `TASK_EVENT_TYPES` 白名单外是死代码，现已把 `env.source !== "task"` 与事件类型过滤拆开（`ChatPage.tsx:428`、`:429`、`:443`），后端 `app/agents/runtime.py:544` 的事件可被消费；5min 限频 + 5s 自动清除保留；新增回归测试 `tests/test_agent_runtime.py::test_completed_task_publishes_memory_updated_event` |
-| P1-T4 | 工作模式自适应记忆深度 | 原 P1 范围 | ✅ 已完成（`app/api/chat.py:77` mode 字段、`:337` casual 压到 800 字/空 surfaces、work 全量，测试 `tests/test_chat.py:231`）；本轮补上手动切换分段控件（`ChatPage.tsx:63`、`:1179`）；`ChatMode` 已进 py/ts contracts（`packages/contracts/py/deskmate_contracts/conversation.py:12`），桌面端可传 `auto/casual/work` |
+| P1-T4 | 工作模式自适应记忆深度 | 原 P1 范围 | ✅ 已完成（`app/api/chat.py:77` mode 字段、`:337` casual 压到 800 字/空 surfaces、work 全量，测试 `tests/test_chat.py:231`）；本轮补上手动切换分段控件（`ChatPage.tsx:63`、`:1179`）；`ChatMode` 已进 py/ts contracts（`packages/contracts/py/qiling_contracts/conversation.py:12`），桌面端可传 `auto/casual/work` |
 
 执行顺序：P1-T1 → P1-T2（依赖分块），P1-T3/T4 可并行。
 
@@ -285,7 +285,7 @@ V1 验证成功后再考虑：
 | P2-T3 | 能力汇总与故障诊断 Dashboard | 原 P2 范围 | ✅ 已完成（`app/api/health.py:103` `_diagnostics` 带中文 detail + `fix_hint`/`fix_action`、`App.tsx:1569` 卡片与「去修复」跳转、测试 `tests/test_health.py:46`）；偏差：诊断项合并为 4 类（llm/voice/memory/agents）而非任务卡列的 6 项，且仅在有诊断项时渲染 |
 | P2-T4 | Persona 预设模板（work/companion/service） | VC-Bundle 建议1 | ✅ 已完成（2026-09-16 修复）：原 `app/core/persona_prompt.py` 只在 profile 完全为空时才用预设，而 `config/personas/default.yaml:35` 有完整 profile → `preset: work` 是死字段；现改为「预设作底座 + profile 非空字段覆盖」（`persona_prompt.py:105`），并补 3 个测试（`tests/test_persona_prompt.py:88`、`:99`、`:106`），实测默认角色提示词零变化；预设切换已接 API/UI（`apps/web/src/api.ts:187` `preset`、`apps/web/src/CharacterPage.tsx:564` 四态选择） |
 | P2-T5 | 音色/形象后台任务状态机 | VC-Bundle 建议4 | ✅ 已完成（最小可用）：`scripts/persona_asset_import.py` 状态机 + 合法流转表（`:32`）+ JSON 落盘 `data/persona-tasks/` + CLI；`/api/persona-tasks`（`services/ai-service/app/api/persona_tasks.py:16`）按 `AgentRun` 形状读写，角色页显示最近任务进度。偏差：音色克隆的实际后台执行仍走 `probe_minimax.py`/CLI，未自动触发 |
-| P2-T6 | AvatarDriver 字段预留（procedural_2d） | VC-Bundle 建议2 | ✅ 已完成：`AvatarDriver` 已进 py/ts contracts（`packages/contracts/py/deskmate_contracts/character.py:11`、`packages/contracts/ts/src/character.ts:4`），默认 `procedural_2d`、预留 `video_stream`；暂无消费方（V1 零依赖预留，符合预期） |
+| P2-T6 | AvatarDriver 字段预留（procedural_2d） | VC-Bundle 建议2 | ✅ 已完成：`AvatarDriver` 已进 py/ts contracts（`packages/contracts/py/qiling_contracts/character.py:11`、`packages/contracts/ts/src/character.ts:4`），默认 `procedural_2d`、预留 `video_stream`；暂无消费方（V1 零依赖预留，符合预期） |
 
 执行顺序：P2-T1 → P2-T2，P2-T3/T4 并行，P2-T5/T6 并行。
 

@@ -5,7 +5,7 @@
   .venv/bin/python scripts/probe_minimax.py                 # 列出中文音色
   .venv/bin/python scripts/probe_minimax.py --voices "Chinese (Mandarin)_Sweet_Lady" --emotions neutral,happy,sad,calm
   .venv/bin/python scripts/probe_minimax.py --text "自定义文案" --emotions whisper,surprised
-  .venv/bin/python scripts/probe_minimax.py --clone <音频文件> --voice-id deskmate_voice_01
+  .venv/bin/python scripts/probe_minimax.py --clone <音频文件> --voice-id qiling_voice_01
   .venv/bin/python scripts/probe_minimax.py --list-cloned     # 列出已克隆音色
 
 说明：
@@ -124,7 +124,7 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="只列出中文音色")
     parser.add_argument("--list-cloned", action="store_true", help="只列出已克隆音色")
     parser.add_argument("--clone", metavar="FILE", help="用一段音频克隆新音色（先上传素材再克隆）")
-    parser.add_argument("--voice-id", default="deskmate_voice_01", help="克隆音色的 voice_id")
+    parser.add_argument("--voice-id", default="qiling_voice_01", help="克隆音色的 voice_id")
     parser.add_argument("--demo-text", default="你好，我是你的桌面小助手，这段声音是我刚克隆出来的。")
     args = parser.parse_args()
 

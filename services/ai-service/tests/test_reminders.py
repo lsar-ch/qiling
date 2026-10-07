@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from deskmate_contracts.reminder import Reminder
+from qiling_contracts.reminder import Reminder
 from app.config import load_settings
 from app.core.reminders import ReminderEngine, ReminderStore, parse_reminder_message
 from app.core.wellness import WellnessEngine
@@ -100,7 +100,7 @@ def test_wellness_sedentary_and_long_work(tmp_path) -> None:
 
 
 def _prepare_home(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(

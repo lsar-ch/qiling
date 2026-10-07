@@ -6,7 +6,7 @@ const Widget = lazy(() => import("./components/Widget"));
 type WindowKind = "launcher" | "widget" | "browser";
 
 function detectKind(): Promise<WindowKind> {
-  if (new URLSearchParams(window.location.search).get("deskmate") === "widget") {
+  if (new URLSearchParams(window.location.search).get("qiling") === "widget") {
     return Promise.resolve("widget");
   }
   return import("@tauri-apps/api/window")
@@ -30,7 +30,7 @@ export default function App() {
   }, []);
 
   if (kind === null) {
-    return <div className="boot">DeskMate 启动中…</div>;
+    return <div className="boot">栖灵启动中…</div>;
   }
 
   return (

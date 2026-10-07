@@ -1,4 +1,4 @@
-// 授权请求契约 —— 镜像自 deskmate_contracts/approval.py。
+// 授权请求契约 —— 镜像自 qiling_contracts/approval.py。
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
 export type ApprovalDecision = "approved" | "rejected";
 

@@ -17,11 +17,11 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from deskmate_contracts import new_event_id
-from deskmate_contracts.conversation import ChatAttachment, ChatMode
-from deskmate_contracts.events import EventEnvelope
-from deskmate_contracts.project import ProjectNode
-from deskmate_contracts.reminder import Reminder
+from qiling_contracts import new_event_id
+from qiling_contracts.conversation import ChatAttachment, ChatMode
+from qiling_contracts.events import EventEnvelope
+from qiling_contracts.project import ProjectNode
+from qiling_contracts.reminder import Reminder
 from app.chat.context import build_llm_messages
 from app.config import repo_root
 from app.core.emotion_resolver import infer_emotion
@@ -193,7 +193,7 @@ async def upload_chat_attachments(
     request: Request,
     files: list[UploadFile] = File(...),
 ) -> dict:
-    """把对话附件暂存到 DeskMate 数据目录，返回可随消息提交的附件元数据。"""
+    """把对话附件暂存到 栖灵 数据目录，返回可随消息提交的附件元数据。"""
     uploads = _uploads_root(request)
     uploads.mkdir(parents=True, exist_ok=True)
     items: list[ChatAttachment] = []

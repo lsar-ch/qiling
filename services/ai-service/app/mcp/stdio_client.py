@@ -19,7 +19,7 @@ class McpStdioError(RuntimeError):
 
 
 PROTOCOL_VERSION = "2024-11-05"
-CLIENT_NAME = "deskmate-mcp-client"
+CLIENT_NAME = "qiling-mcp-client"
 CLIENT_VERSION = "0.1.0"
 
 

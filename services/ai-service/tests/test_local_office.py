@@ -204,7 +204,7 @@ class TestLocalOfficeAdapter:
 # ── 2026-10-01 扩充：PDF / 图片 / 邮件 ─────────────────────────────
 
 
-def _write_min_pdf(path, text: str = "Hello DeskMate PDF") -> None:
+def _write_min_pdf(path, text: str = "Hello 栖灵 PDF") -> None:
     """手写一份最小可用 PDF（含一段可提取文本），避免为测试引入 reportlab。"""
     stream = f"BT /F1 24 Tf 20 100 Td ({text}) Tj ET".encode()
     objs = [

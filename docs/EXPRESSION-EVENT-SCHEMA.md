@@ -214,7 +214,7 @@ connectEvents(wsUrl, (msg) => {
 
 ## 5. 后端改动清单
 
-### 5.1 contracts 包（`packages/contracts/py/deskmate_contracts/`）
+### 5.1 contracts 包（`packages/contracts/py/qiling_contracts/`）
 
 - **`widget.py`**：新增 `ExpressionEmotion`、`BubbleStyle`、`ExpressionEvent`、`PersonaPresentation`
 - **`events.py`**：`EventEnvelope` 新增可选字段 `expression`、`presentation`

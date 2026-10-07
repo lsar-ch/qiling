@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deskmate_contracts.conversation import ChatAttachment, Conversation, ConversationMessage
+from qiling_contracts.conversation import ChatAttachment, Conversation, ConversationMessage
 
 
 class ConversationStore:

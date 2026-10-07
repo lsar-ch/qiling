@@ -17,7 +17,7 @@ from pathlib import Path
 
 import yaml
 
-from deskmate_contracts import SkillDetail, SkillInfo
+from qiling_contracts import SkillDetail, SkillInfo
 
 
 class SkillRegistryError(RuntimeError):

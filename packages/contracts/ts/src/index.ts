@@ -1,4 +1,4 @@
-// DeskMate TS 类型镜像。
+// 栖灵 TS 类型镜像。
 // 规则：单一事实源是 packages/contracts/py（pydantic）。
 // 修改任何镜像类型必须同步 py 端，并运行 services/ai-service 的一致性测试
 // tests/test_contracts_sync.py。

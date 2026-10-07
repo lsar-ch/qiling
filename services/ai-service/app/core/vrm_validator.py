@@ -219,7 +219,7 @@ def validate_vrm(data: bytes) -> VrmReport:
     bones = _humanoid_bones(vrm)
     stats["humanoid_count"] = len(bones)
     missing = [b for b in CORE_HUMANOID if b not in bones]
-    # upperChest 在 VRM 1.0 里是可选骨，且 DeskMate 渲染链（VrmStage）不引用它。
+    # upperChest 在 VRM 1.0 里是可选骨，且 栖灵 渲染链（VrmStage）不引用它。
     # 81.vrm 的 Neck 直挂 Chest、骨架里确实没有中间骨，卡这条只会误伤。
     blocking_missing = [b for b in missing if b != "upperChest"]
     check(not blocking_missing,

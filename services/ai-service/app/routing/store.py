@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
-from deskmate_contracts.task import Task
+from qiling_contracts.task import Task
 
 
 class TaskStore:

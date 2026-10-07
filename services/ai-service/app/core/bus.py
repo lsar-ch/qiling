@@ -11,7 +11,7 @@ import asyncio
 import logging
 from typing import Any, Callable
 
-from deskmate_contracts.events import EventEnvelope
+from qiling_contracts.events import EventEnvelope
 
 logger = logging.getLogger(__name__)
 

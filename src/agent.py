@@ -27,7 +27,7 @@ from .viz.renderer import create_renderer
 logger = logging.getLogger(__name__)
 
 
-class DeskMateAgent:
+class QilingAgent:
     """桌面 AI 精灵主控制器。"""
 
     def __init__(
@@ -76,7 +76,7 @@ class DeskMateAgent:
         self._current_response = ""
         self._interrupted = False
 
-        logger.info("DeskMateAgent initialized")
+        logger.info("QilingAgent initialized")
 
     # ── 生命周期 ─────────────────────────────────────────────────
     def start(self) -> None:

@@ -1,4 +1,4 @@
-# HanaAgent (openhanako) 调研与 DeskMate 路线结论
+# HanaAgent (openhanako) 调研与 栖灵 路线结论
 
 ## 1. 调研对象
 
@@ -15,7 +15,7 @@
 - v2 起不用向量检索，改用 SQLite `better-sqlite3` + FTS5 + 标签 + 中文 ngram
 - 有 `fact-store`（重要事实）、`pinned-memory`、`session-summary`、`deep-memory`、`dream` 等模块
 - 记忆编译器使用“today.md → daily → week → longterm”滚动传送带，最终 assemble 成有限 token 的 memory.md
-- 记忆可见、可读、可编辑，和 DeskMate“可审计记忆”的方向一致
+- 记忆可见、可读、可编辑，和 栖灵“可审计记忆”的方向一致
 
 ### 人格 / 角色卡
 
@@ -48,18 +48,18 @@
 - TTS 在设置界面标注为 coming soon，尚未内置
 - 没有完整“语音对话 + barge-in + 角色语气/情感映射”链路
 
-## 4. 与 DeskMate V1 的差距分析
+## 4. 与 栖灵 V1 的差距分析
 
 | V1 能力 | HanaAgent 现状 | 结论 |
 |---|---|---|
-| 桌面挂件 | 无 | DeskMate 自研核心 |
-| 挂件状态动画 | 无 | DeskMate 自研核心 |
+| 桌面挂件 | 无 | 栖灵 自研核心 |
+| 挂件状态动画 | 无 | 栖灵 自研核心 |
 | 2D 角色资产 | 只有静态头像 | 需自建分层资产 |
 | 浏览器主界面 | 桌面应用 + PWA/LAN | 可借鉴但路径不同 |
 | 文字对话 | 强 | 参考实现 |
 | 语音识别 | 部分（语音条转录） | 可借鉴 provider adapter |
-| TTS / 语音输出 | 无 | DeskMate 自研 |
-| 全双工 / 打断 | 无 | DeskMate 自研 |
+| TTS / 语音输出 | 无 | 栖灵 自研 |
+| 全双工 / 打断 | 无 | 栖灵 自研 |
 | 记忆 | 很强 | 借鉴分层和文件化思路 |
 | 人格 / 角色卡 | 很强 | 借鉴角色卡结构 |
 | 任务分流 | 内置 | 借鉴判定逻辑 |
@@ -71,19 +71,19 @@
 
 ## 5. 路线建议
 
-### 结论：不建议直接 fork 作为 DeskMate 基底，也不建议完全从零自研后端
+### 结论：不建议直接 fork 作为 栖灵 基底，也不建议完全从零自研后端
 
 理由：
 
-1. HanaAgent 与 DeskMate 重叠的是 Agent/记忆/工具底座，这层很重；自己重写成本高
-2. HanaAgent 缺的恰好是 DeskMate 的核心差异：桌面角色、状态反馈、语音输出与全双工
+1. HanaAgent 与 栖灵 重叠的是 Agent/记忆/工具底座，这层很重；自己重写成本高
+2. HanaAgent 缺的恰好是 栖灵 的核心差异：桌面角色、状态反馈、语音输出与全双工
 3. 直接 fork 大而全应用再改造，学习成本和后续维护成本高，且人格/记忆/沙盒实现会绑架我们的产品节奏
 4. 但它的记忆、角色卡、subagent、沙盒等设计，是很好的“参照实现”，比纸面方案更可信
 
-### 推荐路线：DeskMate 保持独立，分层借鉴
+### 推荐路线：栖灵 保持独立，分层借鉴
 
 ```text
-DeskMate 独立产品层
+栖灵 独立产品层
   ├─ 桌面挂件 + 状态机 + 2D 角色（自研）
   ├─ 语音交互 + TTS + 语气规范（自研）
   ├─ 浏览器主界面（自研，参照 React 信息架构）
@@ -98,11 +98,11 @@ DeskMate 独立产品层
 
 ### 后续如果要把 Agent 底座做实
 
-不急于第一版决定。等 DeskMate V1 主链路跑通后，再做一次取舍：
+不急于第一版决定。等 栖灵 V1 主链路跑通后，再做一次取舍：
 
 - 继续自己维护轻量 Agent 底座
 - 通过 ACP / 协议接入成熟 Agent（Qwen-Audio-Agent 路线）
-- 在成熟 Agent 底座上重建 DeskMate 的桌面角色层
+- 在成熟 Agent 底座上重建 栖灵 的桌面角色层
 
 ## 6. 本轮行动建议
 
@@ -110,4 +110,4 @@ DeskMate 独立产品层
 2. 不修改我们的 V1 架构文档
 3. 记忆方案可补充一条“参考 HanaAgent fact-store + FTS + 标签检索，暂不做向量库”
 4. 角色卡方案后续可参考 HanaAgent 的 manifest / card / memory 打包结构
-5. V1 先按既有接口把 DeskMate 挂件和语音主链路做出来，再回来对照 HanaAgent
+5. V1 先按既有接口把 栖灵 挂件和语音主链路做出来，再回来对照 HanaAgent

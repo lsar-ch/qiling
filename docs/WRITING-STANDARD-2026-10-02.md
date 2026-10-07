@@ -45,10 +45,10 @@ Pandoc / Marp / WeasyPrint / LibreOffice 仍是「可装、可探测」，未接
 `config/office_templates/word.docx` 已入库，与上面的 token 同源生成。它是 docxtpl
 模板，占位符上下文：
 
-- `title`：第一个 H1；`subtitle`：固定「由 DeskMate 生成」
+- `title`：第一个 H1；`subtitle`：固定「由 栖灵 生成」
 - `sections[]`：`heading` / `level` / `paragraphs[]` / `bullets[]` / `tables[][][]`
 
-用户可用公司模板覆盖同名文件（`DESKMATE_OFFICE_TEMPLATES` 也可指到别处）。
+用户可用公司模板覆盖同名文件（`QILING_OFFICE_TEMPLATES` 也可指到别处）。
 
 已知上限：一个分节没有表格时，模板会保留一个 0 行表格节点（Word/LibreOffice 中不可见）。
 

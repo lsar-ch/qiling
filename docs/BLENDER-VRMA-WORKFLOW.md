@@ -48,7 +48,7 @@ node scripts/vrm/check_vrma.mjs <导出.vrma>     # 必须是 52 骨
    - 一镜动作：首尾帧位姿对齐；循环动作：首尾帧完全一致，运行时循环交给系统，不在 Blender 里复制多圈。
 6. 导出 `.vrma`。
 
-## 落地到 DeskMate
+## 落地到 栖灵
 
 1. 文件名必须是 11 个 trigger 之一，例如 `speaking.vrma`：
 

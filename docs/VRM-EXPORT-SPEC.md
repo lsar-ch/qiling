@@ -2,7 +2,7 @@
 
 日期：2026-09-25　配套闸门实现见 `services/ai-service/app/core/vrm_validator.py`
 
-目标：**在导出工具侧一次做对**，让资产进 DeskMate 后不需要任何手工调整。
+目标：**在导出工具侧一次做对**，让资产进 栖灵 后不需要任何手工调整。
 这份文档是给「导出的人」看的清单；判据与踩坑细节在 `VRM-ASSET-NOTES.md`。
 
 ## 0. 一句话流程
@@ -10,7 +10,7 @@
 ```text
 VRoid Studio / Blender 按本规范导出
   → 打成 assets.zip（结构见 §4）
-  → 导入 DeskMate 角色页
+  → 导入 栖灵 角色页
   → 闸门自动校验：通过即落盘，不通过直接拒绝并列出原因
 ```
 

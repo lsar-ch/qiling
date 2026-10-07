@@ -39,13 +39,13 @@ class FakeProvider:
 
 @contextmanager
 def make_client(provider: FakeProvider) -> TestClient:
-    previous = os.environ.get("DESKMATE_HOME")
-    tmp_home = Path(os.environ.get("PYTEST_TMPDIR", "/tmp")) / "deskmate-test-chat"
+    previous = os.environ.get("QILING_HOME")
+    tmp_home = Path(os.environ.get("PYTEST_TMPDIR", "/tmp")) / "qiling-test-chat"
     tmp_home.mkdir(parents=True, exist_ok=True)
-    os.environ["DESKMATE_HOME"] = str(tmp_home)
+    os.environ["QILING_HOME"] = str(tmp_home)
     (tmp_home / "config" / "personas").mkdir(parents=True, exist_ok=True)
     (tmp_home / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
-    (tmp_home / "config" / "system_prompt.md").write_text("你是 DeskMate。", encoding="utf-8")
+    (tmp_home / "config" / "system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_home / "config" / "agents.yaml")
     (tmp_home / "config" / "personas" / "default.yaml").write_text(
         """
@@ -68,9 +68,9 @@ activation: {}
             yield client
     finally:
         if previous is None:
-            os.environ.pop("DESKMATE_HOME", None)
+            os.environ.pop("QILING_HOME", None)
         else:
-            os.environ["DESKMATE_HOME"] = previous
+            os.environ["QILING_HOME"] = previous
 
 
 def parse_sse(text: str) -> list[dict]:
@@ -169,18 +169,18 @@ def test_project_conversation_saves_name_and_folder() -> None:
             json={
                 "message": "在吗",
                 "project": str(PROJECT_ROOT),
-                "project_name": "DeskMate",
+                "project_name": "栖灵",
             },
         )
         events = parse_sse(resp.text)
         done = next(e for e in events if e["type"] == "done")
         conv = client.get(f"/api/conversations/{done['conversation_id']}").json()
         assert conv["project"] == str(PROJECT_ROOT)
-        assert conv["project_name"] == "DeskMate"
+        assert conv["project_name"] == "栖灵"
 
         items = client.get("/api/conversations").json()["items"]
         item = next(item for item in items if item["conversation_id"] == done["conversation_id"])
-        assert item["project_name"] == "DeskMate"
+        assert item["project_name"] == "栖灵"
 
 
 def test_chat_attachment_uploads_and_persists() -> None:
@@ -276,7 +276,7 @@ def test_project_memory_continuity_and_decision_node(tmp_path: Path) -> None:
         nodes = client.get("/api/projects/nodes", params={"project": str(proj)}).json()["items"]
         assert any(n["kind"] == "decision" and "方案 B" in n["title"] for n in nodes)
 
-        mem = Path(os.environ["DESKMATE_HOME"]) / "data" / "memory"
+        mem = Path(os.environ["QILING_HOME"]) / "data" / "memory"
         assert "方案 B" in (mem / "L2" / "proj-proj-a.md").read_text(encoding="utf-8")
         assert "方案 B" not in (mem / "L2" / "project.md").read_text(encoding="utf-8")
 

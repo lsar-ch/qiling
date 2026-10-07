@@ -7,7 +7,7 @@ ExpressionEmotion，供挂件视觉映射（P2）与简易帧图导入（P3）�
 
 from __future__ import annotations
 
-from deskmate_contracts.widget import ExpressionEmotion
+from qiling_contracts.widget import ExpressionEmotion
 
 # 情绪名（小写、下划线分隔）→ 归一化情绪
 EMOTION_ALIASES: dict[str, ExpressionEmotion] = {

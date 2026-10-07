@@ -28,7 +28,7 @@ avatar: ""
 
 
 def _make_client(tmp_path: Path, monkeypatch) -> TestClient:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     # app.main 模块级导入会把仓库根 .env 的真实 key 灌进进程环境，
     # 这里显式清除，确保用例在无供应商 key 的隔离环境下运行。
     for key in (

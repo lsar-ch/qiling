@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from typing import Sequence
 
-from deskmate_contracts.voice import VoiceParams
+from qiling_contracts.voice import VoiceParams
 
 from app.speech.base import (
     AudioResult,

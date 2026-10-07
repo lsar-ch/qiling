@@ -1,6 +1,6 @@
 app:
   description: 本地优先的桌面 AI 精灵
-  name: DeskMate
+  name: 栖灵
   version: 0.1.0
 awareness:
   active_window:

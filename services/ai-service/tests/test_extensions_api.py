@@ -32,10 +32,10 @@ enabled: false
 
 @pytest.fixture
 def client(tmp_path, monkeypatch) -> TestClient:
-    home = tmp_path / "deskmate-home"
-    monkeypatch.setenv("DESKMATE_HOME", str(home))
+    home = tmp_path / "qiling-home"
+    monkeypatch.setenv("QILING_HOME", str(home))
     (home / "config").mkdir(parents=True)
-    (home / "config" / "system_prompt.md").write_text("你是 DeskMate。", encoding="utf-8")
+    (home / "config" / "system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(
         Path(__file__).resolve().parents[3] / "config" / "agents.yaml",
         home / "config" / "agents.yaml",

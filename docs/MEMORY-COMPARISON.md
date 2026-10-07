@@ -1,7 +1,7 @@
 # HanaAgent 与 DeepTutor 记忆模块对比（留档）
 
 > 日期：2026-09-04
-> 用途：确定 DeskMate 记忆方案应借鉴哪个项目，结论留档，避免后续反复比较。
+> 用途：确定 栖灵 记忆方案应借鉴哪个项目，结论留档，避免后续反复比较。
 
 ## 1. 对比依据
 
@@ -12,12 +12,12 @@
   三层记忆子系统，约 6700 行。
 - **HanaAgent（openhanako）**（拉取的只读源码）
   `.research/openhanako/lib/memory` 及配套 `tests/`，记忆相关模块约十余个文件。
-- 共同点：两套实现都**不依赖向量库**，都强调记忆可见、可读、可管理，方向上与 DeskMate 一致。
+- 共同点：两套实现都**不依赖向量库**，都强调记忆可见、可读、可管理，方向上与 栖灵 一致。
 
 ## 2. 一句话结论
 
 > 两个项目解决的是记忆的**两个不同问题**，不存在谁全面更好：
-> DeskMate 应「档案式长期记忆借鉴 DeepTutor + 运行时上下文注入借鉴 HanaAgent」，合流而不是二选一。
+> 栖灵 应「档案式长期记忆借鉴 DeepTutor + 运行时上下文注入借鉴 HanaAgent」，合流而不是二选一。
 
 ## 3. 本质定位差异
 
@@ -70,14 +70,14 @@
 
 - **DeepTutor**：记忆按 surface 分，其中 `partner` 是独立 surface；伙伴运行时可通过 contextvar 切换成读**主人的**记忆。
 - **HanaAgent**：每个 Agent 身份记忆隔离 + 角色卡（character-card）体系。
-- 两者都支持「角色记忆 ≠ 用户记忆」，方向与 DeskMate 人设需求一致。
+- 两者都支持「角色记忆 ≠ 用户记忆」，方向与 栖灵 人设需求一致。
 
 ### 4.7 工程形态与借鉴成本
 
 - **DeepTutor**：约 6700 行，consolidator 依赖 LLM 且较重，绑定 Python + 自身架构；直接搬不现实，适合借鉴设计。
 - **HanaAgent**：TypeScript 模块边界清楚（compile / session-summary / fact-store / ticker / dream / search），思路容易单点移植。
 
-## 5. DeskMate 合流结论
+## 5. 栖灵 合流结论
 
 1. **长期档案骨架用 DeepTutor 路线**：L1 JSONL 留痕 → L2 场景事实 → L3 画像（profile / preferences / progress / recent），全部 Markdown、带溯源引用与可编辑锚点。匹配「越用越懂你 + 可查看可修正」。
 2. **Prompt 注入层用 HanaAgent 路线**：会话摘要 + 滚动编译 + token 预算，只把编译产物注入模型，避免挂件长对话撑爆上下文。

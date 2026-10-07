@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
-from deskmate_contracts.events import EventEnvelope
-from deskmate_contracts.widget import (
+from qiling_contracts.events import EventEnvelope
+from qiling_contracts.widget import (
     ExpressionEmotion,
     ExpressionEvent,
     WidgetState,

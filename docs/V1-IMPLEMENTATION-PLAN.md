@@ -1,4 +1,4 @@
-# DeskMate V1 实现结构与顺序
+# 栖灵 V1 实现结构与顺序
 
 ## 1. 目录策略
 
@@ -236,7 +236,7 @@ Step 7 已完成两个阶段。目录以 `config/agents.yaml` 为事实源，统
 - `/api/tasks/{id}/execute`、`/api/tasks/{id}/run`、`/api/agent-runs`、取消与授权接口
 - 前端真实运行、模式选择、进度轮询、取消/批准控件
 
-验收记录：ACP 真实任务可进入 Codex 会话并回流失败原因；测试使用 fake adapter 覆盖完成/失败/重复执行/取消/授权/pending 拒绝。Codex 本机 provider/model 调整为 `deepseek-v4-flash` 后，已通过 DeskMate API 完成一次 `read-only` 成功任务验收（2026-09-07，`task_eff6a657ae`）。
+验收记录：ACP 真实任务可进入 Codex 会话并回流失败原因；测试使用 fake adapter 覆盖完成/失败/重复执行/取消/授权/pending 拒绝。Codex 本机 provider/model 调整为 `deepseek-v4-flash` 后，已通过 栖灵 API 完成一次 `read-only` 成功任务验收（2026-09-07，`task_eff6a657ae`）。
 
 ### Step 8：V1 回归与发布
 

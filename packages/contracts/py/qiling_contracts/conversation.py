@@ -24,7 +24,7 @@ def role_label_zh(role: MessageRole) -> str:
 
 
 class ChatAttachment(BaseModel):
-    """对话附件元数据；文件已由上传接口落盘到 DeskMate 数据目录。"""
+    """对话附件元数据；文件已由上传接口落盘到 栖灵 数据目录。"""
 
     name: str
     path: str

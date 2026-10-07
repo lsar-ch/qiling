@@ -1,11 +1,11 @@
-# DeskMate Windows 回归任务卡（2026-09-14 轮）
+# 栖灵 Windows 回归任务卡（2026-09-14 轮）
 
 > **给 WorkBuddy 的读法**：本轮任务书就是本文。
 > 总流程、交互节奏、禁止事项沿用 `WORKBUDDY-WINDOWS-MIGRATION.md`（下称总文档）第 5 / 12 / 13 节；
 > 磁盘方案（总文档第 4 节）本轮无需重读。总文档第 10 节的 18 项清单仍然有效，预期结果以本文为准。
 >
 > 项目目录：`D:\Projects\desktop-assistant`
-> 源码包：`DeskMate-Windows-src-2026-09-14.zip`（HEAD `6dd6b01`）
+> 源码包：`栖灵-Windows-src-2026-09-14.zip`（HEAD `6dd6b01`）
 > 用户角色：手动执行命令、回传原始输出；WorkBuddy 只做只读检查、解释、判断和记录，一次只推进一个阶段。
 
 ## 1. 本轮只做两件事
@@ -29,19 +29,19 @@
 | WI-05 | 自动检测找不到装在 D 盘的 WorkBuddy | 能被找到（T1 专项） |
 | WP-01 | 页面没有「关闭自动播报回复」开关 | 设置页出现该开关，说明文字含「任务待确认提醒的语音播报一并关闭」 |
 | WP-02 | 长回复自动打开浏览器只进主页 | 长回复打开后直接停在「对话」页，地址栏带 `#/chat` |
-| WP-03 | 右键退出后浏览器不关闭 | 退出后页面出现「DeskMate 已退出」横幅 + 「重新连接」按钮；**浏览器仍不关闭，这是设计** |
+| WP-03 | 右键退出后浏览器不关闭 | 退出后页面出现「栖灵 已退出」横幅 + 「重新连接」按钮；**浏览器仍不关闭，这是设计** |
 
 ## 3. 包与落位
 
-- 源码包：`DeskMate-Windows-src-2026-09-14.zip`，HEAD `6dd6b01`
+- 源码包：`栖灵-Windows-src-2026-09-14.zip`，HEAD `6dd6b01`
 - 旧目录处理（**以本文为准，覆盖总文档 7.1 的包名**）：
 
   1. 09-13 轮用的解压目录就是当前的 `D:\Projects\desktop-assistant`。先由用户确认，把它**改名**为
      `D:\Projects\desktop-assistant-2026-09-13`（改名可回退，删除不可回退）。
   2. 从旧目录只取回 `.env` 一个文件（新包刻意不带，是唯一无法重新生成的内容），
      其余运行时数据（`.logs/`、`data/` 内的会话与任务）默认不带。
-  3. 上轮留存的 `desktop-assistant-2026-09-12-old`、`DeskMate-Windows-src-2026-09-12.zip`、
-     `DeskMate-Windows-src-2026-09-13.zip` **都不要删、不要动**。
+  3. 上轮留存的 `desktop-assistant-2026-09-12-old`、`栖灵-Windows-src-2026-09-12.zip`、
+     `栖灵-Windows-src-2026-09-13.zip` **都不要删、不要动**。
   4. 新包解压到 `D:\Projects\desktop-assistant`。
 
 - 解压后必须先确认这些路径存在，再进入下一阶段：
@@ -149,7 +149,7 @@ cd D:\Projects\desktop-assistant\services\ai-service
 
 ### 7.3 UI 端到端（用户真实路径）
 
-1. 启动 DeskMate（`npm run tauri dev`，或打包后的 exe）。
+1. 启动 栖灵（`npm run tauri dev`，或打包后的 exe）。
 2. 打开浏览器主界面 → 「我的智能体」。
 3. WorkBuddy 卡片路径**保持留空**（若上一轮填过路径，先清空）。
 4. 点「刷新」。
@@ -180,7 +180,7 @@ cd D:\Projects\desktop-assistant\services\ai-service
 | 15 | 角色形象显示正常，挂件显示同一形象 | 与 `data\persona-assets\` 一致 |
 | 16 | 「我的智能体」显示 Codex 状态 | 有明确可用/不可用结论 |
 | 17 | 没有 Codex 时任务保留在队列并显示不可用原因 | 有可读原因，不静默失败 |
-| 18 | 关闭 DeskMate 后没有残留 `uvicorn` 与 `:8736` 监听 | 见第 9 节 |
+| 18 | 关闭 栖灵 后没有残留 `uvicorn` 与 `:8736` 监听 | 见第 9 节 |
 
 ## 9. 阶段 5：退出回收（第 18 项的测法，与上轮不同）
 
@@ -188,11 +188,11 @@ cd D:\Projects\desktop-assistant\services\ai-service
 
 1. 用 `npm run tauri dev` 启动，**不要手动** `python -m uvicorn`。
 2. 确认挂件出现、`/api/health` 正常。
-3. 从挂件右键菜单退出 DeskMate。
+3. 从挂件右键菜单退出 栖灵。
 4. 立刻检查：
 
 ```powershell
-tasklist | findstr /i "deskmate uvicorn"
+tasklist | findstr /i "qiling uvicorn"
 netstat -ano | findstr :8736
 ```
 
@@ -204,7 +204,7 @@ netstat -ano | findstr :8736
 - `npm audit` 仍报 2 条（vite high / esbuild moderate）—— WI-03，已挂 P2。
 - npm 11 对 esbuild postinstall 的拦截警告 —— WI-04，构建成功即通过。
 - pytest `1 skipped` —— WI-02 的 POSIX 专有用例，Windows 上本就无法构造前提。
-- 退出 DeskMate 后浏览器不会关闭，页面显示「DeskMate 已退出」—— WP-03 的设计。
+- 退出 栖灵 后浏览器不会关闭，页面显示「栖灵 已退出」—— WP-03 的设计。
 - `scripts/check.sh` 在 Windows 不可用 —— 用第 6 节等价命令代替。
 
 ## 11. 禁止事项（摘自总文档第 12 节，本轮同样生效）

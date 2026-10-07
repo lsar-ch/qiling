@@ -9,7 +9,7 @@
 ## 0. 结论
 
 - **打包 ≠ 可以公开**。打包解决「别人能装」，公开还要解决「能合法拿源码 / 再分发资产」。
-- 目前 4 项未决：**定名、定图标、页面美化、全库合规与漏洞审计**。
+- 定名已于 2026-10-07 冻结：**栖灵 / Qiling**（英文候选 Perch 因撞名弃用）；剩余 3 项未决：**定图标、页面美化、全库合规与漏洞审计**。
 - 另有 2 项硬门槛尚未处理：**缺 LICENSE**、**禁止再分发的 VRM 仍在仓库与历史里**。
 - 已确认干净：`.env` 未入库、运行数据未入库、git 历史无真实密钥（仅测试串）。
 
@@ -38,17 +38,17 @@
 
 | 位置 | 现值 / 说明 |
 | --- | --- |
-| Tauri `productName` | `DeskMate`（`apps/desktop/src-tauri/tauri.conf.json`） |
-| Bundle identifier | `com.deskmate.desktop` |
-| 仓库名 | `my-desktop-project`（GitHub，当前 remote） |
-| 包名 | `@deskmate/desktop` / `@deskmate/contracts`（`package.json`） |
-| Python 包 / 服务名 | `services/ai-service`、`DeskMate` 出现在日志/健康检查/通知文案 |
+| Tauri `productName` | `Qiling`（`apps/desktop/src-tauri/tauri.conf.json`） |
+| Bundle identifier | `app.qiling.desktop` |
+| 仓库名 | 拟改 `qiling`；GitHub remote 目前仍是 `my-desktop-project` |
+| 包名 | `@qiling/desktop` / `@qiling/contracts`（`package.json`） |
+| Python 包 / 服务名 | `services/ai-service`、`栖灵` 出现在日志/健康检查/通知文案 |
 | 安装包文件名、README 标题、关于页、默认人格叫法、图标资源名 | 需逐一替换 |
 
 **特别注意**
 
 - **`bundle identifier` 一旦随着安装包外发就不能改**：macOS 视为新 App（丢已授权目录、启动项）；Windows 升级路径断裂。所以定名要早于首个对外安装包。
-- **商标撞名**：「DeskMate」在海外已有同名产品/公司在用，公开品牌前建议查一遍商标与域名可用性，避免撞车。
+- **商标撞名**：英文候选 Perch 已弃用（Google Perch 模型、既有 Perch AI 产品、域名全被占用）；「Qiling」正式商标检索与域名注册待做。
 - 改名清单建议直接落成一张表，改完逐项打勾，避免遗漏（尤其是散落在文案里的中文名）。
 
 ---
@@ -175,8 +175,8 @@
 
 ## 3. 特别注意汇总（公开前逐条打勾）
 
-- [ ] 项目名冻结，改名清单全部落地（bundle id 尤其）
-- [ ] 商标 / 域名可用性已确认
+- [x] 项目名冻结，改名清单全部落地（bundle id 尤其）——2026-10-07 完成，栖灵 / Qiling
+- [ ] 商标 / 域名可用性已确认（Qiling：`qiling.app` 空闲；正式商标检索待做）
 - [ ] 图标选定并生成全平台资源
 - [ ] UI 美化一轮完成，双平台截图验收通过
 - [ ] 全库漏洞扫描跑完，问题清单产出并分级
@@ -197,4 +197,4 @@
 
 **已 OK**：`.env` 未入库；运行数据 / `settings.local.json` / `agent_runs` 未入库；git 历史无真实密钥；办公工具与写作链路已闭环（`369 passed`）；4 个提交已推送 `origin/main`。
 
-**待办**：§2.1–§2.6 全部；其中 §2.1、§2.2、§2.5 是**硬阻塞**，§2.3、§2.4 是质量项。
+**待办**：§2.1 改名本地已落地（GitHub remote 改名待做）；§2.2 图标、§2.3 UI 美化、§2.4 审计、§2.5 合规清理、§2.6 打包全部待办。其中 §2.2、§2.5 是**硬阻塞**，§2.3、§2.4 是质量项。

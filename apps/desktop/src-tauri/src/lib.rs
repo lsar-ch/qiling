@@ -1,4 +1,4 @@
-//! DeskMate 桌面运行时（Step 1：启动本地 AI 服务 + 打开默认浏览器主界面）。
+//! 栖灵桌面运行时（Step 1：启动本地 AI 服务 + 打开默认浏览器主界面）。
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -181,7 +181,7 @@ fn wait_for_service(shared: &mut Shared) {
 }
 
 fn discover_repo_root() -> Option<PathBuf> {
-    if let Ok(home) = std::env::var("DESKMATE_HOME") {
+    if let Ok(home) = std::env::var("QILING_HOME") {
         let p = PathBuf::from(home);
         if p.join("services").join("ai-service").is_dir() {
             return Some(p);
@@ -230,7 +230,7 @@ fn start_service(shared: &mut Shared) {
         }
         if service_port_open() {
             shared.spawn_error = Some(format!(
-                "端口 {SERVICE_PORT} 已被其他进程占用，DeskMate 本地服务未启动。请先关闭占用进程或运行退出脚本。"
+                "端口 {SERVICE_PORT} 已被其他进程占用，栖灵本地服务未启动。请先关闭占用进程或运行退出脚本。"
             ));
             return;
         }
@@ -270,7 +270,7 @@ fn start_service(shared: &mut Shared) {
         .unwrap_or_default();
     let _ = writeln!(
         log_file,
-        "\n--- DeskMate AI service start (unix={timestamp}) ---"
+        "\n--- Qiling AI service start (unix={timestamp}) ---"
     );
     let stdout = match log_file.try_clone() {
         Ok(file) => Stdio::from(file),
@@ -353,7 +353,7 @@ fn open_main_ui_window(
     }
     let target: tauri::Url = url.parse().map_err(|e| format!("主界面地址无效: {e}"))?;
     let window = WebviewWindowBuilder::new(app, "main_ui", WebviewUrl::External(target))
-        .title("DeskMate 主界面")
+        .title("栖灵主界面")
         .inner_size(1200.0, 800.0)
         .min_inner_size(900.0, 640.0)
         .center()
@@ -516,13 +516,13 @@ pub fn run() {
                 }
             }
             if let Err(err) = widget::restore_widget_position(app.handle()) {
-                eprintln!("DeskMate widget positioning failed: {err}");
+                eprintln!("Qiling widget positioning failed: {err}");
             }
             app.manage(widget::WidgetRuntimeState::new(app.handle().clone()));
 
             // 系统托盘图标 + 右键菜单
             let open_item = MenuItem::with_id(app, "open", "打开主界面", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "退出 DeskMate", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出栖灵", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
 
             let icon_path = find_tray_icon().expect("tray icon not found: icons/32x32.png");
@@ -530,7 +530,7 @@ pub fn run() {
 
             TrayIconBuilder::new()
                 .icon(icon)
-                .tooltip("DeskMate")
+                .tooltip("栖灵")
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => {

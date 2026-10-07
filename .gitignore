@@ -74,4 +74,4 @@ vrm-spike-lows-power.png
 /scripts/_tmp_*.mjs
 
 # Windows 迁移源码包（网盘传输用，不入库；单文件约 177MB，超 GitHub 100MB 限制）
-/DeskMate-Windows-src-*.zip
+/Qiling-Windows-src-*.zip

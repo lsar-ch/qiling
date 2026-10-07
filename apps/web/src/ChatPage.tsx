@@ -31,7 +31,7 @@ import {
 import MarkdownLite from "./MarkdownLite";
 import { isTauri } from "@tauri-apps/api/core";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-import type { EventEnvelope } from "@deskmate/contracts";
+import type { EventEnvelope } from "@qiling/contracts";
 import { startRecording, type MicRecorder } from "./recorder";
 import {
   startAlwaysListener,
@@ -72,7 +72,12 @@ const CHAT_MODES = [
   { mode: "work", label: "工作", hint: "完整项目记忆" },
 ] as const;
 
-const CURRENT_PROJECT_KEY = "deskmate.current.project.path";
+const CURRENT_PROJECT_KEY = "qiling.current.project.path";
+const LEGACY_PROJECT_KEY = "deskmate.current.project.path"; // 改名前的键：只读回退，避免已保存路径丢失
+
+function readSavedProjectPath(): string {
+  return localStorage.getItem(CURRENT_PROJECT_KEY) ?? localStorage.getItem(LEGACY_PROJECT_KEY) ?? "";
+}
 
 const NOTICE_STYLE: Record<NoticeKind, string> = {
   ok: "text-ok bg-ok-50",
@@ -127,7 +132,7 @@ export default function ChatPage({
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("off");
   const [personaName, setPersonaName] = useState("千问");
-  const [speakerName, setSpeakerName] = useState("DeskMate");
+  const [speakerName, setSpeakerName] = useState("栖灵");
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [memoryBubble, setMemoryBubble] = useState("");
@@ -241,7 +246,7 @@ export default function ChatPage({
         if (!alive) return;
         setConversations(list);
         if (list.length === 0) {
-          const sharedProject = localStorage.getItem(CURRENT_PROJECT_KEY) ?? "";
+          const sharedProject = readSavedProjectPath();
           if (sharedProject) {
             setProjectInput(sharedProject);
             setProjectNameInput(sharedProject.split(/[\\/]/).filter(Boolean).pop() || "");
@@ -317,8 +322,8 @@ export default function ChatPage({
   };
 
   useEffect(() => {
-    window.addEventListener("deskmate-project-changed", onProjectChanged);
-    return () => window.removeEventListener("deskmate-project-changed", onProjectChanged);
+    window.addEventListener("qiling-project-changed", onProjectChanged);
+    return () => window.removeEventListener("qiling-project-changed", onProjectChanged);
   }, []);
 
   useEffect(() => {
@@ -668,7 +673,7 @@ export default function ChatPage({
 
   const chooseProjectFolder = async (): Promise<void> => {
     if (!isTauri()) {
-      setNotice("请在 DeskMate 桌面应用中使用原生文件夹选择", "warn");
+      setNotice("请在栖灵桌面应用中使用原生文件夹选择", "warn");
       return;
     }
     try {
@@ -698,7 +703,7 @@ export default function ChatPage({
     setProjectInput(projectInput.trim());
     setProjectNameInput(projectNameInput.trim());
     localStorage.setItem(CURRENT_PROJECT_KEY, projectInput.trim());
-    window.dispatchEvent(new CustomEvent("deskmate-project-changed", { detail: { path: projectInput.trim() } }));
+    window.dispatchEvent(new CustomEvent("qiling-project-changed", { detail: { path: projectInput.trim() } }));
     setNotice(`已创建项目「${projectNameInput.trim()}」，输入第一条消息即可开始对话`);
   };
 
@@ -1050,7 +1055,7 @@ export default function ChatPage({
                   className="w-full rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-brand"
                   value={projectNameInput}
                   onChange={(e) => setProjectNameInput(e.target.value)}
-                  placeholder="例如：DeskMate"
+                  placeholder="例如：栖灵"
                 />
               </label>
               <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-[11px] text-muted">

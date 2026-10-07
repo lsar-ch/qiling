@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { CompiledMemory, DocOverview, EventEnvelope, MemoryDoc, SearchHit } from "@deskmate/contracts";
-import type { AgentInfo, AgentIntegrationStatus, Task } from "@deskmate/contracts";
+import type { CompiledMemory, DocOverview, EventEnvelope, MemoryDoc, SearchHit } from "@qiling/contracts";
+import type { AgentInfo, AgentIntegrationStatus, Task } from "@qiling/contracts";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -379,7 +379,7 @@ function KnowledgeBasePage() {
             </span>
           </div>
           <p className="text-xs text-muted leading-relaxed mb-3">
-            库路径可填可不填。启用后，记忆页会把本地记忆自动归档到该库的 <code className="font-mono">DeskMate/记忆</code> 独立目录，不影响库内其它内容；记忆本体仍保存在本机。
+            库路径可填可不填。启用后，记忆页会把本地记忆自动归档到该库的 <code className="font-mono">栖灵/记忆</code> 独立目录，不影响库内其它内容；记忆本体仍保存在本机。
           </p>
           <label className="flex flex-col gap-1.5 text-xs text-muted mb-3">
             <span>库路径</span>
@@ -452,7 +452,7 @@ function KnowledgeBasePage() {
               {vault.mirror_dir_exists ? (
                 <>
                   <span className="w-1.5 h-1.5 rounded-full bg-ok shrink-0" />
-                  <span className="min-w-0">自动归档已就绪：库内 <code className="font-mono">DeskMate/记忆</code> 共 {vault.doc_files} 份文档
+                  <span className="min-w-0">自动归档已就绪：库内 <code className="font-mono">栖灵/记忆</code> 共 {vault.doc_files} 份文档
                     {vault.last_sync ? ` · 上次同步 ${new Date(vault.last_sync).toLocaleString("zh-CN", { hour12: false })}` : ""}
                   </span>
                 </>
@@ -659,7 +659,7 @@ function MemoryPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `deskmate-memory-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `qiling-memory-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
       setStatus("已导出记忆包");
@@ -852,7 +852,7 @@ function MemoryPage() {
                 vaultStatus.mirror_dir_exists ? (
                   <p className="flex items-start gap-1.5 text-[11px] text-muted mt-1.5 leading-relaxed min-w-0">
                     <span className="w-1.5 h-1.5 rounded-full bg-ok shrink-0 mt-1" />
-                    <span className="min-w-0">已连接本地仓库：记忆自动归档到 <code className="font-mono">DeskMate/记忆</code>（{vaultStatus.doc_files} 份文档
+                    <span className="min-w-0">已连接本地仓库：记忆自动归档到 <code className="font-mono">栖灵/记忆</code>（{vaultStatus.doc_files} 份文档
                       {vaultStatus.last_sync ? ` · 上次同步 ${new Date(vaultStatus.last_sync).toLocaleString("zh-CN", { hour12: false })}` : ""}）。</span>
                   </p>
                 ) : (
@@ -1444,7 +1444,7 @@ function MyAgentsPage() {
                                   >
                                     copilot.tencent.com/profile
                                   </a>{" "}
-                                  申请后粘贴到这里。桌面端登录态 DeskMate 读不到，只能走自备 Key。
+                                  申请后粘贴到这里。桌面端登录态栖灵读不到，只能走自备 Key。
                                 </>
                               )}
                             </p>
@@ -1964,7 +1964,7 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white shadow-card overflow-hidden">
         <div className="px-6 pt-6 pb-4 border-b border-line">
-          <h2 className="text-lg font-bold text-ink">欢迎使用 DeskMate</h2>
+          <h2 className="text-lg font-bold text-ink">欢迎使用栖灵</h2>
           <p className="text-xs text-muted mt-1">
             {step === 0 ? "第 1 步 / 共 2 步 · 配置对话模型" : "第 2 步 / 共 2 步 · 配置语音（可跳过）"}
           </p>
@@ -2069,7 +2069,7 @@ export default function App() {
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const setupLoadedRef = useRef(false);
   const stopRef = useRef<(() => void) | undefined>(undefined);
-  // 曾经连上过服务：只有这种情况下的失联才算「DeskMate 退出了」
+  // 曾经连上过服务：只有这种情况下的失联才算「栖灵退出了」
   const everOnlineRef = useRef(false);
   // 连续探活失败次数：单次超时/瞬时拒绝不算退出，避免误报
   const failStreakRef = useRef(0);
@@ -2318,7 +2318,7 @@ export default function App() {
             <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-accent border-2 border-surface" />
           </span>
           <span className="flex flex-col leading-tight">
-            <span className="text-[15px] font-semibold text-ink tracking-tightish">DeskMate</span>
+            <span className="text-[15px] font-semibold text-ink tracking-tightish">栖灵</span>
             <span className="text-[11px] text-muted">桌面工作伙伴</span>
           </span>
         </button>
@@ -2387,7 +2387,7 @@ export default function App() {
           <span className="w-6 h-6 rounded-lg bg-ink flex items-center justify-center text-white text-[10px] font-bold">
             DM
           </span>
-          <b className="text-sm text-ink">DeskMate</b>
+          <b className="text-sm text-ink">栖灵</b>
         </button>
         {NAV.map((item) => (
           <button
@@ -2415,7 +2415,7 @@ export default function App() {
               {page === "chat"
                 ? "文字与语音对话，长回复自动展开；支持语音播报与打断。"
                 : page === "character"
-                ? "角色卡决定 DeskMate 的身份、声音与唤醒方式；启用一张卡即整套切换生效。"
+                ? "角色卡决定栖灵的身份、声音与唤醒方式；启用一张卡即整套切换生效。"
                 : page === "memory"
                 ? "用户画像、偏好、项目进度与长期事实的分层管理；配置本地仓库后自动归档。"
                 : page === "project"
@@ -2446,8 +2446,8 @@ export default function App() {
 
         {serviceLost ? (
           <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-warn-50 text-warn px-4 py-3 text-sm">
-            <span className="font-medium">DeskMate 已退出</span>
-            <span className="text-xs">本地服务已停止，页面不会再更新，可以直接关闭；重新启动 DeskMate 后再点右侧按钮。</span>
+            <span className="font-medium">栖灵已退出</span>
+            <span className="text-xs">本地服务已停止，页面不会再更新，可以直接关闭；重新启动栖灵后再点右侧按钮。</span>
             <button
               className="ml-auto border border-warn/40 bg-white rounded-lg px-3 py-1 text-xs text-warn hover:bg-warn-50 transition-colors cursor-pointer"
               onClick={() => setRetryTick((tick) => tick + 1)}

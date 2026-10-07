@@ -15,8 +15,8 @@ from app.agents.base import AgentAdapter, AgentTaskRequest, AgentTaskResult
 from app.agents.base import AgentExecutionError
 from app.config import load_settings
 from app.main import create_app
-from deskmate_contracts.agent import AgentInfo
-from deskmate_contracts.task import Task
+from qiling_contracts.agent import AgentInfo
+from qiling_contracts.task import Task
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -221,8 +221,8 @@ class BlockingAgentAdapter(FakeReadyAdapter):
 
 
 def prepare_home(tmp_path: Path, monkeypatch) -> None:
-    home = tmp_path / "deskmate-home"
-    monkeypatch.setenv("DESKMATE_HOME", str(home))
+    home = tmp_path / "qiling-home"
+    monkeypatch.setenv("QILING_HOME", str(home))
     (home / "config" / "personas").mkdir(parents=True)
     (home / "data").mkdir(parents=True)
     (home / "config").joinpath("settings.yaml").write_text(
@@ -230,7 +230,7 @@ def prepare_home(tmp_path: Path, monkeypatch) -> None:
         encoding="utf-8",
     )
     (home / "config").joinpath("system_prompt.md").write_text(
-        "你是 DeskMate。",
+        "你是 栖灵。",
         encoding="utf-8",
     )
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", home / "config" / "agents.yaml")
@@ -282,7 +282,7 @@ def _route(
 def test_echo_of_own_reply_is_not_treated_as_new_task() -> None:
     """常开监听回采自己播报的内容（含识别偏差）时不应再起后台任务。"""
     from app.api.chat import _is_echo_of_reply
-    from deskmate_contracts.conversation import Conversation, ConversationMessage
+    from qiling_contracts.conversation import Conversation, ConversationMessage
 
     reply = "收到，已交给后台执行；进度、报错和结果都会回到这条对话里。"
 
@@ -929,7 +929,7 @@ def test_manual_approval_cancels_timeout(tmp_path, monkeypatch) -> None:
 
 def _link_node(client, tmp_path: Path, task_id: str):
     """在项目下建一个已关联该任务的节点，返回 node_id。"""
-    from deskmate_contracts.project import ProjectNode
+    from qiling_contracts.project import ProjectNode
 
     node = ProjectNode(
         project=str(tmp_path),
@@ -1003,7 +1003,7 @@ def test_unlinked_node_is_untouched_by_task_finish(tmp_path, monkeypatch) -> Non
         task["project"] = str(tmp_path)
         client.app.state.task_store.put(Task(**task))
 
-        from deskmate_contracts.project import ProjectNode
+        from qiling_contracts.project import ProjectNode
 
         other = ProjectNode(project=str(tmp_path), title="无关节点", status="planned")
         client.app.state.project_node_store.put(other)

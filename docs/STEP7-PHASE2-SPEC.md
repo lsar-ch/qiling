@@ -84,7 +84,7 @@ Codex adapter should:
 
 Add `task.cancelled` to:
 
-- `packages/contracts/py/deskmate_contracts/events.py`
+- `packages/contracts/py/qiling_contracts/events.py`
 - `packages/contracts/ts/src/events.ts`
 - Frontend event mapping/state mapping
 

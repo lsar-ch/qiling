@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from fastapi.testclient import TestClient
 
-from deskmate_contracts.voice import VoiceParams
+from qiling_contracts.voice import VoiceParams
 
 from app.config import load_settings
 from app.core.vrm_validator import REQUIRED_VRMA_BONES
@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_settings_and_persona_roundtrip(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(
@@ -92,7 +92,7 @@ def test_existing_environment_is_not_leaked() -> None:
 
 
 def test_persona_avatar_upload_and_validation(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
@@ -153,7 +153,7 @@ def test_persona_avatar_upload_and_validation(tmp_path: Path, monkeypatch) -> No
 def test_persona_avatar_removes_uniform_background_and_rejects_small_images(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
@@ -193,7 +193,7 @@ def test_persona_avatar_removes_uniform_background_and_rejects_small_images(
 
 def test_persona_profile_roundtrip_and_preserved_on_update(tmp_path: Path, monkeypatch) -> None:
     """Step 9.5 P1：六段式 profile 可写入；前端不带 profile 的更新不覆盖它。"""
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(
@@ -259,7 +259,7 @@ def test_persona_profile_roundtrip_and_preserved_on_update(tmp_path: Path, monke
 
 def test_persona_preset_roundtrip_and_clear(tmp_path: Path, monkeypatch) -> None:
     """预设字段可写入、可清空，且后续不带该字段的更新不会覆盖预设。"""
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(
@@ -304,7 +304,7 @@ def test_persona_preset_roundtrip_and_clear(tmp_path: Path, monkeypatch) -> None
 
 def test_persona_motion_family_roundtrip_and_preserved(tmp_path: Path, monkeypatch) -> None:
     """动作族/画风可写入，且后续不带该字段的更新不会覆盖。"""
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(
@@ -351,7 +351,7 @@ def test_persona_motion_family_roundtrip_and_preserved(tmp_path: Path, monkeypat
 
 def test_setup_status_and_completion(tmp_path: Path, monkeypatch) -> None:
     """首次启动引导：初始未完成且 echo 模式缺 LLM；写入 setup_completed 后持久化。"""
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(
@@ -402,7 +402,7 @@ def test_setup_status_and_completion(tmp_path: Path, monkeypatch) -> None:
 
 def test_persona_delete_guards(tmp_path: Path, monkeypatch) -> None:
     """删除角色卡：内置与启用中不可删，删除后不再出现在列表。"""
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
@@ -422,7 +422,7 @@ def test_persona_delete_guards(tmp_path: Path, monkeypatch) -> None:
 
 def test_persona_asset_file_route(tmp_path: Path, monkeypatch) -> None:
     """layers.json / 图层文件可经资产路由读取；路径穿越与缺失文件返回 404。"""
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
@@ -558,7 +558,7 @@ def test_import3d_zip_applies_assets_and_yaml(tmp_path: Path, monkeypatch) -> No
 
     import yaml as yaml_lib
 
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "personas" / "hero.yaml").write_text(
@@ -606,7 +606,7 @@ def test_import3d_rejects_non_spec_vrm(tmp_path: Path, monkeypatch) -> None:
     """闸门：不符合规格的 VRM 必须 400 拒绝，且不落盘覆盖已有资产。"""
     import zipfile
 
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "personas" / "hero.yaml").write_text(
@@ -668,7 +668,7 @@ def test_persona_motions_roundtrip(tmp_path: Path, monkeypatch) -> None:
     """动作实验室：2D 动作覆盖与 3D VRMA 参数可保存、回显，并落到角色卡。"""
     import yaml as yaml_lib
 
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(
@@ -722,7 +722,7 @@ def test_persona_motions_animations_merge(tmp_path: Path, monkeypatch) -> None:
     """调度节奏写入 presentation.animations，且按 key 合并而非整体替换。"""
     import yaml as yaml_lib
 
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(
@@ -757,7 +757,7 @@ def test_persona_motions_animations_merge(tmp_path: Path, monkeypatch) -> None:
 
 def test_motion_library_serves_shared_clips_only(tmp_path: Path, monkeypatch) -> None:
     """共享动作库只读下发；库名白名单与路径穿越都必须拦掉。"""
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
 
@@ -806,7 +806,7 @@ def test_disabling_voice_resets_widget_state(tmp_path: Path, monkeypatch) -> Non
     挂件状态注册表只由事件推动，而「关语音」是前端停循环、不发事件，
     因此需要后端在下降沿补发 speech.stopped（见 app/api/settings.py 的 _voice_active）。
     """
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text(

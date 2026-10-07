@@ -1,5 +1,5 @@
 #!/bin/bash
-# DeskMate 开发启动器
+# 栖灵 开发启动器
 # 用法:
 #   ./scripts/dev.sh service   # 只启动本地 AI 服务（默认）
 #   ./scripts/dev.sh web       # 前端 Vite 开发模式（HMR，端口 5173）

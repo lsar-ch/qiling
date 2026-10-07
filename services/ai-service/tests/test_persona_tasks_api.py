@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_persona_asset_task_create_and_list(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")

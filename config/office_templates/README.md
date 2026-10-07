@@ -11,4 +11,4 @@
 
 Typst 不需要模板：样式预置在代码里，装了 `typst` 就自动生效。
 
-目录可用环境变量 `DESKMATE_OFFICE_TEMPLATES` 指到别处。
+目录可用环境变量 `QILING_OFFICE_TEMPLATES` 指到别处。

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from deskmate_contracts.character import ArtStyle, MotionFamily
+from qiling_contracts.character import ArtStyle, MotionFamily
 
 from pydantic import BaseModel, Field
 

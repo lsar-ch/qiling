@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from deskmate_contracts.project import ProjectNode, ProjectNodeKind, ProjectNodeStatus
+from qiling_contracts.project import ProjectNode, ProjectNodeKind, ProjectNodeStatus
 
 from app.api.chat import resolve_project_dir
 

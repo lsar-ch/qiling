@@ -15,7 +15,7 @@ from app.config import load_settings
 from app.main import create_app
 from app.routing import classify_task_input
 from app.routing.store import TaskStore
-from deskmate_contracts.task import Task
+from qiling_contracts.task import Task
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -30,10 +30,10 @@ class DummyProvider:
 
 def prepare_home(tmp_path: Path, monkeypatch, permission_level: str = "confirm_risky") -> None:
     home = tmp_path / "home"
-    monkeypatch.setenv("DESKMATE_HOME", str(home))
+    monkeypatch.setenv("QILING_HOME", str(home))
     (home / "config" / "personas").mkdir(parents=True)
     (home / "config").joinpath("settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
-    (home / "config").joinpath("system_prompt.md").write_text("你是 DeskMate。", encoding="utf-8")
+    (home / "config").joinpath("system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", home / "config" / "agents.yaml")
     (home / "config" / "personas" / "default.yaml").write_text(
         """
@@ -271,7 +271,7 @@ def test_chat_auto_routes_and_replies_to_browser_task(tmp_path: Path, monkeypatc
         monkeypatch.setattr(
             client.app.state.agent_run_manager, "execute", _fake_execute
         )
-        resp = client.post("/api/chat/stream", json={"message": "打开页面搜索 DeskMate"})
+        resp = client.post("/api/chat/stream", json={"message": "打开页面搜索 栖灵"})
         assert resp.status_code == 200
         tasks = client.get("/api/tasks").json()["items"]
         assert tasks and tasks[0]["category"] == "delegate_backend"

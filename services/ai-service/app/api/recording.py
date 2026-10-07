@@ -1,6 +1,6 @@
 """录制接口 stub（Step 10 预留，HTTP 200 + TODO）。
 
-契约见 packages/contracts/py/deskmate_contracts/recording.py；
+契约见 packages/contracts/py/qiling_contracts/recording.py；
 真实录制（屏幕/音频/数字人）在后续版本接入，V1 只保证端点可用。
 """
 

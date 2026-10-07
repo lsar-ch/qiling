@@ -8,10 +8,10 @@
 
 外部桌宠/角色项目的共同方向，是让角色不只聊天，还能观察工作状态、监督 Agent，并在任务完成或需要用户处理时主动反馈。
 
-Project N.E.K.O. 的定位更宽：它把主动陪伴、实时语音、视觉理解、持久记忆、多形态 Avatar、电脑/浏览器操作和插件生态整合成数字生命平台。DeskMate 与它的交集是角色化入口、语音、记忆和 Agent 执行，但产品目标仍不同：
+Project N.E.K.O. 的定位更宽：它把主动陪伴、实时语音、视觉理解、持久记忆、多形态 Avatar、电脑/浏览器操作和插件生态整合成数字生命平台。栖灵 与它的交集是角色化入口、语音、记忆和 Agent 执行，但产品目标仍不同：
 
 - N.E.K.O.：陪伴和角色生命感优先，工作执行是能力之一。
-- DeskMate：项目连续性和实际工作交付优先，角色表现服务于工作。
+- 栖灵：项目连续性和实际工作交付优先，角色表现服务于工作。
 
 参考：
 
@@ -20,7 +20,7 @@ Project N.E.K.O. 的定位更宽：它把主动陪伴、实时语音、视觉理
 - Agent 系统：[Agent Automation](https://project-neko.online/architecture/agent-system)
 - 插件系统：[Plugin System Overview](https://github.com/Project-N-E-K-O/N.E.K.O/blob/main/docs/plugins/index.md)
 
-## 2. 当前 DeskMate 相关现状
+## 2. 当前 栖灵 相关现状
 
 - Step 6 任务分流四类结果（answer / execute_frontend / delegate_backend / request_approval）已完成
 - Step 7 Codex ACP 真实执行、AgentRun 持久化、进度/结果回流已完成
@@ -94,7 +94,7 @@ N.E.K.O. 的电脑操作通道由 `brain/computer_use.py` 实现一个截图驱�
 | 无结构化接口的桌面应用 | CUA 截图 + `pyautogui` | 作为最后的通用兜底 |
 | 删除、发送、支付、提交 | 任何通道都先授权 | 风险不应由执行器自行推断放行 |
 
-## 4. DeskMate 的借鉴边界
+## 4. 栖灵 的借鉴边界
 
 ### 4.1 现在值得借鉴
 
@@ -115,7 +115,7 @@ N.E.K.O. 的电脑操作通道由 `brain/computer_use.py` 实现一个截图驱�
 - 大规模多服务商适配
 - Steam 发行体系
 
-原因：这些能力会扩大权限、资产、发布和运维边界，当前不能直接提升 DeskMate 的项目交付价值。
+原因：这些能力会扩大权限、资产、发布和运维边界，当前不能直接提升 栖灵 的项目交付价值。
 
 ## 5. 可落地改进建议
 
@@ -147,11 +147,11 @@ N.E.K.O. 的电脑操作通道由 `brain/computer_use.py` 实现一个截图驱�
 1. 增加 `BrowserAdapter`，接入现有 Agent Registry，不在前端写浏览器特例。
 2. 第一批只支持打开 URL、搜索、读取页面、提取结果、翻页和滚动。
 3. 默认使用独立可见浏览器配置；需要用户登录态时明确走现有 Chrome/用户授权流程。
-4. 复用 DeskMate 的 `AgentRun`、进度事件、取消、授权和结果归档。
+4. 复用 栖灵 的 `AgentRun`、进度事件、取消、授权和结果归档。
 5. 每一步记录页面 URL、动作摘要、结果和失败原因；遇验证码、登录、提交时暂停。
 6. 先用一个代表性任务验收，再决定是否增加表单填写。
 
-**不建议当前实现**：直接复制 N.E.K.O. 的 `browser_use_adapter.py` 或把 `pyautogui` CUA 搬进 DeskMate。应先验证浏览器窄场景是否足以覆盖真实需求。
+**不建议当前实现**：直接复制 N.E.K.O. 的 `browser_use_adapter.py` 或把 `pyautogui` CUA 搬进 栖灵。应先验证浏览器窄场景是否足以覆盖真实需求。
 
 ### 5.5 轻量主动性
 
@@ -162,7 +162,7 @@ N.E.K.O. 的电脑操作通道由 `brain/computer_use.py` 实现一个截图驱�
 - 记忆更新提示
 - 低频项目进度回顾
 
-默认关闭或低频触发，避免把 DeskMate 变成主动打扰型桌宠。
+默认关闭或低频触发，避免把 栖灵 变成主动打扰型桌宠。
 
 ## 6. 优先级与排期建议
 
@@ -182,7 +182,7 @@ N.E.K.O. 的电脑操作通道由 `brain/computer_use.py` 实现一个截图驱�
 - `docs/STEP9-UI-POLISH.md` — 当前 V1 视觉打磨范围
 - `docs/TASK-ROUTING.md` — 任务分流与路由
 - `docs/WIDGET-STATE-MACHINE.md` — 挂件状态机
-- `docs/DESKTOP-AUTOMATION.md` — DeskMate 桌面感知与任务执行边界
+- `docs/DESKTOP-AUTOMATION.md` — 栖灵 桌面感知与任务执行边界
 - `docs/AGENT-INTEGRATION.md` — 外部智能体接入与权限策略
 
 ## 8. 明日工作约束（2026-09-13）

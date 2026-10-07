@@ -3,7 +3,7 @@
  *
  * 只做纯逻辑，不碰 three / DOM —— 自检：`npx tsx apps/desktop/src/widget/vrmClips.ts`
  */
-import type { VrmClipRef } from "@deskmate/contracts";
+import type { VrmClipRef } from "@qiling/contracts";
 
 export interface VrmClipChoice {
   clip: string;

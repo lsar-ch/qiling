@@ -11,8 +11,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from deskmate_contracts.events import EventEnvelope
-from deskmate_contracts.task import Task
+from qiling_contracts.events import EventEnvelope
+from qiling_contracts.task import Task
 
 from app.agents.base import (
     AgentAdapter,
@@ -432,7 +432,7 @@ class AgentRunManager:
         return run
 
     async def _resolve_cwd(self, task: Task) -> str:
-        """项目对话把执行器工作目录切到项目根；普通对话仍用 DeskMate 数据目录的上一级。"""
+        """项目对话把执行器工作目录切到项目根；普通对话仍用 栖灵 数据目录的上一级。"""
         fallback = str(self.data_dir.parent)
         if not task.conversation_id or self.conversations is None:
             return fallback

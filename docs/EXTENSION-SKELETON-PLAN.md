@@ -1,4 +1,4 @@
-# DeskMate 扩展骨架实施方案（Skill + MCP）
+# 栖灵 扩展骨架实施方案（Skill + MCP）
 
 日期：2026-09-22　状态：**已确认并实施完成（P0-P6，2026-09-22）**
 关联调研：Obsidian《Super Agent Party：MCP 与插件系统借鉴》

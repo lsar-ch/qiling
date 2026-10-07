@@ -1,7 +1,7 @@
 # 外部项目执行器对接借鉴点（Qwen Audio Agent / DeepTutor）
 
 > 日期：2026-09-09
-> 用途：为 DeskMate「我的智能体」配置入口与执行器接入做参考留档，避免以后重新翻源码。
+> 用途：为 栖灵「我的智能体」配置入口与执行器接入做参考留档，避免以后重新翻源码。
 
 ## Qwen Audio Agent（本地 CLI + 桌面 App）
 
@@ -27,21 +27,21 @@
 - 状态报告：backend 带 `id / selected / ready / adapter.source('managed') /
   authentication('backend-managed')`，界面据此显示「当前 / 可安装 / 需配置」
 
-### 可借鉴点（映射 DeskMate）
+### 可借鉴点（映射 栖灵）
 
-| 借鉴点 | DeskMate 落点 |
+| 借鉴点 | 栖灵 落点 |
 |:---|:---|
 | 一键安装本体 + ACP 适配器 | codex 卡片提供「检测/补齐」动作：探测到本体缺 ACP 时提示安装命令或引导 |
 | 自动发现 + 环境变量可覆盖 | 探测顺序 = PATH → 常见安装位置 → `agents.local.yaml` 手动路径覆盖 |
 | ACP 适配器固定版本兜底 | 将来真实执行 codex-acp 时 pin 版本，避免上游漂移 |
 | 可重复执行、幂等安装 | 「检测」按钮可反复点，不改状态不重装 |
-| `CODEX_PATH` 显式注入通道 | DeskMate resolver：显式配置 > `CODEX_PATH` > PATH > 平台常见位置 |
+| `CODEX_PATH` 显式注入通道 | 栖灵 resolver：显式配置 > `CODEX_PATH` > PATH > 平台常见位置 |
 
 ## DeepTutor（HKUDS/DeepTutor）
 
 - 官方仓库：`https://github.com/HKUDS/DeepTutor`（agent-native 学习工作区，本地曾以
   pip 方式安装 v1.6.3，现环境已无该安装包；如需按版本精读可拉对应 tag）
-- DeskMate 旧留档：`docs/MEMORY-COMPARISON.md`（仅记忆模块，非执行器部分）
+- 栖灵 旧留档：`docs/MEMORY-COMPARISON.md`（仅记忆模块，非执行器部分）
 - 跨平台策略：几乎不碰“本地 CLI 可执行路径检测”——模型/后端走 Docker + Python
   服务 + 云端 API/OAuth；Windows 仅零星分支（事件循环、fcntl/msvcrt、SQLite WAL），
   定位是 POSIX 为生产目标、Windows 仅开发可用。
@@ -60,9 +60,9 @@
   - 凭证由后端管理，浏览器端不接触
 - 模型/凭证以“服务类型 × provider 表格”为中心，UI 据此渲染表单与警告
 
-### 可借鉴点（映射 DeskMate）
+### 可借鉴点（映射 栖灵）
 
-| 借鉴点 | DeskMate 落点 |
+| 借鉴点 | 栖灵 落点 |
 |:---|:---|
 | 目录（注册表）= 单一事实源 | `config/agents.yaml` 继续作为执行器目录事实源 |
 | 配置表单由后端目录动态下发 | 新增 `/api/agents/config` 返回“可编辑字段”，前端不硬编码字段 |
@@ -72,5 +72,5 @@
 | “难装就不装本地 CLI”的思路 | 非 codex 执行器可走容器/远程/OAuth 接入，绕开跨平台安装难题 |
 
 > 注意：DeepTutor 的 backend 指“模型提供方”，Qwen Audio Agent 的 backend 指“本地
-> CLI 执行器”。DeskMate 的 executor 更接近后者，故命令探测借鉴 Qwen，
+> CLI 执行器”。栖灵 的 executor 更接近后者，故命令探测借鉴 Qwen，
 > 表单/状态/OAuth 形态借鉴 DeepTutor。

@@ -18,7 +18,7 @@ from PIL import Image
 from PIL import UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
-from deskmate_contracts.events import EventEnvelope
+from qiling_contracts.events import EventEnvelope
 
 from app.config import PerformanceMode, is_lite_mode, load_settings
 from app.core.persona_asset import NormalizedAvatar, normalize_avatar_image, png_bytes

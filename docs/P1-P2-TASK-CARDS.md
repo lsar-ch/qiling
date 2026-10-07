@@ -1,4 +1,4 @@
-# DeskMate P1 & P2 任务卡（2026-09-16）
+# 栖灵 P1 & P2 任务卡（2026-09-16）
 
 > 合并了 Voice-Companion-Bundle 调研建议，与原有 P1/P2 任务统一排期。
 

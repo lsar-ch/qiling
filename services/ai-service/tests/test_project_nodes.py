@@ -17,13 +17,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 def make_client(tmp_path: Path, monkeypatch) -> TestClient:
     home = tmp_path / "home"
-    monkeypatch.setenv("DESKMATE_HOME", str(home))
+    monkeypatch.setenv("QILING_HOME", str(home))
     (home / "config" / "personas").mkdir(parents=True, exist_ok=True)
     (home / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
-    (home / "config" / "system_prompt.md").write_text("你是 DeskMate。", encoding="utf-8")
+    (home / "config" / "system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", home / "config" / "agents.yaml")
     (home / "config" / "personas" / "default.yaml").write_text(
-        "id: default\nname: DeskMate\nkind: assistant\nlanguage: zh-CN\n",
+        "id: default\nname: 栖灵\nkind: assistant\nlanguage: zh-CN\n",
         encoding="utf-8",
     )
     (home / "data").mkdir(parents=True, exist_ok=True)

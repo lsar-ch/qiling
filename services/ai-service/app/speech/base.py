@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 import re
 from dataclasses import dataclass
 
-from deskmate_contracts.voice import VoiceParams
+from qiling_contracts.voice import VoiceParams
 
 
 class SpeechUnavailable(RuntimeError):

@@ -94,7 +94,7 @@ def obsidian_check(
     note_count = sum(
         1
         for note in root.rglob("*.md")
-        if note.relative_to(root).parts[0] != "DeskMate"
+        if note.relative_to(root).parts[0] != "栖灵"
     )
     return {"available": True, "path": str(root), "note_count": note_count}
 
@@ -147,7 +147,7 @@ def obsidian_search(
     query = q.casefold()
     items = []
     for path in sorted(root.rglob("*.md")):
-        if path.relative_to(root).parts[0] == "DeskMate":
+        if path.relative_to(root).parts[0] == "栖灵":
             continue
         try:
             text = path.read_text(encoding="utf-8")

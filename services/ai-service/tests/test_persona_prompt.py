@@ -112,11 +112,11 @@ def test_unknown_or_blank_preset_is_ignored() -> None:
 
 
 def test_compose_system_prompt() -> None:
-    base = "你是 DeskMate。"
+    base = "你是 栖灵。"
     assert compose_system_prompt(base, None) == base
     assert compose_system_prompt(base, {}) == base
     out = compose_system_prompt(base, FULL_PROFILE_PERSONA)
-    assert out.startswith("你是 DeskMate。\n\n## 角色设定")
+    assert out.startswith("你是 栖灵。\n\n## 角色设定")
     assert "敏感操作必须确认" in out
 
 
@@ -151,15 +151,15 @@ class CaptureProvider:
 
 
 def test_chat_system_prompt_includes_persona_profile(tmp_path: Path) -> None:
-    previous = os.environ.get("DESKMATE_HOME")
-    os.environ["DESKMATE_HOME"] = str(tmp_path)
+    previous = os.environ.get("QILING_HOME")
+    os.environ["QILING_HOME"] = str(tmp_path)
     (tmp_path / "config" / "personas").mkdir(parents=True)
     (tmp_path / "config" / "settings.yaml").write_text(
         "app:\n  version: 0.1.0\n",
         encoding="utf-8",
     )
     (tmp_path / "config" / "system_prompt.md").write_text(
-        "你是 DeskMate。", encoding="utf-8"
+        "你是 栖灵。", encoding="utf-8"
     )
     shutil.copyfile(
         PROJECT_ROOT / "config" / "agents.yaml",
@@ -176,11 +176,11 @@ def test_chat_system_prompt_includes_persona_profile(tmp_path: Path) -> None:
             client.post("/api/chat/stream", json={"message": "在吗"})
     finally:
         if previous is None:
-            os.environ.pop("DESKMATE_HOME", None)
+            os.environ.pop("QILING_HOME", None)
         else:
-            os.environ["DESKMATE_HOME"] = previous
+            os.environ["QILING_HOME"] = previous
 
     system = provider.messages[0]["content"]
-    assert "你是 DeskMate。" in system
+    assert "你是 栖灵。" in system
     assert "## 角色设定" in system
     assert "敏感操作必须确认" in system

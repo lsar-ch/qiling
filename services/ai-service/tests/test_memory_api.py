@@ -25,10 +25,10 @@ class InspectProvider:
 
 
 def prepare_home(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("DESKMATE_HOME", str(tmp_path))
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
     (tmp_path / "config" / "personas").mkdir(parents=True)
     (tmp_path / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
-    (tmp_path / "config" / "system_prompt.md").write_text("你是 DeskMate。", encoding="utf-8")
+    (tmp_path / "config" / "system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
     (tmp_path / "config" / "personas" / "default.yaml").write_text(
         """
@@ -82,13 +82,13 @@ def test_chat_records_and_injects_memory(tmp_path: Path, monkeypatch) -> None:
     with TestClient(create_app(settings, llm_provider=provider)) as client:
         client.post(
             "/api/memories/docs/L3/progress/entries",
-            json={"section": "项目进度", "text": "DeskMate 当前进入 Step 5", "refs": []},
+            json={"section": "项目进度", "text": "栖灵 当前进入 Step 5", "refs": []},
         )
         resp = client.post("/api/chat/stream", json={"message": "项目现在做到哪一步？"})
         assert resp.status_code == 200
         system = provider.messages[0]["content"]
         assert "项目记忆" in system
-        assert "DeskMate 当前进入 Step 5" in system
+        assert "栖灵 当前进入 Step 5" in system
 
     assert list((tmp_path / "data" / "memory" / "trace" / "conversation").glob("*.jsonl"))
     assert list((tmp_path / "data" / "memory" / "session").glob("*.md"))
@@ -98,7 +98,7 @@ def test_obsidian_search_is_read_only(tmp_path: Path, monkeypatch) -> None:
     prepare_home(tmp_path, monkeypatch)
     vault = tmp_path / "vault"
     vault.mkdir()
-    (vault / "note.md").write_text("DeskMate 项目方向：本地优先。", encoding="utf-8")
+    (vault / "note.md").write_text("栖灵 项目方向：本地优先。", encoding="utf-8")
     monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
 
     with TestClient(create_app(load_settings())) as client:
@@ -118,7 +118,7 @@ def test_obsidian_check_is_read_only_and_does_not_create_mirror(tmp_path: Path, 
     with TestClient(create_app(load_settings())) as client:
         checked = client.get("/api/memories/obsidian/check", params={"path": str(vault)}).json()
         assert checked == {"available": True, "path": str(vault), "note_count": 1}
-        assert not (vault / "DeskMate").exists()
+        assert not (vault / "栖灵").exists()
 
         missing = client.get("/api/memories/obsidian/check", params={"path": str(tmp_path / "missing")}).json()
         assert missing == {"available": False, "path": str(tmp_path / "missing"), "note_count": 0}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ProjectNode, ProjectNodeKind, ProjectNodeStatus } from "@deskmate/contracts";
+import type { ProjectNode, ProjectNodeKind, ProjectNodeStatus } from "@qiling/contracts";
 import {
   createProjectNode,
   deleteProjectNode,
@@ -52,8 +52,17 @@ type Draft = {
 
 type WorkspaceTab = "overview" | "conversations" | "nodes" | "tasks" | "files";
 
-const PROJECT_PATH_KEY = "deskmate.current.project.path";
-const LEGACY_PROJECT_PATH_KEY = "deskmate.project.nodes.path";
+const PROJECT_PATH_KEY = "qiling.current.project.path";
+// 改名前的键：只读回退，避免旧数据读不到
+const LEGACY_PROJECT_PATH_KEYS = ["qiling.project.nodes.path", "deskmate.current.project.path", "deskmate.project.nodes.path"];
+
+function readSavedProjectPath(): string {
+  for (const key of [PROJECT_PATH_KEY, ...LEGACY_PROJECT_PATH_KEYS]) {
+    const value = localStorage.getItem(key);
+    if (value) return value;
+  }
+  return "";
+}
 
 const EMPTY_DRAFT: Draft = {
   title: "",
@@ -194,7 +203,7 @@ function TreeView({
 
 export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => void }) {
   const [project, setProject] = useState(
-    () => localStorage.getItem(PROJECT_PATH_KEY) ?? localStorage.getItem(LEGACY_PROJECT_PATH_KEY) ?? "",
+    () => readSavedProjectPath(),
   );
   const [draftPath, setDraftPath] = useState(project);
   const [nodes, setNodes] = useState<ProjectNode[]>([]);
@@ -246,8 +255,8 @@ export default function ProjectNodesPage({ onOpenChat }: { onOpenChat?: () => vo
     if (!next) return;
     setProject(next);
     localStorage.setItem(PROJECT_PATH_KEY, next);
-    localStorage.setItem(LEGACY_PROJECT_PATH_KEY, next);
-    window.dispatchEvent(new CustomEvent("deskmate-project-changed", { detail: { path: next } }));
+    localStorage.setItem(LEGACY_PROJECT_PATH_KEYS[0], next);
+    window.dispatchEvent(new CustomEvent("qiling-project-changed", { detail: { path: next } }));
     void load(next);
   };
 

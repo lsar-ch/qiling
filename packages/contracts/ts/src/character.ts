@@ -1,4 +1,4 @@
-// 角色契约 —— 镜像自 deskmate_contracts/character.py（Step 10 形象定制预留）。
+// 角色契约 —— 镜像自 qiling_contracts/character.py（Step 10 形象定制预留）。
 
 export type CharacterStyle = "2d_static" | "2d_animated" | "lip_sync" | "live2d" | "3d";
 export type AvatarDriver = "procedural_2d" | "video_stream" | "vrm_3d";

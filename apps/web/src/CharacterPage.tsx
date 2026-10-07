@@ -514,7 +514,7 @@ export default function CharacterPage() {
         {noticeBlock}
         <div className={`${cardCls} items-center justify-center text-center py-10 gap-3`}>
           <p className="text-sm text-ink font-medium">还没有角色卡</p>
-          <p className="text-xs text-muted">新建第一个角色卡，为 DeskMate 配置身份、音色与唤醒方式。</p>
+          <p className="text-xs text-muted">新建第一个角色卡，为栖灵配置身份、音色与唤醒方式。</p>
           <button className="rounded-lg px-4 py-2.5 bg-brand text-white text-sm font-medium hover:bg-brand-600 transition-colors" type="button" onClick={() => void createNewPersona()}>
             新建第一个角色卡
           </button>
@@ -803,7 +803,7 @@ export default function CharacterPage() {
                   hint="上传本地图片后无需填写；远程图片仍可直接使用。"
                 />
                 <div className="rounded-lg bg-line-subtle px-3 py-2.5 text-xs text-muted leading-relaxed break-words">
-                  V1 先使用一张完整基础形象，DeskMate 后续负责规范化和程序化动态；不要求你制作组件图或状态图。
+                  V1 先使用一张完整基础形象，栖灵后续负责规范化和程序化动态；不要求你制作组件图或状态图。
                 </div>
               </CardSection>
 

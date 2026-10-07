@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from deskmate_contracts.task import Task
+from qiling_contracts.task import Task
 
 from app.agents.browser import is_browser_task
 

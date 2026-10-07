@@ -1,8 +1,8 @@
-# DeskMate 执行器目录
+# 栖灵 执行器目录
 
 ## 1. 定位
 
-DeskMate 的任务执行层不绑定单一执行器。外部 AI coding agent 通过统一 Registry / Adapter 接入，路由层只依赖执行器接口，不依赖某个固定产品名。
+栖灵 的任务执行层不绑定单一执行器。外部 AI coding agent 通过统一 Registry / Adapter 接入，路由层只依赖执行器接口，不依赖某个固定产品名。
 
 注册目录以 `config/agents.yaml` 为事实源。2026-09-07 用户确认默认只保留 6 个执行器：Codex、Claude Code、Qwen Code、Kimi CLI、Reasonix、WorkBuddy；其他执行器不进入默认目录。
 
@@ -36,7 +36,7 @@ DeskMate 的任务执行层不绑定单一执行器。外部 AI coding agent 通
 ## 4. 配置加载优先级
 
 1. 默认加载项目根目录的 `config/agents.yaml`。
-2. 若设置 `DESKMATE_AGENTS_CONFIG`，用它指向自定义执行器目录文件。
+2. 若设置 `QILING_AGENTS_CONFIG`，用它指向自定义执行器目录文件。
 3. `config/agents.local.yaml` 可用于本地覆盖或追加。
 
 配置变化只决定目录内容与探测候选；是否能真实执行仍取决于对应 Adapter / ACP / stdio 接入状态。

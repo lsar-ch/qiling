@@ -207,7 +207,7 @@ async def health(request: Request) -> dict:
     uptime_s = round(time.time() - request.app.state.started_at, 1)
     return {
         "status": "ok",
-        "service": "deskmate-ai-service",
+        "service": "qiling-ai-service",
         "version": settings.version,
         "performance_mode": settings.performance_mode,
         "voice_pipeline": _voice_pipeline(request),

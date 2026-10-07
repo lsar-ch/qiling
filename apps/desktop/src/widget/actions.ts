@@ -1,8 +1,8 @@
 import type { ExpressionEmotion, MotionFamily, MotionOverrides, WidgetState } from "../api";
-import { DEFAULT_ACTIONS } from "@deskmate/contracts";
-import type { ActionSpec, ActionTrigger, FxKind } from "@deskmate/contracts";
+import { DEFAULT_ACTIONS } from "@qiling/contracts";
+import type { ActionSpec, ActionTrigger, FxKind } from "@qiling/contracts";
 
-export type { ActionSpec, ActionTrigger, FxKind } from "@deskmate/contracts";
+export type { ActionSpec, ActionTrigger, FxKind } from "@qiling/contracts";
 
 export interface ActionSelection {
   id: string;

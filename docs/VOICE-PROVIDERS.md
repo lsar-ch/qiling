@@ -1,4 +1,4 @@
-# DeskMate 语音供应商与音色方案
+# 栖灵 语音供应商与音色方案
 
 > 状态：2026-09-04 定稿，与 Step 4（语音闭环）一起落地。
 > 原则：音色不是写死在代码里的字符串，而是「人设槽位 → 归一化参数 → 供应商映射」的可配置体系。
@@ -24,7 +24,7 @@
 
 把“音色”拆成三个独立层次，任何一层改动都不影响其他层，也方便后续换角色：
 
-| 层次 | 控制什么 | 供应商字段 | DeskMate 统一字段 | 调整手法 |
+| 层次 | 控制什么 | 供应商字段 | 栖灵 统一字段 | 调整手法 |
 |---|---|---|---|---|
 | L1 基础音色 | 声音长相（性别/年龄/气质） | DashScope `voice`；火山 `voice_type` | `voice` | 换人设时换整只音色，参数不动 |
 | L2 韵律参数 | 语速/音高/音量 | DashScope `speech_rate/pitch_rate/volume`；火山 `speed_ratio/pitch_ratio/volume_ratio` | `speed / pitch / volume` | 日常微调，幅度 ±10% 内听感自然 |
@@ -133,7 +133,7 @@
 - `get_voice`（`voice_type=voice_cloning`）列表更新有延迟，可能数分钟后才出现；
   角色绑定应以配置里保存的 `voice_id` 为准，不依赖列表查询。
 - 试听样本在 `data/voice_samples/cloned/`（demo + neutral + happy）。
-- 结论（用户确认）：克隆音听感 OK，与主声可明显区分，作为角色绑定候选音色保留（`deskmate_voice_01`）。
+- 结论（用户确认）：克隆音听感 OK，与主声可明显区分，作为角色绑定候选音色保留（`qiling_voice_01`）。
 
 ## 5. 配置与降级行为
 

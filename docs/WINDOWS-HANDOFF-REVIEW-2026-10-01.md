@@ -1,6 +1,6 @@
 # Windows 回传复验评估（2026-10-01 包）— mac 侧结论
 
-> 来源：`deskmate-handoff-2026-10-01.zip`（WorkBuddy / Windows 只读复验，未改产品代码）
+> 来源：`qiling-handoff-2026-10-01.zip`（WorkBuddy / Windows 只读复验，未改产品代码）
 > 被测基线：`8a1e922` + 9/30 轮工作区改动
 > 本文只记 mac 侧核对后的结论与处置，不复述回传全文（原文见包内 `README-HANDOFF.md`）。
 
@@ -50,13 +50,13 @@
 | 3 | `tasks/` 无过期回收 | ✅ 已加终态 + 过期回收，见 §4.6 |
 | 4 | `voice/recognize` 422 持续重试 | ✅ 已加发声闸门，见 §4.6 |
 
-### 4.1 Q1 定位：CLI 登录态来自 WorkBuddy 自身，DeskMate 不该替它猜环境
+### 4.1 Q1 定位：CLI 登录态来自 WorkBuddy 自身，栖灵 不该替它猜环境
 
 mac 侧复核（本机装了 WorkBuddy，实测确认）：
 
 - CLI 的登录态由 WorkBuddy 自己持久化在 `~/.workbuddy/`（`storage/skeleton/account-snapshot.json`、
-  `security/`、`local_storage/`），DeskMate **不需要注入任何凭据**——原判断成立。
-- 真正可疑的是 DeskMate 自己塞的环境变量：`_child_env()` 把
+  `security/`、`local_storage/`），栖灵 **不需要注入任何凭据**——原判断成立。
+- 真正可疑的是 栖灵 自己塞的环境变量：`_child_env()` 把
   `CODEBUDDY_INTERNET_ENVIRONMENT` 硬编码成默认 `internal`。CLI 自带文档写明取值
   必须是 `internal`（中国版）/ `ioa`（iOA 企业版）/ `cloudhosted` / `selfhosted`，
   填错会 **401 endpoint mismatch** ——正好对应 Windows 侧看到的
@@ -91,7 +91,7 @@ mac 实测（本机 WorkBuddy）：
 > 所以 Windows 侧看到的 `desktop-assistant__<hash>.log` 正是仓库根，日志是写了的，
 > 只是文件名按目录名而不是按任务命名。真正会把 home 当工作区的是**探测路径**（见下）。
 
-- DeskMate 另外把 CLI 的 stderr 抓在 `<logs_dir>/<task_id>/workbuddy-acp-stderr.log`；
+- 栖灵 另外把 CLI 的 stderr 抓在 `<logs_dir>/<task_id>/workbuddy-acp-stderr.log`；
   CLI 在 ACP 模式 stderr 常为空，所以那份通常是空的。
 - 附带发现：CLI 只有在 WorkBuddy 桌面端/daemon 在跑时才写上述日志；本机单跑 CLI
   做 `initialize`+`session/new` 探测时，`~/.workbuddy/logs/` 当天没有新增文件。
@@ -140,7 +140,7 @@ mac 实测（本机 WorkBuddy）：
 - 两个探测（`_probe` / `_run_exec_probe`）原先用 `str(Path.home())` 当 CLI 工作目录，
   等于让 CLI 把整个用户主目录当 workspace 扫一遍（Windows 主目录尤其大），
   还顺带把探测日志写成主目录哈希名；
-- 改为 `_probe_workdir()`：固定落在系统临时目录 `deskmate-workbuddy-probe`，
+- 改为 `_probe_workdir()`：固定落在系统临时目录 `qiling-workbuddy-probe`，
   `_spawn` 的兜底也从 `Path.home()` 改成同一个目录。跨平台行为一致，日志名可预期。
 - 测试 `test_workbuddy_probe_uses_dedicated_workdir_not_home` 钉住「探测不碰主目录」。
 
@@ -183,7 +183,7 @@ mac 实测（本机 WorkBuddy）：
 - Temporal：activity heartbeat + heartbeat timeout，心跳停才判死（总时长是另一个可选旋钮）；
 - Kubernetes Job：靠 pod 生命周期，重启即换新进程，旧状态由控制器对账。
 
-DeskMate 的编排器就在服务进程内，所以现成信号是 `AgentRunManager._tasks`（内存里的
+栖灵 的编排器就在服务进程内，所以现成信号是 `AgentRunManager._tasks`（内存里的
 asyncio 任务表）。**服务一重启，表必然是空的**，磁盘上还写着 `queued`/`running` 的 run
 按定义就是孤儿——不需要猜时间。处置（`agents/runtime.py:_reconcile_orphaned_runs`）：
 
@@ -207,6 +207,6 @@ asyncio 任务表）。**服务一重启，表必然是空的**，磁盘上还�
 
 ## 5. 关联
 
-- 回传原文：`deskmate-handoff-2026-10-01.zip`（外部包，未入库）
+- 回传原文：`qiling-handoff-2026-10-01.zip`（外部包，未入库）
 - 主题入口：`docs/WINDOWS-MIGRATION-2026-09.md`
 - 9/30 轮任务书：`WORKBUDDY-WINDOWS-RECHECK-2026-09-30.md`

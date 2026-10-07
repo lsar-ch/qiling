@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deskmate_contracts.project import ProjectNode
+from qiling_contracts.project import ProjectNode
 
 
 def _now() -> str:

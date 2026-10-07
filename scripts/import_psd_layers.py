@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""See-through 分层 PSD → DeskMate 角色资产包（逐层 PNG + layers.json）。
+"""See-through 分层 PSD → 栖灵 角色资产包（逐层 PNG + layers.json）。
 
 用法：
     python scripts/import_psd_layers.py <input.psd> <persona_id> [--out-dir DIR] [--anchor X Y]

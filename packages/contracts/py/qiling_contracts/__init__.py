@@ -1,4 +1,4 @@
-"""DeskMate 共享契约（pydantic 单一事实源）。
+"""栖灵 共享契约（pydantic 单一事实源）。
 
 规则：本包是跨模块数据结构的唯一权威定义；
 packages/contracts/ts 中的类型是本包的镜像，修改后必须同步并运行一致性测试。
