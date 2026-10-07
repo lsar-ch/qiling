@@ -4,6 +4,65 @@
 
 :root {
   color-scheme: light;
+
+  /* ── 设计令牌：颜色的唯一事实源 ──────────────────────────
+     改主题/换色只动这里，组件与 tailwind 类名都不用改。
+     值用空格分隔的 RGB 通道，便于 Tailwind 的透明度修饰符复用。 */
+  /* brand */
+  --brand-50: 252 242 236;
+  --brand-100: 248 226 212;
+  --brand-200: 240 197 172;
+  --brand-300: 228 163 130;
+  --brand-400: 208 124 84;
+  --brand-500: 178 88 47;
+  --brand-600: 152 70 34;
+  --brand-700: 124 57 28;
+  --brand-800: 100 47 24;
+  --brand-900: 82 40 22;
+
+  /* accent */
+  --accent-50: 251 236 235;
+  --accent-100: 247 217 215;
+  --accent-200: 238 180 176;
+  --accent-300: 226 138 133;
+  --accent-400: 212 94 88;
+  --accent-500: 194 55 50;
+  --accent-600: 166 41 37;
+  --accent-700: 135 33 30;
+
+  /* ok */
+  --ok-50: 231 245 238;
+  --ok-500: 30 142 95;
+  --ok-600: 23 113 75;
+
+  /* bad */
+  --bad-50: 251 236 235;
+  --bad-500: 196 67 60;
+  --bad-600: 166 47 41;
+
+  /* warn */
+  --warn-50: 251 242 227;
+  --warn-500: 166 97 26;
+  --warn-600: 132 75 18;
+
+  /* surface */
+  --surface-default: 255 255 255;
+  --surface-secondary: 247 245 240;
+  --surface-tertiary: 251 250 247;
+  --surface-chat: 243 241 235;
+
+  /* line */
+  --line-default: 232 228 219;
+  --line-subtle: 240 237 229;
+
+  /* ink */
+  --ink-default: 32 30 27;
+
+  /* muted */
+  --muted-default: 112 106 95;
+
+  /* 阴影基色 */
+  --shadow-rgb: 60 50 35;
 }
 
 * {
@@ -19,18 +78,18 @@ html {
 body {
   margin: 0;
   font-family: theme("fontFamily.sans");
-  background: #f7f5f0;
-  color: #201e1b;
+  background: rgb(var(--surface-secondary));
+  color: rgb(var(--ink-default));
   font-feature-settings: "tnum" 1, "cv03" 1;
 }
 
 ::selection {
-  background: rgba(194, 55, 50, 0.16);
-  color: #201e1b;
+  background: rgb(var(--accent-500) / 0.16);
+  color: rgb(var(--ink-default));
 }
 
 :focus-visible {
-  outline: 2px solid rgba(79, 91, 213, 0.55);
+  outline: 2px solid rgb(var(--brand-500) / 0.55);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -42,7 +101,7 @@ a {
 input,
 textarea,
 select {
-  caret-color: #4f5bd5;
+  caret-color: rgb(var(--brand-500));
 }
 
 .break-anywhere {
@@ -52,7 +111,7 @@ select {
 
 .scroll-thin {
   scrollbar-width: thin;
-  scrollbar-color: rgba(112, 106, 95, 0.32) transparent;
+  scrollbar-color: rgb(var(--muted-default) / 0.32) transparent;
 }
 .scroll-thin::-webkit-scrollbar {
   width: 8px;

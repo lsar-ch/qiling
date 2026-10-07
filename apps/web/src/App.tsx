@@ -74,6 +74,34 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+/** 栖灵标记：与桌面图标同源（陶土底 + 栖枝 + 灵球）。 */
+function QilingMark({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="100 100 824 824" className={className} role="img" aria-label="栖灵">
+      <defs>
+        <linearGradient id="ql-bg" x1="0" y1="0" x2="0.3" y2="1">
+          <stop offset="0" stopColor="#a2643f" />
+          <stop offset="1" stopColor="#4a2a1a" />
+        </linearGradient>
+        <radialGradient id="ql-orb" cx="0.38" cy="0.3" r="0.78">
+          <stop offset="0" stopColor="#fffbf0" />
+          <stop offset="0.42" stopColor="#ffd089" />
+          <stop offset="1" stopColor="#e08a2a" />
+        </radialGradient>
+      </defs>
+      <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#ql-bg)" />
+      <path
+        d="M232 716 C 392 690, 470 612, 566 552 C 636 508, 690 486, 764 480"
+        fill="none"
+        stroke="#f6eadb"
+        strokeWidth="54"
+        strokeLinecap="round"
+      />
+      <circle cx="686" cy="374" r="106" fill="url(#ql-orb)" />
+    </svg>
+  );
+}
+
 type PageKey = "home" | "chat" | "character" | "memory" | "project" | "reminders" | "kb" | "agents" | "extensions" | "settings" | "about" | "motion-lab";
 
 type TaskActionStatus = "running" | "awaiting_approval" | "completed" | "failed";
@@ -2313,8 +2341,8 @@ export default function App() {
           className="flex items-center gap-2.5 px-2 mb-7 text-left cursor-pointer"
           onClick={() => setPage("home")}
         >
-          <span className="relative flex items-center justify-center w-8 h-8 rounded-[10px] bg-ink text-white">
-            <span className="text-[13px] font-bold tracking-tightish">DM</span>
+          <span className="relative flex items-center justify-center w-8 h-8">
+            <QilingMark className="w-8 h-8" />
             <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-accent border-2 border-surface" />
           </span>
           <span className="flex flex-col leading-tight">
@@ -2384,9 +2412,7 @@ export default function App() {
           className="flex items-center gap-1.5 mr-1 whitespace-nowrap cursor-pointer"
           onClick={() => setPage("home")}
         >
-          <span className="w-6 h-6 rounded-lg bg-ink flex items-center justify-center text-white text-[10px] font-bold">
-            DM
-          </span>
+          <QilingMark className="w-6 h-6" />
           <b className="text-sm text-ink">栖灵</b>
         </button>
         {NAV.map((item) => (
