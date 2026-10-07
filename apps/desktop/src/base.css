@@ -1,12 +1,22 @@
 :root {
-  --bg: #eef0f6;
+  /* 与 apps/web 同一套暖色调：换色只动这里 */
+  --bg: #f7f5f0;
   --panel: #ffffff;
-  --text: #1f2333;
-  --muted: #767b90;
-  --brand: #4f6ef7;
-  --ok: #1fa971;
-  --off: #d6483f;
-  --line: #e2e5ef;
+  --text: #201e1b;
+  --ink: #201e1b;
+  --muted: #706a5f;
+  --brand: #b2582f;
+  --brand-rgb: 178, 88, 47;
+  --brand-strong: #8b3f1e;
+  --brand-50: #fcf2ec;
+  --accent: #c23732;
+  --accent-rgb: 194, 55, 50;
+  --ok: #1e8e5f;
+  --warn: #a6611a;
+  --bad: #c4433c;
+  --off: #c4433c;
+  --line: #e8e4db;
+  --shadow-rgb: 60, 50, 35;
 }
 * { box-sizing: border-box; }
 body {
