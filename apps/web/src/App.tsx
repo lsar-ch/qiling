@@ -71,8 +71,10 @@ import {
   Puzzle,
   Settings,
   Info,
+  Globe,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 /** 栖灵标记：与桌面图标同源（陶土底 + 栖枝 + 灵球）。 */
 function QilingMark({ className = "" }: { className?: string }) {
@@ -171,20 +173,20 @@ const AGENT_DISABLED_PILL = {
   noteCls: "text-muted",
 };
 
-type NavItem = { key: PageKey; label: string; icon: LucideIcon };
+type NavItem = { key: PageKey; icon: LucideIcon };
 
 const NAV: NavItem[] = [
-  { key: "home", label: "主页", icon: Home },
-  { key: "chat", label: "对话", icon: MessagesSquare },
-  { key: "project", label: "项目", icon: FolderKanban },
-  { key: "reminders", label: "提醒", icon: Bell },
-  { key: "character", label: "角色卡", icon: IdCard },
-  { key: "memory", label: "记忆", icon: Brain },
-  { key: "kb", label: "知识库", icon: Library },
-  { key: "agents", label: "我的智能体", icon: Bot },
-  { key: "extensions", label: "技能扩展", icon: Puzzle },
-  { key: "settings", label: "设置", icon: Settings },
-  { key: "about", label: "关于", icon: Info },
+  { key: "home", icon: Home },
+  { key: "chat", icon: MessagesSquare },
+  { key: "project", icon: FolderKanban },
+  { key: "reminders", icon: Bell },
+  { key: "character", icon: IdCard },
+  { key: "memory", icon: Brain },
+  { key: "kb", icon: Library },
+  { key: "agents", icon: Bot },
+  { key: "extensions", icon: Puzzle },
+  { key: "settings", icon: Settings },
+  { key: "about", icon: Info },
 ];
 
 const NAV_GROUPS: { items: PageKey[] }[] = [
@@ -2084,6 +2086,30 @@ function applyTheme(mode: string): void {
 
 export default function App() {
   const [page, setPage] = useHashPage();
+  const { t, i18n } = useTranslation();
+  const toggleLanguage = useCallback(() => {
+    i18n.changeLanguage(i18n.language === "en" ? "zh" : "en");
+  }, [i18n]);
+
+  // 语言以后端 AppSettings.ui.language 为准：首次加载同步一次，切换时回写。
+  useEffect(() => {
+    let alive = true;
+    fetchSettings()
+      .then((s) => {
+        if (!alive) return;
+        const lang = s.ui.language.startsWith("en") ? "en" : "zh";
+        if (i18n.language !== lang) void i18n.changeLanguage(lang);
+      })
+      .catch(() => {});
+    const applyLanguage = (lng: string) => {
+      void updateSettings({ ui_language: lng === "en" ? "en-US" : "zh-CN" }).catch(() => {});
+    };
+    i18n.on("languageChanged", applyLanguage);
+    return () => {
+      alive = false;
+      i18n.off("languageChanged", applyLanguage);
+    };
+  }, [i18n]);
 
   // 界面主题：设置项落到 <html data-theme>；system 跟随系统偏好并实时响应切换
   useEffect(() => {
@@ -2403,7 +2429,7 @@ export default function App() {
                       strokeWidth={active ? 2.2 : 1.8}
                       className={active ? "text-brand" : "text-muted group-hover:text-ink"}
                     />
-                    <span>{item.label}</span>
+                    <span>{t(`nav.${item.key}`)}</span>
                   </button>
                 );
               })}
@@ -2411,6 +2437,15 @@ export default function App() {
           ))}
         </nav>
         <div className="mt-auto">
+          <button
+            type="button"
+            onClick={toggleLanguage}
+            className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2 text-[12px] font-medium text-ink/80 hover:bg-surface-secondary transition-colors cursor-pointer"
+            aria-label="Switch language"
+          >
+            <Globe size={13} className="text-muted" />
+            {i18n.language === "en" ? "中文" : "English"}
+          </button>
           <div className="flex items-center gap-2 rounded-md bg-surface-secondary px-3 py-2.5">
             <span className="relative flex w-2 h-2">
               <span
@@ -2425,7 +2460,7 @@ export default function App() {
               />
             </span>
             <span className="text-[11px] text-muted">
-              {serviceLost ? "本地服务已退出" : serviceOk ? "本地服务运行中" : "本地服务离线"}
+              {serviceLost ? t("service.stopped") : serviceOk ? t("service.running") : t("service.offline")}
             </span>
           </div>
         </div>
@@ -2441,6 +2476,14 @@ export default function App() {
           <QilingMark className="w-6 h-6" />
           <b className="text-sm text-ink">栖灵</b>
         </button>
+        <button
+          type="button"
+          onClick={toggleLanguage}
+          className="ml-1 px-2.5 py-1.5 rounded-full border border-line text-xs text-ink/70 whitespace-nowrap cursor-pointer"
+          aria-label="Switch language"
+        >
+          {i18n.language === "en" ? "中" : "EN"}
+        </button>
         {NAV.map((item) => (
           <button
             key={item.key}
@@ -2451,7 +2494,7 @@ export default function App() {
             }`}
             onClick={() => setPage(item.key)}
           >
-            {item.label}
+            {t(`nav.${item.key}`)}
           </button>
         ))}
       </div>
@@ -2461,7 +2504,7 @@ export default function App() {
         <header className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 pb-6 mb-7">
           <div className="max-w-2xl">
             <h1 className="text-[26px] font-bold text-ink mb-2 tracking-tightish">
-              {page === "motion-lab" ? "动作实验室" : NAV.find((n) => n.key === page)?.label}
+              {page === "motion-lab" ? "动作实验室" : t(`nav.${page}`)}
             </h1>
             <p className="text-[13px] text-muted leading-relaxed">
               {page === "chat"
