@@ -205,8 +205,16 @@ async def health(request: Request) -> dict:
         if not (agent.available and agent.integration_status == "ready")
     ]
     uptime_s = round(time.time() - request.app.state.started_at, 1)
+    diagnostics = _diagnostics(request, ready_agents=ready, degraded_agents=degraded)
+    # 顶层状态按诊断项聚合：任一 error 即 error，否则任一 degraded 即 degraded。
+    if any(item["status"] == "error" for item in diagnostics):
+        overall = "error"
+    elif any(item["status"] == "degraded" for item in diagnostics):
+        overall = "degraded"
+    else:
+        overall = "ok"
     return {
-        "status": "ok",
+        "status": overall,
         "service": "qiling-ai-service",
         "version": settings.version,
         "performance_mode": settings.performance_mode,
@@ -227,5 +235,5 @@ async def health(request: Request) -> dict:
                 "degraded": degraded,
             },
         },
-        "diagnostics": _diagnostics(request, ready_agents=ready, degraded_agents=degraded),
+        "diagnostics": diagnostics,
     }

@@ -1827,6 +1827,12 @@ export default function Widget() {
           ref={bubbleRef}
           data-visible={bubble && !inputOpen ? "1" : "0"}
           aria-live="polite"
+          role={!connected && bubble === persistentHintRef.current ? "button" : undefined}
+          title={!connected ? "点击打开主界面查看服务状态" : undefined}
+          onClick={() => {
+            // 断连态气泡直达主界面；WS 本身每 3s 自动重连，挂件内不放详细诊断。
+            if (!connected && bubble === persistentHintRef.current) void openMainUi();
+          }}
         >
           {bubble}
         </div>

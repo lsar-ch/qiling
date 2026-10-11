@@ -43,7 +43,9 @@ import {
   updateSettings,
   updateAgentConfig,
   refreshAgentDetection,
+  fetchPersonas,
   type AppSettings,
+  type PersonaCard,
   type MemoryVaultStatus,
   type HealthResponse,
   type SessionResponse,
@@ -1961,8 +1963,22 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
   const [model, setModel] = useState("");
   const [dashscopeKey, setDashscopeKey] = useState("");
   const [minimaxKey, setMinimaxKey] = useState("");
+  const [personas, setPersonas] = useState<PersonaCard[]>([]);
+  const [personaId, setPersonaId] = useState("");
+  const [personaError, setPersonaError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+
+  // 进入角色步时拉一次角色清单；失败不阻断向导（默认角色仍可用）。
+  useEffect(() => {
+    if (step !== 1 || personas.length > 0) return;
+    fetchPersonas()
+      .then((items) => {
+        setPersonas(items);
+        setPersonaId((cur) => cur || items[0]?.id || "default");
+      })
+      .catch(() => setPersonaError(true));
+  }, [step, personas.length]);
 
   const finish = async (withVoice: boolean): Promise<void> => {
     setSaving(true);
@@ -1974,6 +1990,8 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
         llm_model: model.trim(),
         setup_completed: true,
       };
+      // 选了非默认角色才写，避免对未改动用户多一次角色切换。
+      if (personaId && personaId !== "default") body.active_persona_id = personaId;
       if (withVoice) {
         if (dashscopeKey.trim()) body.dashscope_api_key = dashscopeKey.trim();
         if (minimaxKey.trim()) body.minimax_api_key = minimaxKey.trim();
@@ -1989,15 +2007,14 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
 
   const inputCls =
     "w-full px-3 py-2 text-sm rounded-lg border border-line bg-surface text-ink focus:outline-none focus:border-brand";
+  const stepTitle = ["配置对话模型", "选择角色", "配置语音（可跳过）"][step] ?? "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-surface shadow-card overflow-hidden">
         <div className="px-6 pt-6 pb-4 border-b border-line">
           <h2 className="text-lg font-bold text-ink">欢迎使用栖灵</h2>
-          <p className="text-xs text-muted mt-1">
-            {step === 0 ? "第 1 步 / 共 2 步 · 配置对话模型" : "第 2 步 / 共 2 步 · 配置语音（可跳过）"}
-          </p>
+          <p className="text-xs text-muted mt-1">第 {step + 1} 步 / 共 3 步 · {stepTitle}</p>
         </div>
 
         <div className="px-6 py-5 space-y-4">
@@ -2018,6 +2035,40 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
                 <input className={inputCls} value={model} onChange={(e) => setModel(e.target.value)}
                   placeholder="gpt-4o-mini" />
               </div>
+            </>
+          ) : step === 1 ? (
+            <>
+              <p className="text-xs text-muted leading-relaxed">
+                选择一个默认角色，决定栖灵的性格与呈现风格；之后可在「角色卡」页随时切换或新建。
+              </p>
+              {personaError ? (
+                <p className="text-xs text-warn">角色清单加载失败，将保留默认角色，可稍后在角色卡页修改。</p>
+              ) : personas.length === 0 ? (
+                <p className="text-xs text-muted">加载中…</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {personas.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setPersonaId(p.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors cursor-pointer ${
+                        personaId === p.id ? "border-brand bg-brand-50" : "border-line hover:bg-surface-secondary"
+                      }`}
+                    >
+                      {p.avatar?.trim() ? (
+                        <img src={p.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <span className="w-9 h-9 rounded-full bg-surface-secondary shrink-0" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-ink truncate">{p.name}</span>
+                        <span className="block text-xs text-muted truncate">{p.description || p.kind || p.id}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -2053,9 +2104,21 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
                 下一步
               </button>
             </>
-          ) : (
+          ) : step === 1 ? (
             <>
               <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => setStep(0)} disabled={saving}>
+                上一步
+              </button>
+              <button type="button"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-brand text-onbrand hover:bg-brand/90 disabled:opacity-50"
+                disabled={saving}
+                onClick={() => setStep(2)}>
+                下一步
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => setStep(1)} disabled={saving}>
                 上一步
               </button>
               <div className="flex gap-2">
@@ -2144,6 +2207,8 @@ export default function App() {
   const [widgetState, setWidgetState] = useState<WidgetStatusReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [serviceLost, setServiceLost] = useState(false);
+  // 已关闭的降级提醒，按诊断名记忆（仅本会话）；error 项不可关闭。
+  const [dismissedDiag, setDismissedDiag] = useState<Record<string, boolean>>({});
   const [retryTick, setRetryTick] = useState(0);
   const [demoMsg, setDemoMsg] = useState("");
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
@@ -2345,7 +2410,13 @@ export default function App() {
     };
   }, [onEvent, retryTick]);
 
-  const serviceOk = !serviceLost && health?.status === "ok";
+  // serviceOk 表示「本地服务可达」：degraded（语音/执行器不可用）时应用主体仍可用。
+  const serviceOk = !serviceLost && !!health;
+  const diagErrors = (health?.diagnostics ?? []).filter((d) => d.status === "error");
+  // 无 fix_action 的 degraded（如「暂无记忆条目」）是正常初始状态，不打扰用户。
+  const diagWarnings = (health?.diagnostics ?? []).filter(
+    (d) => d.status === "degraded" && !!d.fix_action,
+  );
   const current = widgetState?.state ?? "idle";
 
   const runDemo = async (action: (typeof DEMO_ACTIONS)[number]) => {
@@ -2553,6 +2624,54 @@ export default function App() {
         ) : error ? (
           <div className="mb-4 rounded-lg bg-bad-50 text-bad px-4 py-3 text-sm">连接失败：{error}</div>
         ) : null}
+
+        {/* 启动自检：error 阻断式卡片；degraded（带修复入口）可关闭横幅。事实源统一为 /api/health diagnostics。 */}
+        {serviceOk && !serviceLost && diagErrors.length > 0 && (
+          <div className="mb-4 space-y-2">
+            {diagErrors.map((d) => (
+              <div key={d.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-bad/30 bg-bad-50 text-bad px-4 py-3 text-sm">
+                <span className="font-medium">{d.label}不可用</span>
+                <span className="text-xs">{d.detail}</span>
+                {d.fix_hint && <span className="text-xs opacity-80">{d.fix_hint}</span>}
+                {d.fix_action && (
+                  <button
+                    className="ml-auto border border-bad/40 bg-surface rounded-lg px-3 py-1 text-xs text-bad hover:bg-bad-100 transition-colors cursor-pointer"
+                    onClick={() => setPage(d.fix_action === "open_agents" ? "agents" : "settings")}
+                  >
+                    {d.fix_action === "open_agents" ? "去智能体" : "去设置"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {serviceOk && !serviceLost && diagErrors.length === 0 && diagWarnings.filter((d) => !dismissedDiag[d.name]).length > 0 && (
+          <div className="mb-4 space-y-2">
+            {diagWarnings
+              .filter((d) => !dismissedDiag[d.name])
+              .map((d) => (
+                <div key={d.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-warn-50 text-warn px-4 py-2.5 text-xs">
+                  <span className="font-medium">{d.label}</span>
+                  <span>{d.detail}</span>
+                  {d.fix_action && (
+                    <button
+                      className="ml-auto border border-warn/40 bg-surface rounded-lg px-2.5 py-1 text-warn hover:bg-warn-100 transition-colors cursor-pointer"
+                      onClick={() => setPage(d.fix_action === "open_agents" ? "agents" : "settings")}
+                    >
+                      {d.fix_action === "open_agents" ? "去智能体" : "去设置"}
+                    </button>
+                  )}
+                  <button
+                    className="text-warn/70 hover:text-warn px-1 cursor-pointer"
+                    onClick={() => setDismissedDiag((cur) => ({ ...cur, [d.name]: true }))}
+                    aria-label="关闭提醒"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
 
         {page === "home" && (
           <HomePage

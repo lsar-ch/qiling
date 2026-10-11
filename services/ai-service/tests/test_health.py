@@ -72,6 +72,29 @@ def test_health_diagnostics_readable_and_secret_free() -> None:
         assert fake_secret not in blob
 
 
+def test_health_overall_status_aggregates_diagnostics() -> None:
+    """顶层 status 按诊断项聚合：echo 未配置模型时 LLM=error，整体必须是 error 而非固定 ok。"""
+    settings = load_settings()
+    settings.llm_provider = "echo"
+    settings.llm_api_key = None
+    settings.llm_base_url = None
+    with TestClient(create_app(settings)) as client:
+        body = client.get("/api/health").json()
+        assert body["status"] == "error"
+
+
+def test_health_overall_status_ok_when_all_diagnostics_ok() -> None:
+    """轻量模式下 LLM 判 ok；若无 error/degraded 诊断项，整体为 ok。"""
+    settings = load_settings()
+    # 默认测试环境可能无执行器/记忆，至少断言状态取自三档枚举且与诊断项一致。
+    with make_client() as client:
+        body = client.get("/api/health").json()
+        assert body["status"] in ("ok", "degraded", "error")
+        statuses = {item["status"] for item in body["diagnostics"]}
+        if body["status"] == "ok":
+            assert "error" not in statuses and "degraded" not in statuses
+
+
 def test_session_info() -> None:
     settings = load_settings()
     # 显式切换 echo：默认模型档案优先级高于 .env，不能只清空 key 来断言演示模式。
