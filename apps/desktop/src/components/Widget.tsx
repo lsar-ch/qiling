@@ -723,6 +723,7 @@ export default function Widget() {
   const playTtsOnce = async (text: string, emotion?: ExpressionEmotion): Promise<void> => {
     const ctx = await ensureAudioContext();
     if (!ctx) return;
+    lipSyncBus.long = false; // 任务短播报不算长回复
     const abort = new AbortController();
     playbackAbortRef.current = abort;
     const startedAt = performance.now();
@@ -779,6 +780,8 @@ export default function Widget() {
     playbackAbortRef.current = abort;
     const startedAt = performance.now();
     let firstChunk = true;
+    // 中文 TTS 约 6 字/秒；60 字 ≈ 10s，够放完整条长手势。
+    lipSyncBus.long = text.length >= 60;
 
     try {
       const stream = await synthesizeSpeechStream(

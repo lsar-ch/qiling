@@ -46,6 +46,8 @@ export type VrmClipRef =
       weight?: number;
       /** 多候选时的冷却毫秒，缺省 0。 */
       cooldownMs?: number;
+      /** 仅长回复时参与挑选（如 10s 说话手势），短回复直接排除。 */
+      long?: boolean;
     };
 
 export interface VrmMotionConfig {

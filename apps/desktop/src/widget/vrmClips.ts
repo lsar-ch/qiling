@@ -14,6 +14,7 @@ export interface VrmClipChoice {
 interface Candidate extends VrmClipChoice {
   weight: number;
   cooldownMs: number;
+  long: boolean;
 }
 
 function toArray(refs: VrmClipRef | VrmClipRef[] | undefined): VrmClipRef[] {
@@ -23,7 +24,7 @@ function toArray(refs: VrmClipRef | VrmClipRef[] | undefined): VrmClipRef[] {
 
 /** 单条候选归一成完整参数；字符串 / 对象两种写法都吃。 */
 function normalize(ref: VrmClipRef, fallback: string): Candidate {
-  const base: Candidate = { clip: fallback, repeat: 1, timeScale: 1, weight: 1, cooldownMs: 0 };
+  const base: Candidate = { clip: fallback, repeat: 1, timeScale: 1, weight: 1, cooldownMs: 0, long: false };
   if (typeof ref === "string") {
     return { ...base, clip: ref || fallback };
   }
@@ -33,12 +34,13 @@ function normalize(ref: VrmClipRef, fallback: string): Candidate {
     timeScale: ref.timeScale && ref.timeScale > 0 ? ref.timeScale : 1,
     weight: ref.weight == null ? 1 : Math.max(0, ref.weight),
     cooldownMs: Math.max(0, ref.cooldownMs ?? 0),
+    long: ref.long ?? false,
   };
 }
 
 /** 未配候选时的默认：与 trigger 同名的文件。 */
 function defaultCandidates(trigger: string): Candidate[] {
-  return [{ clip: trigger, repeat: 1, timeScale: 1, weight: 1, cooldownMs: 0 }];
+  return [{ clip: trigger, repeat: 1, timeScale: 1, weight: 1, cooldownMs: 0, long: false }];
 }
 
 function candidatesFor(trigger: string, refs: VrmClipRef | VrmClipRef[] | undefined): Candidate[] {
@@ -65,11 +67,14 @@ export function pickVrmClip(
   refs: VrmClipRef | VrmClipRef[] | undefined,
   playedAt: Record<string, number>,
   now: number,
+  isLong: boolean = true,
   random: () => number = Math.random,
 ): VrmClipChoice | null {
   const available = candidatesFor(trigger, refs).filter(
     (item) =>
-      item.weight > 0 && now - (playedAt[item.clip] ?? Number.NEGATIVE_INFINITY) >= item.cooldownMs,
+      item.weight > 0
+      && now - (playedAt[item.clip] ?? Number.NEGATIVE_INFINITY) >= item.cooldownMs
+      && (!item.long || isLong),
   );
   if (available.length === 0) return null;
 
@@ -96,22 +101,28 @@ export function demo(): void {
   const refs: VrmClipRef[] = [{ clip: "idle" }, { clip: "idle_look", weight: 3 }];
   const seen = new Set<string>();
   for (let i = 0; i < 200; i += 1) {
-    seen.add(pickVrmClip("idle", refs, {}, i, () => i / 200)?.clip ?? "");
+    seen.add(pickVrmClip("idle", refs, {}, i, true, () => i / 200)?.clip ?? "");
   }
   if (seen.size !== 2) throw new Error("两条候选都应有机会被挑到");
   if ([...seen].some((id) => id !== "idle" && id !== "idle_look")) throw new Error("挑出了候选外的动作");
 
-  const only = pickVrmClip("idle", [{ clip: "idle", weight: 0 }, { clip: "idle_look" }], {}, 0, () => 0);
+  const only = pickVrmClip("idle", [{ clip: "idle", weight: 0 }, { clip: "idle_look" }], {}, 0, true, () => 0);
   if (only?.clip !== "idle_look") throw new Error("weight 0 的候选必须被排除");
-  if (pickVrmClip("idle", [{ clip: "idle", weight: 0 }], {}, 0) !== null) {
+  if (pickVrmClip("idle", [{ clip: "idle", weight: 0 }], {}, 0, true) !== null) {
     throw new Error("候选全被排除时应返回 null");
+  }
+  if (pickVrmClip("speaking", [{ clip: "speak_alt", long: true }], {}, 0, false) !== null) {
+    throw new Error("长回复候选在短回复时必须排除");
+  }
+  if (pickVrmClip("speaking", [{ clip: "speak_alt", long: true }], {}, 0, true)?.clip !== "speak_alt") {
+    throw new Error("长回复候选在长回复时应可用");
   }
 
   const cold = [{ clip: "a", cooldownMs: 5000 }, { clip: "b" }];
-  if (pickVrmClip("idle", cold, { a: 1000 }, 1500, () => 0)?.clip !== "b") {
+    if (pickVrmClip("idle", cold, { a: 1000 }, 1500, true, () => 0)?.clip !== "b") {
     throw new Error("冷却内的候选必须被排除");
   }
-  if (pickVrmClip("idle", cold, { a: 1000 }, 7000, () => 0)?.clip !== "a") {
+    if (pickVrmClip("idle", cold, { a: 1000 }, 7000, true, () => 0)?.clip !== "a") {
     throw new Error("冷却过后应重新可挑");
   }
 }

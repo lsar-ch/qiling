@@ -358,6 +358,7 @@ presentation:
       - clip: speak_alt
         weight: 1
         cooldownMs: 20000
+        long: true
       success:
       - clip: success
         weight: 2.5

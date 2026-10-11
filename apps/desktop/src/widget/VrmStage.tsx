@@ -204,6 +204,7 @@ export default function VrmStage({
           vrmConfigRef.current?.actions?.[name],
           clipPlayedAt,
           Date.now(),
+          lipSyncBus.long,
         );
         if (!choice) return;
         // 抽回正在播的同一条：直接放行，重播会让循环动作跳一下
@@ -244,6 +245,7 @@ export default function VrmStage({
           vrmConfigRef.current?.actions?.[name],
           clipPlayedAt,
           Date.now(),
+          lipSyncBus.long,
         );
         if (!choice) return;
         const clip = await ensureClip(choice.clip);
