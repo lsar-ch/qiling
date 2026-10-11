@@ -2417,6 +2417,14 @@ export default function App() {
   const diagWarnings = (health?.diagnostics ?? []).filter(
     (d) => d.status === "degraded" && !!d.fix_action,
   );
+  // 诊断项恢复正常后清掉关闭记录，使其再次降级时横幅能重新出现。
+  useEffect(() => {
+    const active = new Set(diagWarnings.map((d) => d.name));
+    setDismissedDiag((cur) => {
+      const next = Object.fromEntries(Object.entries(cur).filter(([name]) => active.has(name)));
+      return Object.keys(next).length === Object.keys(cur).length ? cur : next;
+    });
+  }, [health]);
   const current = widgetState?.state ?? "idle";
 
   const runDemo = async (action: (typeof DEMO_ACTIONS)[number]) => {
@@ -2625,8 +2633,9 @@ export default function App() {
           <div className="mb-4 rounded-lg bg-bad-50 text-bad px-4 py-3 text-sm">连接失败：{error}</div>
         ) : null}
 
-        {/* 启动自检：error 阻断式卡片；degraded（带修复入口）可关闭横幅。事实源统一为 /api/health diagnostics。 */}
-        {serviceOk && !serviceLost && diagErrors.length > 0 && (
+        {/* 启动自检：error 阻断式卡片；degraded（带修复入口）可关闭横幅。事实源统一为 /api/health diagnostics。
+            首次向导显示时不渲染：向导的 LLM/语音步本身就在解决这些 error，避免遮罩盖住卡片点不到。 */}
+        {serviceOk && !serviceLost && !showWizard && diagErrors.length > 0 && (
           <div className="mb-4 space-y-2">
             {diagErrors.map((d) => (
               <div key={d.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-bad/30 bg-bad-50 text-bad px-4 py-3 text-sm">
@@ -2645,7 +2654,7 @@ export default function App() {
             ))}
           </div>
         )}
-        {serviceOk && !serviceLost && diagErrors.length === 0 && diagWarnings.filter((d) => !dismissedDiag[d.name]).length > 0 && (
+        {serviceOk && !serviceLost && !showWizard && diagErrors.length === 0 && diagWarnings.filter((d) => !dismissedDiag[d.name]).length > 0 && (
           <div className="mb-4 space-y-2">
             {diagWarnings
               .filter((d) => !dismissedDiag[d.name])

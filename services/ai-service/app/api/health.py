@@ -156,7 +156,7 @@ def _diagnostics(
 
     if mem["total_entries"] == 0:
         items.append({
-            "name": "memory", "label": "项目记忆", "status": "degraded",
+            "name": "memory", "label": "项目记忆", "status": "ok",
             "detail": "暂无记忆条目", "fix_hint": "开始对话或执行任务后会自动写入",
             "fix_action": None,
         })

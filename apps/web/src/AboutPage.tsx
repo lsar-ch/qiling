@@ -104,7 +104,8 @@ export default function AboutPage() {
     };
   }, []);
 
-  const serviceOk = loaded && health?.status === "ok";
+  // 与 App 侧一致：拿到 health 即服务可达；degraded（语音/执行器不可用）不算离线。
+  const serviceOk = loaded && !!health;
   const version = health?.version ? `v${health.version}` : "—";
   const perf =
     health?.performance_mode && PERF_ZH[health.performance_mode]
