@@ -1,7 +1,7 @@
 # M3 安全审计报告（2026-10-11）
 
 > 对应 `docs/RELEASE-PLAN-2026-10-10.md` M3 全库审计。审计时工作区已提交至 `1ae0069`。
-> 结论：**无高危项阻塞 v0.1 发布**；1 项建议发布前升级（cryptography），前端构建链告警仅影响开发环境。
+> 结论：**无高危项阻塞 v0.1 发布**；cryptography 经复核为 Intel macOS 平台限制 + 零暴露面，保持 48.0.1（见 P1）；前端构建链告警仅影响开发环境。
 
 ## 一、总览
 
@@ -18,11 +18,16 @@
 
 ## 二、分级问题清单
 
-### P1 — 建议发布前处理
+### P1 — cryptography（已评估：本机不升级，记录接受）
 
 1. **Python `cryptography` 48.0.1：6 条已知公告（PYSEC-2026-3552/3553/3554），修复版本 49.0.0/50.0.0**
    - pip-audit 报告（3552 与 3553/3554 部分重复计数，实际 3 个独立 CVE）。
    - 处置：升级到约束允许的 49.x 后复跑 `./scripts/check.sh`；若 50.x 需要新 OpenAPI 再评估。升级属依赖变更，按项目规则单独授权。
+   - **2026-10-11 复核结论：本机保持 48.0.1，不升级（已授权评估）**。
+     - 平台限制：49.0.0/50.0.0 的 macOS wheel **仅 arm64**（PyPI 文件列表核实），本机为 x86_64 Intel，强升会退回源码编译并因缺 OpenSSL 失败；`requirements.txt:13` 已有 `cryptography<49; sys_platform == "darwin" and platform_machine == "x86_64"` 环境标记。
+     - 暴露面：应用代码 0 处直接 import cryptography；仅 dashscope 间接依赖，且只用对称加密/序列化（`ciphers/serialization/asymmetric padding`），不碰 3 个 CVE 的 X.509 证书链验证 / PKCS7 EnvelopedData 路径。
+     - CVE 性质：3552 为 PKCS7 EnvelopedData Bleichenbacher oracle（需应用解密攻击者数据并回显结果）；3553 为重复自签证书链指数级 DoS；3554 为 name constraints 通配 SAN 逃逸。三者都要求应用主动做证书/PKCS7 校验，栖灵不触达。
+     - 后续：Windows（x64）/ macOS arm64 构建环境装到 49.x 即自动满足（环境标记只锁 Intel macOS）；若 Intel 支持周期内要修，路径是本地 OpenSSL 源码编译，收益不值得。
 
 ### P2 — 不阻塞，记录跟进
 
