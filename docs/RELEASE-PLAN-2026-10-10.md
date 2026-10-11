@@ -39,7 +39,7 @@
    - `.git` 当前 **956M**；历史含上述三个 VRM（合计 ~140M）及早期 9M 版本。
    - 用 `git filter-repo`（推荐）在公开前清历史；操作不可逆、会改变所有 commit hash，私有阶段做。
    - 清理后核对：历史无禁止 VRM、仓库体积可接受、gitleaks 复跑通过。
-   - Mixamo 来源的 `data/motion-library`（71M，VRMA）需确认授权链路（Mixamo 内容使用规则），存疑则一并替换或改为按需下载不入库。
+   - Mixamo 来源的 `data/motion-library`（71M，VRMA）授权已核对（2026-10-11，`docs/MIXAMO-LICENSE-2026-10-11.md`）：可免版税商用但禁止原始资产再分发；当前树与历史均无 VRMA，仓库公开无风险；**M5 打包时安装包不打 VRMA（按需下载或自制替换）**。
 5. **M5 打包 + 真机**：定打包形态（是否内置 Python/ai-service sidecar）；`npm run tauri build` 出 `.dmg` / `.msi`，双平台实装验证；Windows 真机截图补齐。
 6. **公开前最终核对**：`.env` / API key / 运行数据确认不入库；CI 两个 workflow 跑通；Releases 文案与截图就位。
 7. **M6 发布（需授权推送）**：公开仓库 + 挂 Release；随后启动宣传。
@@ -47,9 +47,9 @@
 ### 首次向导增强 + 启动自检（向导完成后紧接着做）
 > 2026-10-10 决定：与首次配置向导合并推进，先把向导做完，再做启动自检。
 > 事实源统一复用 `GET /api/health`（已返回整体 `status` + 逐项 `diagnostics`：`label`/`status`/`detail`/`fix_hint`/`fix_action`），不另写一套检查。
-- [ ] 向导增强：现有 `SetupWizard` 仅 2 步（LLM 必填 → 语音可选），补「角色选择」步，向导读写与自检共用 `/api/health`。
-- [ ] Web 启动自检呈现：启动拉一次 health；`error` → 阻断式卡片（如服务未起 / 对话模型不可用），`degraded` → 可关闭横幅（语音 / 执行器不可用），正常则静默；`fix_action` 渲染为「去设置 / 去智能体」按钮。
-- [ ] 挂件侧：`pollHealth` 目前只判服务通断；服务不可用时给「重连 / 打开主界面」，详细诊断不塞进挂件。
+- [x] 向导增强：`SetupWizard` 已扩为 3 步（LLM 必填 → 角色选择 → 语音可选），角色步读 `/api/personas`、写 `active_persona_id`（2026-10-11）。
+- [x] Web 启动自检呈现：health 顶层 `status` 按 diagnostics 聚合（error/degraded/ok）；`error` → 阻断式卡片，`degraded`（带 fix_action）→ 可关闭横幅，正常静默；`fix_action` 渲染「去设置 / 去智能体」按钮（2026-10-11）。
+- [x] 挂件侧：`pollHealth` 保持只判通断；WS 本身 3s 自动重连，断连气泡可点击「打开主界面」，详细诊断不进挂件（2026-10-11）。
 - [ ] 真实握手探测（第二阶段）：LLM 当前只判是否 echo、不验证 key 有效性；启动时对 LLM/TTS 做一次廉价探测（拉 models 或 1 token），覆盖错 key / 过期场景。
 
 ### 发布后宣传（v0.1）
@@ -107,7 +107,7 @@
 ### C. VRM 资产授权（硬阻塞）
 - [ ] 自制可再分发 VRM 完成并验证（`allowRedistribution=True`）
 - [ ] 移除 komano / k81 / vrm_demo 三个第三方 VRM 并替换默认引用
-- [ ] 确认 motion-library（Mixamo 来源 VRMA）授权链路
+- [x] 确认 motion-library（Mixamo 来源 VRMA）授权链路：见 `docs/MIXAMO-LICENSE-2026-10-11.md`；打包不入库/不入包
 
 ### D. Git 历史与体积（硬阻塞，高危）
 - [x] 备份仓库（`.git` + VRM/VRMA → `~/qiling-backup-20261010`）
