@@ -30,6 +30,7 @@
 ### 待办（按顺序）
 1. **README 对齐协议**：补 License 段落（PolyForm Noncommercial + 商业授权联系方式）、双语开关说明；更新过时的「Step 9 进行中」进度表述。
 2. **M3 全库审计（质量项）**：本地复跑 `.github/workflows/security-scan.yml` 里的 gitleaks / bandit / pip-audit / npm audit / cargo audit，整理成分级问题清单；补一次依赖 license 白名单核对（确认新引入 3 个 MIT 依赖无冲突）。
+   - ✅ 已完成（2026-10-11）：见 `docs/SECURITY-AUDIT-2026-10-11.md`。无高危阻塞；唯一 P1 是 cryptography 48.0.1 建议升 49.x（升级依赖需授权）；tailwind/source-map-js 告警仅构建链，不阻塞。
 3. **硬阻塞 A — 移除禁止再分发 VRM（高危，需单独授权）**：
    - 当前工作区仍跟踪 `data/persona-assets/{komano,k81,vrm_demo}/model.vrm`（64M / 31M / 38M）。
    - 步骤：先用可再分发资产（`scripts/vrm/build_qiling_vrm.py` 产出的自制 VRM，`allow_redistribution=True`）替换默认引用 → 从工作区移除三个第三方 VRM → 验证应用默认形象可加载。
@@ -92,15 +93,16 @@
 ### A. 合规与协议
 - [x] LICENSE 替换为 PolyForm Noncommercial 1.0.0
 - [x] README 对齐协议、双语说明、版本路线
-- [ ] 依赖许可证白名单核对（无 GPL/AGPL 混入，含新增 3 个 MIT）
+- [x] 依赖许可证白名单核对（无 GPL/AGPL 混入，含新增 3 个 MIT，2026-10-11）
 
 ### B. 安全审计（M3，只读）
 - [x] gitleaks：90 commits 扫描，无泄露（2026-10-10）
-- [ ] bandit（Python）
-- [ ] npm audit（web / desktop）
-- [ ] cargo audit（Rust）
-- [ ] pip-audit（Python 依赖）
-- [ ] 分级问题清单产出，高危项修复
+- [x] gitleaks 复跑：历史改写后 95 commits，0 leaks（2026-10-11）
+- [x] bandit（Python）：35 Low，0 中/高危
+- [x] npm audit（web / desktop）：web 生产 0；devDeps 与 desktop 各有构建链告警，不阻塞
+- [x] cargo audit（Rust）：0 漏洞，7 warnings（unmaintained/unsound）
+- [x] pip-audit（Python 依赖）：cryptography 48.0.1 待升级（P1，需授权）
+- [x] 分级问题清单产出：`docs/SECURITY-AUDIT-2026-10-11.md`；无高危项
 
 ### C. VRM 资产授权（硬阻塞）
 - [ ] 自制可再分发 VRM 完成并验证（`allowRedistribution=True`）
