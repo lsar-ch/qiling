@@ -21,15 +21,16 @@ Pop-Location
 
 Write-Host "== 3/4 组装 src-tauri/resources"
 $runtime = Join-Path $Res "runtime\ai-service"
-$home = Join-Path $Res "home-template"
+$homeTemplate = Join-Path $Res "home-template"
 if (Test-Path $runtime) { Remove-Item -Recurse -Force $runtime }
-if (Test-Path $home) { Remove-Item -Recurse -Force $home }
+if (Test-Path $homeTemplate) { Remove-Item -Recurse -Force $homeTemplate }
 New-Item -ItemType Directory -Force -Path (Join-Path $Res "runtime") | Out-Null
 Copy-Item -Recurse (Join-Path $Root "build\sidecar\dist\ai-service") $runtime
-& $Python (Join-Path $Root "scripts\package\stage_home.py") $home
+& $Python (Join-Path $Root "scripts\package\stage_home.py") $homeTemplate
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
 Write-Host "== 4/4 Tauri 构建（x64 NSIS）"
 Push-Location (Join-Path $Root "apps\desktop")
 npm run tauri -- build --config src-tauri/tauri.release.json --target x86_64-pc-windows-msvc --bundles nsis
+if ($LASTEXITCODE -ne 0) { exit 1 }
 Pop-Location
