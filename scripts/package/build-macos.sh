@@ -33,6 +33,6 @@ case "$ARCH" in
 esac
 (cd "$ROOT/apps/desktop" &&
   MACOSX_DEPLOYMENT_TARGET=12.0 npm run tauri -- build \
-    --config src-tauri/tauri.release.json --target "$RUST_TARGET")
+    --config src-tauri/tauri.release.json --target "$RUST_TARGET" --bundles dmg)
 
 echo "完成：$ROOT/apps/desktop/src-tauri/target/$RUST_TARGET/release/bundle"

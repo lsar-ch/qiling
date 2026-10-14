@@ -31,5 +31,5 @@ if ($LASTEXITCODE -ne 0) { exit 1 }
 
 Write-Host "== 4/4 Tauri 构建（x64 NSIS）"
 Push-Location (Join-Path $Root "apps\desktop")
-npm run tauri -- build --config src-tauri/tauri.release.json --target x86_64-pc-windows-msvc
+npm run tauri -- build --config src-tauri/tauri.release.json --target x86_64-pc-windows-msvc --bundles nsis
 Pop-Location
