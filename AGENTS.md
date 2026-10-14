@@ -22,11 +22,11 @@ Obsidian 记忆库：
 
 优先通过 Obsidian MCP 工具读取：
 
-1. `AI-Memory/INDEX.md`
-2. `AI-Memory/user.md`
-3. `AI-Memory/maintenance.md`
-4. `AGENTS.md`
-5. `AI-Memory/installed-skills.md`，仅在涉及 Skill、MCP、插件时读取
+1. `记忆仓库/INDEX.md`
+2. `记忆仓库/user.md`
+3. `记忆仓库/maintenance.md`
+4. `记忆仓库/AGENTS.md`
+5. `记忆仓库/installed-skills.md`，仅在涉及 Skill、MCP、插件时读取
 
 如果当前会话没有暴露 `mcp__obsidian__read_note`、`mcp__obsidian__search` 或 `mcp__obsidian__list_notes`，说明 Obsidian MCP 未连接到本次会话。此时先明确告知用户，并可临时用本地文件只读方式查看上述记忆文件；不要假装 MCP 已经可用。
 
@@ -73,6 +73,7 @@ Obsidian 记忆库：
 - 修改后用最低成本的权威信号验证，例如 `./scripts/check.sh`、类型检查、接口健康检查或页面状态
 - API key、音频样本、运行数据和缓存不入库
 - 代码审查与安全规则见 `CODE-REVIEW-RULES.md`
+- Obsidian 只放工程文档指针：新增 / 删除 / 重命名 `docs/*.md` 时，同一任务内更新 vault 的 `栖灵Desktop/06-工程文档索引.md`，禁止把 docs 正文复制进 vault（避免双份漂移）
 
 ## 常用命令
 

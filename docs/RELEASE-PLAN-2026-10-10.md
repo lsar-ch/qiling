@@ -41,6 +41,14 @@
    - 清理后核对：历史无禁止 VRM、仓库体积可接受、gitleaks 复跑通过。
    - Mixamo 来源的 `data/motion-library`（71M，VRMA）授权已核对（2026-10-11，`docs/MIXAMO-LICENSE-2026-10-11.md`）：可免版税商用但禁止原始资产再分发；当前树与历史均无 VRMA，仓库公开无风险；**M5 打包时安装包不打 VRMA（按需下载或自制替换）**。
 5. **M5 打包 + 真机**：定打包形态（是否内置 Python/ai-service sidecar）；`npm run tauri build` 出 `.dmg` / `.msi`，双平台实装验证；Windows 真机截图补齐。
+   - **⚠️ 芯片架构 / 系统版本口径（2026-10-11 核实，打包时逐条照做）**：
+     - **macOS 出一份 universal 包**：先 `rustup target add x86_64-apple-darwin aarch64-apple-darwin`，再 `npm run tauri build -- --target universal-apple-darwin`，一份 `.dmg` 通吃 Intel + M 系（体积约单架构两倍，可接受）。代码层已双架构就绪：Rust 依赖纯源码、Python 依赖均有双架构 wheel、`requirements.txt` 已锁 Intel 的 `cryptography<49`。
+     - **macOS 系统下限定为 12.0 (Monterey)**，打包时显式 `export MACOSX_DEPLOYMENT_TARGET=12.0`：Tauri 2 自身要求 10.15+，但 Python 3.11+ 预编译 wheel（pillow/cryptography/playwright 等）普遍按 macOS 12 编译，定 10.15 会在 universal 构建期报 "minimum OS version does not match deployment target"，且 M 系 Mac 物理下限就是 11。当前项目**没有任何显式版本声明**（`bundle.active=false`），不设就由构建机 SDK 决定，不可控。
+     - **Windows 只出 x64 一份**：Windows 11 on ARM 内置 x64 模拟，安装运行无感，社区主流做法即 ARM 走模拟；原生 `aarch64-pc-windows-msvc` 需要 VS "C++ ARM64 生成工具" 且 NSIS 安装器本体仍是 x86，收益低，暂不做。
+     - **Windows 系统下限定 Windows 10 1809 (build 17763) / Windows 11**；NSIS 安装包开启 WebView2 bootstrapper（Win10 可能未装 WebView2 Runtime，Win11 自带；Tauri 2.9+ 用全局 `bundle.windows.minimumWebview2Version`）。
+     - **签名公证是分发硬门槛**：macOS 不签名 + 公证，arm64 机器 Gatekeeper 拦截最严；Windows 不签名有 SmartScreen 首运警告（不影响运行）。需 Apple Developer 账号 / Windows 证书，发布前确认。
+     - **CI / 真机补充**：现有 `cross-platform-regression.yml` 的 macos-15（arm64）只跑后端测试，未构建 Tauri；打包前加 arm64 mac 与 windows x64 的 `tauri build` 冒烟；M 系真机至少一次实装验收（当前桌面端只有 Intel 真机记录）。
+     - 运行时外部二进制（Codex CLI、Playwright chromium）不进安装包，按用户机器架构各自安装，无打包负担；但需在 M 系真机确认 `scripts/launch-desktop-macos.sh` 的 PATH（已写死 `/opt/homebrew/bin`，Intel Homebrew 在 `/usr/local/bin`，目前靠 PATH 容错但未按架构区分）。
 6. **公开前最终核对**：`.env` / API key / 运行数据确认不入库；CI 两个 workflow 跑通；Releases 文案与截图就位。
 7. **M6 发布（需授权推送）**：公开仓库 + 挂 Release；随后启动宣传。
 
@@ -105,9 +113,18 @@
 - [x] 分级问题清单产出：`docs/SECURITY-AUDIT-2026-10-11.md`；无高危项
 
 ### C. VRM 资产授权（硬阻塞）
-- [ ] 自制可再分发 VRM 完成并验证（`allowRedistribution=True`）
-- [ ] 移除 komano / k81 / vrm_demo 三个第三方 VRM 并替换默认引用
+- [x] 自制可再分发 VRM 完成并验证（栖灵 qiling，VRoid 原创，`allowRedistribution=True`+可商用，三道闸+motion-lab 观感验收，2026-10-14）
+- [x] 移除 komano / k81 / vrm_demo 三个第三方角色卡（`config/personas/`，2026-10-14）；`data/persona-assets/` 资料库物理文件保留本地（gitignore，不入库不入包）
 - [x] 确认 motion-library（Mixamo 来源 VRMA）授权链路：见 `docs/MIXAMO-LICENSE-2026-10-11.md`；打包不入库/不入包
+
+**C 段发布前剩余要点（2026-10-14 更新）：**
+- [x] 代码层默认形象切 qiling（2026-10-14，374 passed + web build 验证）：
+  `services/ai-service/app/config.py` 字段兜底改 `active_persona_id="qiling"`，角色卡缺失时回落 `default`（旧安装/精简部署不加载空角色）；
+  首次向导 `apps/web/src/App.tsx` SetupWizard 显式默认 qiling，并移除 `personaId !== "default"` 写回特判（用户主动选千问时也正确写回）；
+  `.gitignore` 加 `!data/persona-assets/qiling/model.vrm` 例外，自制默认 VRM（18M）随仓库/包分发。
+- [x] 2D 立绘分发授权最终确认（2026-10-14 用户拍板）：原始参考图已找不到，千问（default）、蓝猫（persona_2）立绘按当前状态随包保留。
+- [ ] 蓝猫走完整 2D 角色路线（用户稍后处理）：单图 `PUT /api/personas/persona_2/avatar`（`normalize_avatar_image` → procedural_2d）已在用；如需眨眼/口型/发飘器官级动效，走分层 PSD → `scripts/import_psd_layers.py` → `layers.json`；并补齐 `config/personas/persona_2.yaml` 字段（`avatar_driver: procedural_2d`、`preset`、`profile`、静默口令）。
+- [x] 顺手项：`config/settings.yaml` 的 `voice.activation.persona_name` 与 `config.py` 字段兜底同步改「栖灵」（2026-10-14）。
 
 ### D. Git 历史与体积（硬阻塞，高危）
 - [x] 备份仓库（`.git` + VRM/VRMA → `~/qiling-backup-20261010`）
@@ -121,9 +138,13 @@
 
 ### E. 打包与真机（M5）
 - [ ] 定打包形态（是否内置 Python / ai-service sidecar）
-- [ ] macOS `.dmg` 构建并实装验证
-- [ ] Windows `.msi/.exe` 构建并实装 + 真机截图
-- [ ] （可选）macOS 公证 / Windows 签名
+- [ ] macOS：`MACOSX_DEPLOYMENT_TARGET=12.0` + `--target universal-apple-darwin`，出 Intel/M 通吃 `.dmg`（见待办 5 口径）
+- [ ] macOS universal `.dmg` 实装验证：Intel 真机（已有开发机）+ M 系真机/arm64 环境各一次
+- [ ] Windows：只出 x64 NSIS `.exe`，开 WebView2 bootstrapper；系统口径 Win10 1809+ / Win11
+- [ ] Windows x64 `.exe` 实装 + 真机截图（ARM Windows 走 x64 模拟，如有条件顺带验证）
+- [ ] CI 补 arm64 mac / windows x64 的 `tauri build` 冒烟（现 CI 未构建桌面端）
+- [ ] macOS 签名 + 公证（硬门槛，需 Apple Developer 账号）/ Windows 签名（避免 SmartScreen 警告）
+- [ ] M 系真机核对 `scripts/launch-desktop-macos.sh` PATH（`/opt/homebrew/bin` vs `/usr/local/bin`）
 
 ### F. 公开前最终核对
 - [ ] `.env` / API key / 运行数据 / 缓存不入库（复查 `.gitignore`）
