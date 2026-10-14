@@ -83,9 +83,9 @@ class Settings:
     voice_emotion: str | None = None
     voice_instruction: str | None = None
     # ── 角色卡与界面设置 ─────────────────────
-    active_persona_id: str = "default"
+    active_persona_id: str = "qiling"
     persona_voice: str = ""      # 角色卡显式绑定的音色；非空时优先于语音合成模型档案
-    persona_name: str = "千问"
+    persona_name: str = "栖灵"
     persona_kind: str = "assistant"
     persona_description: str = ""
     persona_personality: list[str] = field(default_factory=list)
@@ -106,7 +106,7 @@ class Settings:
     # ── 语音激活（常开/静默/唤醒，见 docs/VOICE-ACTIVATION.md）──
     activation_enabled: bool = True
     activation_default_state: str = "listening"   # listening | sleeping
-    activation_persona_name: str = "千问"          # 唤醒词 = 前缀 + 角色名（可自定义）
+    activation_persona_name: str = "栖灵"          # 唤醒词 = 前缀 + 角色名（可自定义）
     activation_wake_prefixes: list[str] = field(
         default_factory=lambda: ["你好", "嗨"]
     )
@@ -265,6 +265,12 @@ def load_settings() -> Settings:
         overrides["llm"] = legacy_llm
     settings.active_persona_id = str(overrides.get("active_persona_id", settings.active_persona_id))
     persona_cfg = _load_persona(root, settings.active_persona_id)
+    # 角色卡缺失（旧安装、精简部署）时回落到 default，避免加载出空角色
+    if not persona_cfg and settings.active_persona_id != "default":
+        default_cfg = _load_persona(root, "default")
+        if default_cfg:
+            settings.active_persona_id = "default"
+            persona_cfg = default_cfg
     _apply_persona(settings, persona_cfg)
     ui_cfg = overrides.get("ui", {}) if isinstance(overrides.get("ui"), dict) else {}
     settings.ui_language = str(ui_cfg.get("language", settings.ui_language))

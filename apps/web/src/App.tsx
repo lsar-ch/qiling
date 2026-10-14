@@ -1975,7 +1975,7 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
     fetchPersonas()
       .then((items) => {
         setPersonas(items);
-        setPersonaId((cur) => cur || items[0]?.id || "default");
+        setPersonaId((cur) => cur || items.find((item) => item.id === "qiling")?.id || items[0]?.id || "default");
       })
       .catch(() => setPersonaError(true));
   }, [step, personas.length]);
@@ -1990,8 +1990,7 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
         llm_model: model.trim(),
         setup_completed: true,
       };
-      // 选了非默认角色才写，避免对未改动用户多一次角色切换。
-      if (personaId && personaId !== "default") body.active_persona_id = personaId;
+      if (personaId) body.active_persona_id = personaId;
       if (withVoice) {
         if (dashscopeKey.trim()) body.dashscope_api_key = dashscopeKey.trim();
         if (minimaxKey.trim()) body.minimax_api_key = minimaxKey.trim();

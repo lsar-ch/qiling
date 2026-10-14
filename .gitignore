@@ -79,6 +79,7 @@ vrm-spike-lows-power.png
 # 禁止再分发的第三方 VRM / VRMA（自制可再分发资产完成前，仅本地保留用于测试）
 data/motion-library/
 data/persona-assets/*/model.vrm
+!data/persona-assets/qiling/model.vrm
 data/persona-assets/*/vrma/
 
 # OpenQodex 审查产物（本地报告，不入库）

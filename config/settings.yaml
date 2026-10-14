@@ -62,7 +62,7 @@ voice:
   activation:
     default_state: listening
     enabled: true
-    persona_name: 千问
+    persona_name: 栖灵
     sleep_phrases:
     - 暂时静默
     - 先静默
