@@ -1,22 +1,8 @@
 """把外部 GLB 角色转成符合本项目规格的 VRM 1.0 文件。
 
-用法：
-  blender --background --python scripts/vrm/build_vrm_from_glb.py
-
-环境变量：
-  QILING_SRC_GLB   源 GLB 路径
-  QILING_VRM_OUT   输出 .vrm 路径
-  QILING_VRM_BLEND 可选，保存中间 .blend
-  QILING_VRM_THUMB 可选，输出缩略图 .png
-
-设计要点（都是这个 GLB 的实测结论，改动前先读）：
-  1. 源网格的 rest pose 就是标准 T-pose，但 pose bone 上带了一个 A-pose
-     偏移四元数，导致蒙皮结果手臂下垂。必须先清空 action 再把所有
-     pose bone 归零，否则 humanoid T-pose 判定和后续表情都会错。
-  2. 源网格 40 万面、全平直着色（0 个 smooth 面），直接减面会变成水晶
-     棱角，所以减面后必须补一次 smooth-by-angle。
-  3. 五官坐标是用正交无光照特写 + 像素聚类 + 几何前表面探测得到的，
-     不要凭感觉改；换模型要重新跑检测。
+状态（2026-10-12，以 docs/CHARACTER-ASSET-FINAL-PLAN-2026-10-12.md 为准）：
+仅用于用户自备 GLB（含 AI 图生3D 产物）的玩具级试验转换。实测产物过闸门但
+观感为破碎低模、0 spring、表情硬凑，不作为官方形象来源；官方形象改走 VRoid Studio。
 """
 
 import bpy

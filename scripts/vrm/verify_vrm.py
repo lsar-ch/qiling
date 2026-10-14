@@ -43,6 +43,8 @@ def main(path):
           % (stats["upper_arms"]["left"], stats["upper_arms"]["right"]))
     print("    preset 表情 %d 个: %s"
           % (len(stats["expressions"]), stats["expressions"]))
+    print("    lookAt 类型 = %s（bone=眼球骨驱动，VRoid 默认）"
+          % stats.get("look_at_type"))
     print("    顶点 = %d, 三角面 = %d, morph target = %d (稀疏存储 %d)"
           % (stats["verts"], stats["tris"], stats["morph_targets"],
              stats["sparse_targets"]))

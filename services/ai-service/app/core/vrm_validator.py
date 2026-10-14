@@ -23,6 +23,14 @@ NEEDED_EXPRESSIONS = frozenset({
     "aa", "ih", "ou", "ee", "oh", "blink", "happy", "angry", "sad",
     "relaxed", "neutral", "lookUp", "lookDown", "lookLeft", "lookRight",
 })
+# 口型/情绪/眨眼：必须是表情 preset。
+CORE_EXPRESSIONS = frozenset({
+    "aa", "ih", "ou", "ee", "oh", "blink", "happy", "angry", "sad",
+    "relaxed", "neutral",
+})
+# 眼部四向：VRoid Studio 导出时走 lookAt 眼球骨而不是表情 preset，
+# 两种实现（表情 / 骨驱动）栖灵都经 vrm.lookAt.target 支持，任一齐全即可。
+LOOK_EXPRESSIONS = frozenset({"lookUp", "lookDown", "lookLeft", "lookRight"})
 
 CORE_HUMANOID = (
     "hips", "spine", "chest", "upperChest", "neck", "head",
@@ -259,16 +267,34 @@ def validate_vrm(data: bytes) -> VrmReport:
 
     expressions = sorted(vrm.get("expressions", {}).get("preset", {}))
     stats["expressions"] = expressions
-    lack = sorted(NEEDED_EXPRESSIONS - set(expressions))
-    check(not lack, f"15 个必备表情齐全（缺 {lack}）" if lack else "15 个必备表情齐全")
+    present = set(expressions)
+    lack_core = sorted(CORE_EXPRESSIONS - present)
+    check(not lack_core,
+          f"11 个核心表情齐全（缺 {lack_core}）" if lack_core else "11 个核心表情齐全")
+    # 眼部四向：有 look* preset 当然可以；没有时只要 VRM lookAt 配置可用即可
+    # （VRoid 2.x 默认 lookAt.type=bone + leftEye/rightEye 骨，运行时实测眼球会转）。
+    look_at = vrm.get("lookAt", {})
+    look_at_type = look_at.get("type")
+    stats["look_at_type"] = look_at_type
+    lack_look = sorted(LOOK_EXPRESSIONS - present)
+    if not lack_look:
+        check(True, "lookUp/Down/Left/Right 表情齐全")
+    elif look_at_type == "expression":
+        check(True, "眼部四向由 lookAt expression 驱动（VRoid/插件已映射）")
+    elif look_at_type == "bone":
+        eye_ok = all(b in bones for b in ("leftEye", "rightEye"))
+        check(eye_ok, "眼部四向由 lookAt bone 驱动"
+              if eye_ok else "lookAt.type=bone 但缺 leftEye/rightEye 骨映射，视线无法驱动")
+    else:
+        check(False, f"眼部四向缺失（缺 {lack_look} 表情且无可用的 lookAt bone/expression 配置）")
 
     tris, verts, targets, sparse_targets = _count_tris_and_targets(doc)
     stats.update(tris=tris, verts=verts, morph_targets=targets,
                  sparse_targets=sparse_targets)
     tris_hint = "" if tris <= MAX_TRIS else "；超出规格上限，需先减面"
     check(tris <= MAX_TRIS, f"三角面 {tris} <= {MAX_TRIS}{tris_hint}")
-    check(targets >= len(NEEDED_EXPRESSIONS),
-          f"morph target 数 {targets} >= {len(NEEDED_EXPRESSIONS)}")
+    check(targets >= len(CORE_EXPRESSIONS),
+          f"morph target 数 {targets} >= {len(CORE_EXPRESSIONS)}")
 
     materials = doc.get("materials", [])
     stats["materials"] = [

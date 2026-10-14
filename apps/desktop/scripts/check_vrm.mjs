@@ -25,20 +25,34 @@ if (!vrm) { console.log("FAIL: 不是可被 three-vrm 解析的 VRM"); process.e
 VRMUtils.rotateVRM0(vrm);
 console.log("meta.name:", vrm.meta?.name);
 console.log("meta.title:", vrm.meta?.title);
-const NEED = ["aa","ih","ou","ee","oh","blink","happy","angry","sad","relaxed","neutral","lookUp","lookDown","lookLeft","lookRight"];
+const CORE = ["aa","ih","ou","ee","oh","blink","happy","angry","sad","relaxed","neutral"];
+const LOOK = ["lookUp","lookDown","lookLeft","lookRight"];
+const NEED = [...CORE, ...LOOK];
 const presets = Object.keys(vrm.expressionManager?.presetExpressionMap ?? {});
 console.log("presetExpressionMap:", JSON.stringify(presets.sort()));
-const missing = NEED.filter((n) => !presets.includes(n));
-console.log(missing.length ? "FAIL missing expressions: " + missing : "OK 15 表情齐全");
+const missingCore = CORE.filter((n) => !presets.includes(n));
+const missingLook = LOOK.filter((n) => !presets.includes(n));
+// VRoid 2.x 不导出 look* 表情，而是用 lookAt 眼球骨驱动视线；栖灵 VrmStage 走 vrm.lookAt.target。
+const lookApplier = vrm.lookAt?.applier?.constructor?.name ?? "";
+const eyeBonesOk = !!vrm.humanoid?.getNormalizedBoneNode("leftEye")
+  && !!vrm.humanoid?.getNormalizedBoneNode("rightEye");
+const lookViaBone = /Bone/.test(lookApplier) && eyeBonesOk;
+console.log("lookAt applier:", lookApplier || "none", "| eye bones:", eyeBonesOk);
+console.log(missingCore.length ? "FAIL missing core expressions: " + missingCore : "OK 11 核心表情齐全");
+if (!missingLook.length) console.log("OK look 四向表情齐全");
+else if (lookViaBone) console.log("OK 眼部四向由 lookAt 眼球骨驱动（无需表情 preset，VRoid 默认形态）");
+else console.log("FAIL 眼部四向缺失：无表情 preset 且无可用 lookAt 骨驱动");
 for (const name of NEED) {
   const def = vrm.expressionManager.getExpression(name);
   // neutral 就是 rest 状态，VRM 1.0 允许空绑定；其余表情必须有 bind
-  const ok = !!def && (name === "neutral" || (def.binds?.length ?? 0) > 0);
+  const ok = (!!def && (name === "neutral" || (def.binds?.length ?? 0) > 0))
+    || (LOOK.includes(name) && lookViaBone);
   console.log(`  ${ok ? "OK  " : "BAD "} ${name.padEnd(10)} isBinary=${def?.isBinary} binds=${def?.binds?.length}`);
 }
 // 实际驱动一遍，确认 setValue 不抛错且权重生效
 const em = vrm.expressionManager;
 for (const name of NEED) {
+  if (!em.getExpression(name)) continue;
   em.setValue(name, 1.0);
   if (Math.abs((em.getValue(name) ?? 0) - 1.0) > 1e-6) {
     console.log(`  WARN ${name} setValue(1) -> ${em.getValue(name)}`);
@@ -66,4 +80,5 @@ let tris = 0, mats = new Set();
 vrm.scene.traverse((o) => { if (o.isMesh && o.geometry?.index) { tris += o.geometry.index.count / 3; (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>mats.add(m.uuid)); }});
 console.log("runtime tris:", tris, "materials:", mats.size);
 console.log("expressions total:", vrm.expressionManager?.expressions?.length);
-console.log("\nRESULT:", missing.length === 0 && bad.length === 0 ? "PASS" : "FAIL");
+const expressionsOk = missingCore.length === 0 && (missingLook.length === 0 || lookViaBone);
+console.log("\nRESULT:", expressionsOk && bad.length === 0 ? "PASS" : "FAIL");

@@ -23,17 +23,24 @@ VRoid Studio / Blender 按本规范导出
 | 材质数 | ≤ 16 | 合并材质/贴图集 |
 | spring bone 关节 | ≤ 30（数法见 §3） | 裁剪物理骨预算 |
 | 核心人骨 | 20 根齐全 | 导出前补骨映射 |
-| 必备表情 | 15 项齐全 | 补齐表情 |
+| 核心表情 | 11 项齐全 | 补齐表情 |
+| 眼部四向 | look 表情 **或** lookAt 骨驱动（VRoid 默认）二选一 | 见 §2 |
 | 授权四项边界 | 全部 false | 在导出工具里关掉 |
 | 缩略图 | 建议有 | 只警告，不拦 |
 | 体积 | 建议 < 12MB | 只警告，不拦 |
 
 ## 2. 必备表情与动作命名
 
-**15 个表情 preset**（缺一个就会被拦）：
+**11 个核心表情 preset**（缺一个就会被拦）：
 
 `aa` `ih` `ou` `ee` `oh` `blink` `happy` `angry` `sad` `relaxed` `neutral`
-`lookUp` `lookDown` `lookLeft` `lookRight`
+
+**眼部四向**（`lookUp` `lookDown` `lookLeft` `lookRight`）满足下面**任一**即可，2026-10-14 起闸门两种都认：
+
+1. 四个 look 表情 preset 齐全（老 Blender/VRChat 模型常见，`lookAt.type=expression`）；
+2. `lookAt.type=bone` 且 `leftEye`/`rightEye` 人骨都有映射（**VRoid Studio 2.x 默认导出形态**）。
+   VRoid「编辑表情」页只有 14 项（标准/高兴/悲伤/愤怒/欣喜/惊讶/闭眼×3/五个口型），本来就没有 look 四向；
+   视线由眼球骨承担，栖灵 `VrmStage` 经 `vrm.lookAt.target` 驱动，已实测可用。
 
 **11 个 VRMA 动作名**（文件名即 trigger，缺哪个运行时回退 idle）：
 
@@ -76,9 +83,15 @@ zip 内路径不允许含 `..`。
 ## 5. VRoid Studio 导出清单
 
 1. VRM Settings → Export Format 选 **VRM 1.0**
-2. 表情：确认自带 15 项基础表情（VRoid 默认齐全，改动面部后要复查）
-3. 头发物理：VRoid 默认物理链较多，导出后先跑 §7 校验；超 30 关节需裁剪
-4. 授权：按实际意图设置；模型来自第三方时，**保持原作者的收紧条款**
+2. 表情：VRoid 表情页只有 14 项（**没有眼部四向，这是正常的**）；视线走 lookAt 眼球骨，闸门已认可。改脸后复查 11 个核心表情没崩
+3. 头发物理：VRoid 默认物理链较多，**栖灵01 实测 42 关节 > 30**。先查「没穿的服装模板残留的零权重物理链」（该模型 6 条 CoatSkirt 链共 14 关节权重全 0）：源头在服装编辑器删掉该衣物，或跑 `python3 scripts/vrm/strip_weightless_springs.py in.vrm out.vrm` 剥除（实测 42→28，渲染零变化）。注意导出弹窗「删减骨骼→头发」滑块只减骨骼数、**不降 spring 关节数**。导出后跑 §7 校验数到 ≤30
+4. 授权（VRoid 导出对话框，逐项照设）：
+   - `A person who can perform with this avatar`（このアバターでの人格演じ分けを許可する人）选 **Everyone / 誰でも**
+     —— VRoid 默认是 `Only explicitly licensed person`（导出值 `onlySeparatelyLicensedPerson`），**会被闸门拦**
+   - Violent acts / Sexual acts / Political & religious / Antisocial use 一律 **Disallow**（对应四个 `allow*Usage=false`）
+   - Commercial use 按实际意图（自研官方形象选允许；栖灵闸门不查此项）
+   - Allow Redistribution **勾上**（`allowRedistribution=true`）；Modification 选 **Allow redistribution**（`allowModificationRedistribution`）；Credit notation 可留 unnecessary
+   - 模型来自第三方时，**保持原作者的收紧条款**，不要顺手放宽
 5. 导出后立即跑 §7 校验，再打包
 
 ## 6. Blender 导出清单

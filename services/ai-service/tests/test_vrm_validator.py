@@ -26,7 +26,8 @@ def glb(doc: dict, bin_bytes: bytes = b"") -> bytes:
 
 
 def spec_doc(*, tris: int = 300, materials: int = 1, spring_joints: int = 1,
-             expressions: int = 15, spec_version: str = "1.0") -> dict:
+             expressions: int = 15, spec_version: str = "1.0",
+             look_at: str | None = None) -> dict:
     """可调参数的合规文档，用于把某个维度推到阈值边界。"""
     presets = [
         "aa", "ih", "ou", "ee", "oh", "blink", "happy", "angry", "sad",
@@ -43,23 +44,29 @@ def spec_doc(*, tris: int = 300, materials: int = 1, spring_joints: int = 1,
     human["leftUpperArm"] = {"node": 2}
     human["rightUpperArm"] = {"node": 3}
     human["head"] = {"node": 1}
+    vrm_ext: dict = {
+        "specVersion": spec_version,
+        "meta": {
+            "avatarPermission": "onlyAuthor",
+            "allowExcessivelyViolentUsage": False,
+            "allowExcessivelySexualUsage": False,
+            "allowPoliticalOrReligiousUsage": False,
+            "allowAntisocialOrHateUsage": False,
+            "thumbnailImage": 0,
+        },
+        "humanoid": {"humanBones": human},
+        "expressions": {"preset": {p: {"morphTargetBinds": []} for p in presets}},
+    }
+    if look_at is not None:
+        vrm_ext["lookAt"] = {"type": look_at}
+        if look_at == "bone":
+            human["leftEye"] = {"node": 1}
+            human["rightEye"] = {"node": 1}
     return {
         "asset": {"version": "2.0"},
         "extensionsUsed": ["VRMC_vrm", "VRMC_springBone"],
         "extensions": {
-            "VRMC_vrm": {
-                "specVersion": spec_version,
-                "meta": {
-                    "avatarPermission": "onlyAuthor",
-                    "allowExcessivelyViolentUsage": False,
-                    "allowExcessivelySexualUsage": False,
-                    "allowPoliticalOrReligiousUsage": False,
-                    "allowAntisocialOrHateUsage": False,
-                    "thumbnailImage": 0,
-                },
-                "humanoid": {"humanBones": human},
-                "expressions": {"preset": {p: {"morphTargetBinds": []} for p in presets}},
-            },
+            "VRMC_vrm": vrm_ext,
             "VRMC_springBone": {
                 # 实际关节数 = entries - chains；这里 chains=1，故 entries = joints + 1
                 "springs": [{"joints": [{"node": 0}] * (spring_joints + 1)}],
@@ -144,9 +151,34 @@ def test_thresholds_at_and_over_limit() -> None:
 
 
 def test_missing_expression_is_blocking() -> None:
-    report = validate_vrm(glb(spec_doc(expressions=14)))
+    # 只有 11 个核心表情、缺 look 四向且没有 lookAt（非 VRoid 形态），必须拦
+    report = validate_vrm(glb(spec_doc(expressions=11)))
     assert not report.ok
-    assert any("必备表情" in e for e in report.errors)
+    assert any("眼部四向" in e for e in report.errors)
+
+
+def test_missing_core_expression_is_blocking() -> None:
+    doc = spec_doc()
+    del doc["extensions"]["VRMC_vrm"]["expressions"]["preset"]["happy"]
+    report = validate_vrm(glb(doc))
+    assert not report.ok
+    assert any("核心表情" in e for e in report.errors)
+
+
+def test_bone_look_at_replaces_look_expressions() -> None:
+    """VRoid 2.x 只导 14 个表情，眼部四向由 lookAt bone + leftEye/rightEye 实现。"""
+    report = validate_vrm(glb(spec_doc(expressions=14, look_at="bone")))
+    assert report.ok, report.errors
+    assert report.stats["look_at_type"] == "bone"
+
+
+def test_bone_look_at_without_eye_bones_is_blocking() -> None:
+    doc = spec_doc(expressions=11, look_at="bone")
+    doc["extensions"]["VRMC_vrm"]["humanoid"]["humanBones"].pop("leftEye")
+    doc["extensions"]["VRMC_vrm"]["humanoid"]["humanBones"].pop("rightEye")
+    report = validate_vrm(glb(doc))
+    assert not report.ok
+    assert any("leftEye/rightEye" in e for e in report.errors)
 
 
 def test_vrm0_is_rejected_with_upgrade_hint() -> None:

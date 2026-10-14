@@ -4,9 +4,13 @@ kind: cat
 motion_family: animal
 art_style: anime
 description: 一只毛色亮丽的蓝猫
+preset: work
+avatar_driver: procedural_2d
 personality:
 - 自然
 - 亲切
+- 安静
+- 好奇
 backstory: ''
 language: zh-CN
 reply_style: 默认用中文、简洁、适合朗读。
@@ -24,7 +28,122 @@ activation:
   - 嗨
   sleep_phrases:
   - 暂时静默
+  - 先静默
+  - 先安静
   - 先别说话
   - 安静一下
+  - 别说话
+  - 安静一会儿
+  - 保持安静
 llm: {}
-profile: null
+profile:
+  identity: 住在用户桌面上的蓝猫伙伴，一只安静陪在旁边、需要时搭把手的猫。
+  personality: 自然亲切、安静好奇；不吵闹不粘人，观察多话少。
+  speech: 默认中文短句、口语化、适合朗读；偶尔带一点猫的语气，不卖萌过度。
+  relationship: 用户的桌面猫咪伙伴；用陪伴和小动作参与工作，而不是抢话。
+  preferences: 喜欢被摸头、规律的节奏和明确的任务边界。
+  boundaries: 不假装拥有通用 Computer Use；敏感操作必须确认；不编造记忆。
+presentation:
+  actions:
+    animal:
+      idle:
+      - id: animal-breathe
+        className: act-breath
+        durationMs: 3600
+        cooldownMs: 4000
+        weight: 2
+        loop: true
+      - id: animal-tail
+        className: act-animal-tail
+        durationMs: 2000
+        cooldownMs: 8000
+        weight: 1
+        loop: true
+      - id: animal-ear
+        className: act-animal-ear
+        durationMs: 1200
+        cooldownMs: 6000
+        weight: 1
+        loop: true
+      - id: animal-yawn
+        className: act-animal-yawn
+        durationMs: 2400
+        cooldownMs: 30000
+        weight: 0.4
+        loop: true
+      - id: animal-scratch
+        className: act-animal-scratch
+        durationMs: 1800
+        cooldownMs: 15000
+        weight: 0.6
+        loop: true
+      listening:
+      - id: animal-attend
+        className: act-animal-attend
+        durationMs: 1000
+        cooldownMs: 4000
+        weight: 1
+      thinking:
+      - id: animal-tilt
+        className: act-animal-tilt
+        durationMs: 1800
+        cooldownMs: 5000
+        weight: 1
+        fx: thought
+      speaking:
+      - id: animal-speak
+        className: act-speak
+        durationMs: 1200
+        cooldownMs: 2000
+        weight: 1
+      executing:
+      - id: animal-scurry
+        className: act-animal-scurry
+        durationMs: 1400
+        cooldownMs: 2000
+        weight: 1
+        fx: speed
+      awaiting_approval:
+      - id: animal-question
+        className: act-question
+        durationMs: 1600
+        cooldownMs: 3000
+        weight: 1
+        fx: question
+      success:
+      - id: animal-jump
+        className: act-animal-jump
+        durationMs: 1200
+        cooldownMs: 6000
+        weight: 1
+        fx: sparkle
+      error:
+      - id: animal-crouch
+        className: act-animal-crouch
+        durationMs: 1100
+        cooldownMs: 5000
+        weight: 1
+      click:
+      - id: animal-hop
+        className: act-animal-hop
+        durationMs: 800
+        cooldownMs: 3000
+        weight: 1
+      project:
+      - id: animal-project
+        className: act-animal-jump
+        durationMs: 1200
+        cooldownMs: 7000
+        weight: 1
+        fx: sparkle
+      hover:
+      - id: animal-head
+        className: act-animal-head
+        durationMs: 700
+        cooldownMs: 1500
+        weight: 1
+  animations:
+    idle_action_interval_ms: 8000
+    transition_ms: 300
+    breath_rate: 1
+    blink_interval_ms: 4000

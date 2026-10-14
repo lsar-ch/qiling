@@ -129,11 +129,13 @@ if (joints.length === 0) { console.error("spring 全丢：joints 是单节点链
 
 ### 4.1 缺失的 preset 不会报错，只会不生效
 
-**判据**：`lookAt.type` 需要 `lookUp/Down/Left/Right` 四个 preset。
-挂件代码若 `setValue("lookLeft", …)` 而模型没有该槽位，调用会被静默忽略。
+**判据**：仅当 `lookAt.type=expression` 时才需要 `lookUp/Down/Left/Right` 四个 preset。
+`lookAt.type=bone`（**VRoid Studio 2.x 默认**：表情页只有 14 项，没有 look 四向）
+由 `leftEye`/`rightEye` 眼球骨驱动，挂件走 `vrm.lookAt.target`，不调 look 表情。
+2026-10-14 栖灵01.vrm 实测：bone applier 下目标移动双眼按方向旋转，闸门已改为两种都认可。
 
-**动作**：用 `apps/desktop/scripts/check_vrm.mjs` 逐项检查 15 个必备表情，
-不要只检查「有没有 expressions 字段」。
+**动作**：用 `apps/desktop/scripts/check_vrm.mjs` 检查 11 个核心表情 + 眼部四向（表情或骨驱动任一），
+不要只检查「有没有 expressions 字段」，也不要强卡 VRoid 导出 look preset。
 
 ### 4.2 `neutral` 允许空绑定
 

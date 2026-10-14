@@ -1,16 +1,9 @@
 """Headless Blender build of 栖灵's original VRM 1.0 mascot.
 
-Run:  blender --background --python scripts/vrm/build_qiling_vrm.py
-Requires the "VRM format" add-on (extension id: vrm) installed and enabled.
-
-Environment variables:
-  QILING_VRM_OUT           output model.vrm       (required)
-  QILING_VRM_BLEND         output source .blend   (optional)
-  QILING_VRM_THUMB         output thumbnail .png  (optional)
-  QILING_VRM_SKIP_THUMB=1  skip the EEVEE render
-
-Blender space convention: +Z up, -Y forward, +X is the character's left side,
-which the VRM exporter mirrors into the VRM "*Right*" bones.
+STATUS (2026-10-12, see docs/CHARACTER-ASSET-FINAL-PLAN-2026-10-12.md):
+NOT the official-mascot pipeline. Output passes all gates but is a blocky Q-style
+procedural model that does not meet visual delivery quality; official avatar moves
+to VRoid Studio. Kept as a bpy headless/programming reference only.
 """
 
 import addon_utils
