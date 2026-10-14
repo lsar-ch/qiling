@@ -24,7 +24,6 @@ cp -R "$ROOT/build/sidecar/dist/ai-service" "$RES/runtime/ai-service"
 "$ROOT/.venv/bin/python" "$ROOT/scripts/package/stage_home.py" "$RES/home-template"
 
 echo "== 4/4 Tauri 构建"
-TARGET_ARGS=()
 case "$ARCH" in
   x86_64) RUST_TARGET=x86_64-apple-darwin ;;
   aarch64) RUST_TARGET=aarch64-apple-darwin ;;
