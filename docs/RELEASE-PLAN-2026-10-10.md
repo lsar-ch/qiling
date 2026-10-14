@@ -137,13 +137,15 @@
 > filter-repo 已移除 origin，已重新配置（不推送）。
 
 ### E. 打包与真机（M5）
-- [ ] 定打包形态（是否内置 Python / ai-service sidecar）
-- [ ] macOS：`MACOSX_DEPLOYMENT_TARGET=12.0` + `--target universal-apple-darwin`，出 Intel/M 通吃 `.dmg`（见待办 5 口径）
-- [ ] macOS universal `.dmg` 实装验证：Intel 真机（已有开发机）+ M 系真机/arm64 环境各一次
+- [x] 定打包形态（2026-10-14）：**内置 Python sidecar**。PyInstaller onedir 冻结 ai-service（`services/ai-service/ai-service.spec` + `sidecar_entry.py`）；home 模板（config + web dist + 三角色资产，28M）由 Rust 首启拷到 `~/Library/Application Support/app.qiling.desktop`；Rust 按「Resources 里有 sidecar → 打包态，否则走 .venv 开发态」自动分流（`lib.rs`）。构建：`scripts/package/build-macos.sh` + `stage-home.sh`。
+- [x] macOS x86_64 `.dmg` 本机构建 + 端到端验证（2026-10-14）：ad-hoc 签名（`codesign --verify --deep --strict` 通过），`Qiling_0.1.0_x64.dmg` 123MB；首启播种、/api/health、UI/角色/头像 200、挂件租约正常。
+- [ ] **架构口径变更（2026-10-14 决策）：改发 arm64 / intel 两份 DMG，放弃 universal。** 内置 Python sidecar 无法在 Intel 机交叉冻结 arm64（PyInstaller 只能用本机架构 Python/wheels），Reor 等同类产品也是双包。CI 用 macos-13（x64）+ macos-14（arm64）各跑 `scripts/package/build-macos.sh x86_64|aarch64`；`MACOSX_DEPLOYMENT_TARGET=12.0` 维持。
+- [ ] macOS arm64 `.dmg`：CI（macos-14）构建 + M 系真机实装验证
+- [ ] macOS x86_64：全新用户目录（非本机开发环境）实装一次并截图
 - [ ] Windows：只出 x64 NSIS `.exe`，开 WebView2 bootstrapper；系统口径 Win10 1809+ / Win11
 - [ ] Windows x64 `.exe` 实装 + 真机截图（ARM Windows 走 x64 模拟，如有条件顺带验证）
 - [ ] CI 补 arm64 mac / windows x64 的 `tauri build` 冒烟（现 CI 未构建桌面端）
-- [ ] macOS 签名 + 公证（硬门槛，需 Apple Developer 账号）/ Windows 签名（避免 SmartScreen 警告）
+- [x] macOS v0.1 不买 Apple Developer 账号（2026-10-14 拍板）：ad-hoc 签名 + README/Release Notes 写右键打开 / xattr 绕过说明；技术社区先行，后续有非技术用户再补 Developer ID 与公证。Windows 同样不签名，接受 SmartScreen 首运警告。
 - [ ] M 系真机核对 `scripts/launch-desktop-macos.sh` PATH（`/opt/homebrew/bin` vs `/usr/local/bin`）
 
 ### F. 公开前最终核对

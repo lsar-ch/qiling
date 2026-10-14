@@ -84,3 +84,7 @@ data/persona-assets/*/vrma/
 
 # OpenQodex 审查产物（本地报告，不入库）
 /.openqodex/
+
+# M5 打包临时组装目录与冻结产物
+build/
+apps/desktop/src-tauri/resources/

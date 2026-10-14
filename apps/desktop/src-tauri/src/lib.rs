@@ -22,16 +22,79 @@ const SERVICE_PORT: u16 = 8736;
 const MAIN_UI_VISIBILITY: &str = "main-ui-visibility";
 /// 挂件要求主界面切到指定会话：主界面据此加载长回复所在的会话。
 const MAIN_UI_OPEN_CONVERSATION: &str = "main-ui-open-conversation";
-const SERVICE_START_TIMEOUT: Duration = Duration::from_secs(15);
+const SERVICE_START_TIMEOUT: Duration = Duration::from_secs(30);
 const SERVICE_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const SERVICE_PORT_GRACE: Duration = Duration::from_millis(1500);
 const LOG_TAIL_CHARS: usize = 4000;
 
 struct Shared {
     child: Option<Child>,
-    repo_root: Option<PathBuf>,
+    /// QILING_HOME：开发态=仓库根；打包态=Application Support 里的可写副本
+    home_root: Option<PathBuf>,
+    /// 打包态冻结的 ai-service 二进制；None 时走开发态 .venv python
+    sidecar_bin: Option<PathBuf>,
     spawn_error: Option<String>,
     log_path: Option<PathBuf>,
+}
+
+/// 打包/开发两种服务布局解析结果（首启时把只读模板拷成可写 home）。
+fn resolve_layout(app: &AppHandle) -> Shared {
+    use tauri::Manager;
+
+    // 打包态：Resources/home-template + Resources/runtime/ai-service
+    if let Ok(res_dir) = app.path().resource_dir() {
+        let template = res_dir.join("home-template");
+        #[cfg(target_os = "windows")]
+        let bin = res_dir.join("runtime").join("ai-service").join("ai-service.exe");
+        #[cfg(not(target_os = "windows"))]
+        let bin = res_dir.join("runtime").join("ai-service").join("ai-service");
+        if template.is_dir() && bin.is_file() {
+            let mut shared = Shared {
+                child: None,
+                home_root: None,
+                sidecar_bin: Some(bin),
+                spawn_error: None,
+                log_path: None,
+            };
+            match app.path().app_data_dir() {
+                Ok(home) => {
+                    if !home.join(".seed-version").is_file() {
+                        if let Err(error) = copy_dir_recursive(&template, &home) {
+                            shared.spawn_error = Some(format!("初始化应用数据失败: {error}"));
+                            return shared;
+                        }
+                    }
+                    shared.home_root = Some(home);
+                }
+                Err(error) => shared.spawn_error = Some(format!("定位应用数据目录失败: {error}")),
+            }
+            return shared;
+        }
+    }
+
+    // 开发态：仓库根 + .venv
+    Shared {
+        child: None,
+        home_root: discover_repo_root(),
+        sidecar_bin: None,
+        spawn_error: None,
+        log_path: None,
+    }
+}
+
+/// 递归拷贝首启模板（模板内无符号链接，按普通文件复制即可）。
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            let _ = fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 struct ChildState(Mutex<Shared>);
@@ -46,13 +109,8 @@ struct ServiceStatus {
 }
 
 impl ChildState {
-    fn new() -> Self {
-        ChildState(Mutex::new(Shared {
-            child: None,
-            repo_root: discover_repo_root(),
-            spawn_error: None,
-            log_path: None,
-        }))
+    fn new(app: &AppHandle) -> Self {
+        ChildState(Mutex::new(resolve_layout(app)))
     }
 
     fn snapshot(&self) -> ServiceStatus {
@@ -81,7 +139,7 @@ impl ChildState {
         ServiceStatus {
             running,
             url: format!("http://127.0.0.1:{SERVICE_PORT}/"),
-            repo_ok: shared.repo_root.is_some(),
+            repo_ok: shared.home_root.is_some(),
             spawn_error: shared.spawn_error.clone(),
             log_path: shared
                 .log_path
@@ -236,22 +294,24 @@ fn start_service(shared: &mut Shared) {
         }
     }
 
-    let Some(root) = shared.repo_root.clone() else {
-        shared.spawn_error = Some("未找到项目根目录（services/ai-service）".into());
+    let Some(home) = shared.home_root.clone() else {
+        shared.spawn_error = Some("未找到运行目录（services/ai-service 或应用数据目录）".into());
         return;
     };
 
+    // 开发态：仓库内 .venv 跑 uvicorn；打包态：Resources 里的冻结 sidecar
     #[cfg(target_os = "windows")]
-    let python = root.join(".venv").join("Scripts").join("python.exe");
+    let python = home.join(".venv").join("Scripts").join("python.exe");
     #[cfg(not(target_os = "windows"))]
-    let python = root.join(".venv").join("bin").join("python");
-    if !python.is_file() {
+    let python = home.join(".venv").join("bin").join("python");
+    let is_packaged = shared.sidecar_bin.is_some();
+    if !is_packaged && !python.is_file() {
         shared.spawn_error = Some("缺少 .venv，请先运行 scripts/setup.sh 初始化环境".to_string());
         return;
     }
 
-    let service_dir = root.join("services").join("ai-service");
-    let run_dir = root.join("data").join("run");
+    let service_dir = home.join("services").join("ai-service");
+    let run_dir = home.join("data").join("run");
     if let Err(error) = fs::create_dir_all(&run_dir) {
         shared.spawn_error = Some(format!("创建运行日志目录失败: {error}"));
         return;
@@ -282,21 +342,33 @@ fn start_service(shared: &mut Shared) {
     let stderr = Stdio::from(log_file);
 
     let port = SERVICE_PORT.to_string();
-    let mut command = Command::new(&python);
-    command
-        .args([
-            "-m",
-            "uvicorn",
-            "app.main:app",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port,
-        ])
-        .current_dir(&service_dir)
-        .stdin(Stdio::null())
-        .stdout(stdout)
-        .stderr(stderr);
+    let mut command = match shared.sidecar_bin.clone() {
+        Some(bin) => {
+            let mut command = Command::new(bin);
+            command
+                .env("QILING_HOME", &home)
+                .env("QILING_HOST", "127.0.0.1")
+                .env("QILING_PORT", &port);
+            command
+        }
+        None => {
+            let mut command = Command::new(&python);
+            command
+                .args([
+                    "-m",
+                    "uvicorn",
+                    "app.main:app",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    &port,
+                ])
+                .current_dir(&service_dir)
+                .env("QILING_HOME", &home);
+            command
+        }
+    };
+    command.stdin(Stdio::null()).stdout(stdout).stderr(stderr);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -508,7 +580,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            app.manage(ChildState::new());
+            app.manage(ChildState::new(app.handle()));
             let launcher_needed = !ensure_service_for_app(app.handle());
             if launcher_needed {
                 if let Some(win) = app.get_webview_window("main") {
