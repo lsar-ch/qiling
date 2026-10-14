@@ -12,7 +12,7 @@ echo "== 1/4 主界面构建"
 
 echo "== 2/4 冻结 ai-service（PyInstaller onedir）"
 ( "$ROOT/.venv/bin/pyinstaller" --version >/dev/null 2>&1 ) || \
-  "$ROOT/.venv/bin/pip" install pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple
+  "$ROOT/.venv/bin/pip" install pyinstaller
 (cd "$ROOT/services/ai-service" &&
   "$ROOT/.venv/bin/pyinstaller" ai-service.spec --noconfirm \
     --distpath "$ROOT/build/sidecar/dist" --workpath "$ROOT/build/sidecar/work")
@@ -21,16 +21,18 @@ echo "== 3/4 组装 src-tauri/resources"
 mkdir -p "$RES/runtime"
 rm -rf "$RES/runtime/ai-service" "$RES/home-template"
 cp -R "$ROOT/build/sidecar/dist/ai-service" "$RES/runtime/ai-service"
-"$ROOT/scripts/package/stage-home.sh" "$RES/home-template"
+"$ROOT/.venv/bin/python" "$ROOT/scripts/package/stage_home.py" "$RES/home-template"
 
 echo "== 4/4 Tauri 构建"
 TARGET_ARGS=()
 case "$ARCH" in
-  x86_64) TARGET_ARGS=(-- --target x86_64-apple-darwin) ;;
-  aarch64) TARGET_ARGS=(-- --target aarch64-apple-darwin) ;;
-  universal) TARGET_ARGS=(-- --target universal-apple-darwin) ;;
+  x86_64) RUST_TARGET=x86_64-apple-darwin ;;
+  aarch64) RUST_TARGET=aarch64-apple-darwin ;;
+  universal) RUST_TARGET=universal-apple-darwin ;;
+  *) echo "未知架构: $ARCH（支持 x86_64 | aarch64 | universal）" >&2; exit 1 ;;
 esac
 (cd "$ROOT/apps/desktop" &&
-  MACOSX_DEPLOYMENT_TARGET=12.0 npm run tauri build --config src-tauri/tauri.release.json "${TARGET_ARGS[@]}")
+  MACOSX_DEPLOYMENT_TARGET=12.0 npm run tauri -- build \
+    --config src-tauri/tauri.release.json --target "$RUST_TARGET")
 
-echo "完成：$ROOT/apps/desktop/src-tauri/target/${ARCH}/release/bundle"
+echo "完成：$ROOT/apps/desktop/src-tauri/target/$RUST_TARGET/release/bundle"

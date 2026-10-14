@@ -26,6 +26,21 @@ docs/             需求、技术方案、V1 接口与实施顺序
 - 端口规范：ai-service `8736`（托管主界面 + `/api`）、web dev `5173`、desktop dev `1420`。
 - 现有 `src/`（PyQt6 早期原型）只作参考，不参与新架构运行。
 
+## 下载安装（v0.1）
+
+从 [Releases](../../releases) 下载对应平台安装包（无需自备 Python，运行时已内置）：
+
+- **Apple 芯片 Mac**：`Qiling_*_arm64.dmg`
+- **Intel Mac**：`Qiling_*_x64.dmg`（需 macOS 12 Monterey 或更高）
+- **Windows**：`Qiling_*_x64-setup.exe`（需 Windows 10 1809 / Windows 11 或更高，自带 WebView2 引导）
+
+v0.1 尚未购买 Apple Developer / Windows 代码签名证书，首次打开会有系统安全提示，属正常现象：
+
+- **macOS**：若提示「无法验证开发者」或「已损坏」，把 Qiling 拖进「应用程序」后**右键点应用 → 打开**确认一次；仍不行则在终端执行
+  `xattr -dr com.apple.quarantine /Applications/Qiling.app`。
+- **Windows**：SmartScreen 蓝色警告时点「更多信息 → 仍要运行」。
+- 浏览器执行器的 Chromium 内核不随包分发，首次使用时按界面提示下载。
+
 ## 快速开始
 
 ```bash

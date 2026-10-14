@@ -142,9 +142,9 @@
 - [ ] **架构口径变更（2026-10-14 决策）：改发 arm64 / intel 两份 DMG，放弃 universal。** 内置 Python sidecar 无法在 Intel 机交叉冻结 arm64（PyInstaller 只能用本机架构 Python/wheels），Reor 等同类产品也是双包。CI 用 macos-13（x64）+ macos-14（arm64）各跑 `scripts/package/build-macos.sh x86_64|aarch64`；`MACOSX_DEPLOYMENT_TARGET=12.0` 维持。
 - [ ] macOS arm64 `.dmg`：CI（macos-14）构建 + M 系真机实装验证
 - [ ] macOS x86_64：全新用户目录（非本机开发环境）实装一次并截图
-- [ ] Windows：只出 x64 NSIS `.exe`，开 WebView2 bootstrapper；系统口径 Win10 1809+ / Win11
+- [x] Windows x64 NSIS 链路配置完成（2026-10-14，Tauri 默认 downloadBootstrapper + `build-windows.ps1`）；**待 windows runner 与真机实装验证**。
 - [ ] Windows x64 `.exe` 实装 + 真机截图（ARM Windows 走 x64 模拟，如有条件顺带验证）
-- [ ] CI 补 arm64 mac / windows x64 的 `tauri build` 冒烟（现 CI 未构建桌面端）
+- [x] release CI 落地（2026-10-14）：`.github/workflows/release-desktop.yml` 手动触发，macos-13(x64)/macos-14(arm64)/windows-latest 三 runner，产物上传 artifacts（不公开发布）；构建脚本 `scripts/package/build-macos.sh`、`build-windows.ps1`、跨平台 `stage_home.py`。**待 CI 首次实跑验证**。
 - [x] macOS v0.1 不买 Apple Developer 账号（2026-10-14 拍板）：ad-hoc 签名 + README/Release Notes 写右键打开 / xattr 绕过说明；技术社区先行，后续有非技术用户再补 Developer ID 与公证。Windows 同样不签名，接受 SmartScreen 首运警告。
 - [ ] M 系真机核对 `scripts/launch-desktop-macos.sh` PATH（`/opt/homebrew/bin` vs `/usr/local/bin`）
 

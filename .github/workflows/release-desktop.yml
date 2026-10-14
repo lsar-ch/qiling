@@ -1,0 +1,80 @@
+name: release-desktop
+
+# 手动构建桌面安装包：产物只上传到 workflow artifacts，不公开发布。
+# 验收通过后再由人工挂到 GitHub Release（发布属高危外部动作，逐次授权）。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-13, arch: x86_64, artifact: x64 }
+          - { runner: macos-14, arch: aarch64, artifact: arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Python 依赖
+        run: |
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install -e packages/contracts/py -r services/ai-service/requirements.txt pyinstaller
+      - name: 前端依赖
+        working-directory: apps/web
+        run: npm ci --no-audit --no-fund
+      - name: 桌面前端依赖
+        working-directory: apps/desktop
+        run: npm ci --no-audit --no-fund
+      - name: 构建 DMG
+        run: ./scripts/package/build-macos.sh ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Qiling-0.1.0_macos_${{ matrix.artifact }}
+          path: apps/desktop/src-tauri/target/${{ matrix.arch }}-apple-darwin/release/bundle/dmg/*.dmg
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Python 依赖
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -e packages\contracts\py -r services\ai-service\requirements.txt pyinstaller
+      - name: 前端依赖
+        working-directory: apps/web
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+      - name: 桌面前端依赖
+        working-directory: apps/desktop
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+      - name: 构建 NSIS
+        shell: pwsh
+        run: powershell -File scripts/package/build-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Qiling-0.1.0_windows_x64
+          path: apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
