@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from app.config import obsidian_vault_dir
 from app.memory.service import MemoryService, read_mirror_status
 
 router = APIRouter(prefix="/api/memories", tags=["memory"])
@@ -141,9 +142,13 @@ def obsidian_search(
 ) -> dict:
     if request.app.state.settings.memory_mode != "obsidian_linked":
         return {"available": False, "path": request.app.state.settings.obsidian_vault_path, "items": []}
-    root = Path(request.app.state.settings.obsidian_vault_path).expanduser()
-    if not root.is_dir():
-        return {"available": False, "path": str(root), "items": []}
+    root = obsidian_vault_dir(request.app.state.settings.obsidian_vault_path)
+    if root is None:
+        return {
+            "available": False,
+            "path": request.app.state.settings.obsidian_vault_path,
+            "items": [],
+        }
     query = q.casefold()
     items = []
     for path in sorted(root.rglob("*.md")):

@@ -109,6 +109,25 @@ def test_obsidian_search_is_read_only(tmp_path: Path, monkeypatch) -> None:
         assert data["items"][0]["path"] == "note.md"
 
 
+def test_unset_vault_path_is_never_treated_as_linked(tmp_path: Path, monkeypatch) -> None:
+    """库路径未配置时不能把进程 cwd 当成库：Path("") 退化成 "." 且 is_dir() 恒真。"""
+    prepare_home(tmp_path, monkeypatch)
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+
+    with TestClient(create_app(load_settings())) as client:
+        memory = client.get("/api/settings").json()["memory"]
+        assert memory["obsidian_default_path"] == ""
+        assert memory["obsidian_configured"] is False
+
+        assert client.put("/api/settings", json={"memory_mode": "obsidian_linked"}).status_code == 200
+
+        assert client.get("/api/health").json()["memory_stats"]["obsidian_linked"] is False
+        assert client.get("/api/settings").json()["memory"]["obsidian_configured"] is False
+        search = client.get("/api/memories/obsidian/search", params={"q": "本地优先"}).json()
+        assert search["available"] is False
+        assert search["items"] == []
+
+
 def test_obsidian_check_is_read_only_and_does_not_create_mirror(tmp_path: Path, monkeypatch) -> None:
     prepare_home(tmp_path, monkeypatch)
     vault = tmp_path / "vault"

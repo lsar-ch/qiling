@@ -20,7 +20,7 @@ from starlette.concurrency import run_in_threadpool
 
 from qiling_contracts.events import EventEnvelope
 
-from app.config import PerformanceMode, is_lite_mode, load_settings
+from app.config import PerformanceMode, is_lite_mode, load_settings, obsidian_vault_dir
 from app.core.persona_asset import NormalizedAvatar, normalize_avatar_image, png_bytes
 from app.core.vrm_validator import validate_vrm, validate_vrma
 from app.agents.factory import rebuild_agent_registry
@@ -154,8 +154,8 @@ def _reload_runtime(request: Request) -> None:
         request.app.state.agent_catalog,
         request.app.state.llm_provider,
     )
-    vault = Path(request.app.state.settings.obsidian_vault_path).expanduser()
-    if request.app.state.settings.memory_mode == "obsidian_linked" and vault.is_dir():
+    vault = obsidian_vault_dir(request.app.state.settings.obsidian_vault_path)
+    if request.app.state.settings.memory_mode == "obsidian_linked" and vault is not None:
         request.app.state.memory.set_vault_mirror(vault)
     else:
         request.app.state.memory.set_vault_mirror(None)
@@ -255,7 +255,7 @@ def _public_settings(request: Request) -> dict[str, Any]:
             "obsidian_vault_path": settings.obsidian_vault_path,
             "obsidian_default_path": settings.obsidian_default_path,
             "obsidian_configured": settings.memory_mode == "obsidian_linked"
-            and Path(settings.obsidian_vault_path).expanduser().is_dir(),
+            and obsidian_vault_dir(settings.obsidian_vault_path) is not None,
         },
         "llm": {
             "provider": settings.llm_provider,

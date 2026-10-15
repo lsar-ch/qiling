@@ -5,12 +5,11 @@ from __future__ import annotations
 import platform
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.config import is_lite_mode, resolve_llm_provider
+from app.config import is_lite_mode, obsidian_vault_dir, resolve_llm_provider
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -82,7 +81,7 @@ def _memory_stats(request: Request) -> dict[str, Any]:
         total = sum(item.entry_count for item in memory.overview())
     except OSError:
         total = 0
-    vault = Path(settings.obsidian_vault_path).expanduser()
+    vault = obsidian_vault_dir(settings.obsidian_vault_path)
     compiled = settings.memory_dir / "compiled" / "memory.md"
     last_compile = None
     try:
@@ -94,7 +93,7 @@ def _memory_stats(request: Request) -> dict[str, Any]:
         pass
     return {
         "total_entries": total,
-        "obsidian_linked": settings.memory_mode == "obsidian_linked" and vault.is_dir(),
+        "obsidian_linked": settings.memory_mode == "obsidian_linked" and vault is not None,
         "last_compile": last_compile,
     }
 

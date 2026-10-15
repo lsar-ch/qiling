@@ -19,9 +19,21 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8736
 DEFAULT_WEB_DEV_PORT = 5173
 DEFAULT_DESKTOP_DEV_PORT = 1420
-DEFAULT_OBSIDIAN_VAULT_PATH = (
-    "/Users/lxb/Library/Mobile Documents/iCloud~md~obsidian/Documents/knowledge/knowledge"
-)
+# 不预置任何人的库路径：空值=未配置，由用户在设置里填写（本机路径写 data/settings.local.json，已 gitignore）
+DEFAULT_OBSIDIAN_VAULT_PATH = ""
+
+
+def obsidian_vault_dir(vault_path: str) -> Path | None:
+    """返回已配置且真实存在的 Obsidian 库目录，否则 None。
+
+    空串必须显式挡住：Path("") 会退化成当前目录且 is_dir() 恒真，
+    否则健康检查、设置项和库镜像会把进程 cwd 误当成用户的库。
+    """
+    raw = (vault_path or "").strip()
+    if not raw:
+        return None
+    vault = Path(raw).expanduser()
+    return vault if vault.is_dir() else None
 
 
 class PerformanceMode(StrEnum):
