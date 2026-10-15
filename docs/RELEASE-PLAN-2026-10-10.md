@@ -143,6 +143,7 @@
 - [x] **架构口径变更（2026-10-14 决策）：改发 arm64 / intel 两份 DMG，放弃 universal。** 内置 Python sidecar 无法在 Intel 机交叉冻结 arm64（PyInstaller 只能用本机架构 Python/wheels），Reor 等同类产品也是双包。CI 用 macos-13（x64）+ macos-14（arm64）各跑 `scripts/package/build-macos.sh x86_64|aarch64`；`MACOSX_DEPLOYMENT_TARGET=12.0` 维持。→ 口径已落地：x64 本机（2026-10-14）+ arm64 CI（2026-10-15）两份包均已产出。
 - [x] macOS arm64 `.dmg`：CI（macos-14）构建成功（2026-10-15，artifact 113MB）。**M 系真机实装验证移出 v0.1 发布清单，延后 v0.1.x 补丁**（2026-10-15 决策：CI 产物已出且与 x64 同一构建脚本，作者本机为 Intel 无 M 系真机，不为借机器阻塞发布）
 - [ ] macOS x86_64：全新用户目录实装一次并截图。**做法纠正（2026-10-15）：不需要新建 macOS 系统用户** —— 应用的每用户数据只有 `~/Library/Application Support/app.qiling.desktop`（28M），改名备份即为全新目录，首启会重新播种。本机已有 2026-10-15 12:35 构建的 `Qiling_0.1.0_x64.dmg`（117M，路径 `apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/`），但正式验收取本节末尾「产物重建」后的新包
+- [~] macOS x86_64 全新目录实装第一轮（2026-10-15 20:34，**部分通过**）：用修复后重建的 DMG（117M，20:33）装到 `/Applications`，`codesign --verify --deep --strict` valid；旧数据目录改名备份为 `app.qiling.desktop.bak-20261015-203420`；首启播种 28M 正常，`qiling-desktop` + 冻结 `ai-service` 双进程起，`/api/personas`（3 角色）、`/api/agents`（8 执行器）、`/api/health` 均 200。**vault 路径修复已在安装包内验证**：`/api/settings` 的 `obsidian_default_path` 与 `obsidian_vault_path` 均为空串（修复前会是作者 iCloud 路径）。两项未完成：① 截图 —— 终端未获「屏幕录制」权限；② 真实对话一轮 —— `.env` 里 `OPENAI_API_KEY` 与 `DASHSCOPE_API_KEY` 均返回 403 Free quota exhausted（账号额度问题，非打包问题；链路已通到供应商，并把 403 优雅降级成可读错误事件）。
 - [x] Windows x64 NSIS 链路配置完成（2026-10-14）并在 windows-latest runner 构建成功（2026-10-15，artifact 79MB）；真机实装验证仍待做。
 - [ ] Windows x64 `.exe` 实装 + 真机截图（ARM Windows 走 x64 模拟，如有条件顺带验证）。**任务卡已建（2026-10-15）**：`docs/CROSS-PLATFORM-TESTING.md` §「Windows v0.1 安装包实装验收（外部协作者任务卡）」，交 WorkBuddy 在 Windows 真机执行，等回传截图与逐项结论
 - [x] release CI 落地（2026-10-14）：`.github/workflows/release-desktop.yml` 手动触发，macos-13(x64)/macos-14(arm64)/windows-latest 三 runner，产物上传 artifacts（不公开发布）；构建脚本 `scripts/package/build-macos.sh`、`build-windows.ps1`、跨平台 `stage_home.py`。首次实跑（run 38662701917，2026-10-15）arm64 DMG + Windows EXE 成功；x64 macos-13 因 GitHub runner 容量长时间排队待调度（x64 DMG 已于 2026-10-14 本机 Intel 构建并端到端验证）。
@@ -158,6 +159,7 @@
   3. 其余 `/Users/lxb` 出现在 `AGENTS.md`、`WORKBUDDY-WINDOWS-MIGRATION.md`、`scripts/launch-desktop-macos.sh`、`assets/icon/candidates/*.html`、8 个 docs 文件：非密钥，属观感/隐私噪声，公开前决定是否一并参数化（`$HOME`）或保留。
 - [x] CI 两个 workflow 跑通（2026-10-15，新历史 `0929f0f`）：cross-platform-regression macOS 干净环境 + Windows 双绿（修掉干净 runner 无 key 时 `test_health` 误断言 ok），security-scan success。release-desktop 见 E 段（x64 待 runner 调度）。
 - [ ] Release Notes / 截图 / 安装步骤就位
+- [ ] **待定：语音未配置时 health 顶层判 error（2026-10-15 全新实装发现）**。`health.py` 里语音供应商未配置 → 该诊断项 `error` → 顶层聚合 `error` → Web 端渲染**阻断式卡片**；但首次向导第 3 步写的是「语音可选」。后果：只配了 LLM 的用户每次启动都会看到一张红色阻断卡。二选一：把「语音未配置」降为 `degraded`（可关闭横幅，与"可选"一致），或把向导第 3 步改成必填。倾向前者，属产品口径决策，需拍板。
 - [ ] 全新环境走通安装 → 启动 → 核心闭环（语音 / 对话 / 执行）：macOS x64 侧本机可做（见 E 段「做法纠正」，DMG 已就绪）；Windows 侧已发任务卡给 WorkBuddy（见 E 段与 `docs/CROSS-PLATFORM-TESTING.md`）
 
 ### G. 发布与宣传（需授权推送）
