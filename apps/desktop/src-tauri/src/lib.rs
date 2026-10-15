@@ -179,6 +179,36 @@ fn service_health_ok() -> bool {
     response.starts_with("HTTP/1.0 200") || response.starts_with("HTTP/1.1 200")
 }
 
+/// 首启向导是否还没完成（/api/setup/status 的 completed=false）。
+/// 任何不确定（连不上/响应异常）都按 false 处理，绝不能因为一次探测失败就弹窗。
+fn setup_incomplete() -> bool {
+    let Ok(mut stream) = TcpStream::connect_timeout(
+        &SocketAddr::from(([127, 0, 0, 1], SERVICE_PORT)),
+        SERVICE_PROBE_TIMEOUT,
+    ) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(SERVICE_PROBE_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(SERVICE_PROBE_TIMEOUT));
+    if stream
+        .write_all(b"GET /api/setup/status HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut response = String::new();
+    if stream.read_to_string(&mut response).is_err() {
+        return false;
+    }
+    let Some(body) = response.split_once("\r\n\r\n").map(|(_, body)| body) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| value.get("completed").and_then(|item| item.as_bool()))
+        == Some(false)
+}
+
 fn tail_text(text: &str) -> Option<String> {
     let text = text.trim();
     if text.is_empty() {
@@ -556,25 +586,6 @@ fn ensure_service_for_app(app: &AppHandle) -> bool {
     service_health_ok()
 }
 
-/// 查找托盘图标：优先 src-tauri/icons/32x32.png（开发模式），
-/// 其次可执行文件同级 icons/32x32.png（打包后）。
-fn find_tray_icon() -> Option<PathBuf> {
-    // 开发模式：crate manifest dir
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let dev_icon = manifest_dir.join("icons").join("32x32.png");
-    if dev_icon.is_file() {
-        return Some(dev_icon);
-    }
-    // 打包模式：可执行文件同级
-    let mut exe = std::env::current_exe().ok()?;
-    exe.pop();
-    let prod_icon = exe.join("icons").join("32x32.png");
-    if prod_icon.is_file() {
-        return Some(prod_icon);
-    }
-    None
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -597,8 +608,10 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "退出栖灵", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
 
-            let icon_path = find_tray_icon().expect("tray icon not found: icons/32x32.png");
-            let icon = Image::from_path(&icon_path).expect("failed to load tray icon");
+            // 图标直接编进二进制：安装包不再需要释放 icons/ 目录，
+            // 资源漏装时主进程也不会 panic（Windows 验收 P0-1 根因）。
+            let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))
+                .expect("embedded tray icon png is valid");
 
             TrayIconBuilder::new()
                 .icon(icon)
@@ -619,6 +632,26 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // 首启向导未完成时自动弹出主界面（向导本身在 web 端渲染）。
+            // sidecar 冷启最多等 SERVICE_START_TIMEOUT；用户点过「跳过」后 completed=true 不再弹。
+            let startup_handle = app.handle().clone();
+            thread::spawn(move || {
+                let deadline = Instant::now() + SERVICE_START_TIMEOUT;
+                while !service_health_ok() {
+                    if Instant::now() >= deadline {
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(300));
+                }
+                if !setup_incomplete() {
+                    return;
+                }
+                let handle = startup_handle.clone();
+                let _ = startup_handle.run_on_main_thread(move || {
+                    let _ = open_main_ui_window(&handle, None, None);
+                });
+            });
 
             Ok(())
         })

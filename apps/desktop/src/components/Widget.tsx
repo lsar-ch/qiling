@@ -316,7 +316,7 @@ export default function Widget() {
     x: null,
     y: null,
     monitor: null,
-    autoHide: true,
+    autoHide: false,
     scale: 1,
   });
   /** 上边缘隐藏时角色要上移的像素（窗口逻辑坐标）。 */

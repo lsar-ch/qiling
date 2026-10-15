@@ -16,6 +16,7 @@ import {
 } from "./api";
 import ModelSelect from "./ModelSelect";
 import VoiceSelect from "./VoiceSelect";
+import { MODEL_PRESETS, type ModelPreset } from "./modelPresets";
 
 const CATEGORY_META: Record<
   ModelProfileCategory,
@@ -128,6 +129,8 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
   const [modelReason, setModelReason] = useState<string | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
   const [modelOpenRequest, setModelOpenRequest] = useState(0);
+  const [presetCategory, setPresetCategory] = useState<ModelProfileCategory | null>(null);
+  const [presetKeyFocus, setPresetKeyFocus] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -217,6 +220,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
   };
 
   const openEditor = (nextDraft: Draft): void => {
+    setPresetKeyFocus(false);
     setDraft(nextDraft);
     setModelOptions([]);
     setModelReason(null);
@@ -224,6 +228,19 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
     if (nextDraft.category === "tts") {
       void loadVoiceOptions(savedProfileIds.has(nextDraft.id) ? nextDraft.id : undefined);
     }
+  };
+
+  const applyPreset = (preset: ModelPreset): void => {
+    const nextDraft = newDraft(preset.category);
+    nextDraft.name = preset.label;
+    nextDraft.provider = preset.provider;
+    nextDraft.baseUrl = preset.baseUrl;
+    nextDraft.model = preset.model;
+    setPresetCategory(null);
+    openEditor(nextDraft);
+    setPresetKeyFocus(true);
+    setNotice("");
+    setError("");
   };
 
   const save = async (): Promise<void> => {
@@ -378,6 +395,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
               <input
                 className={inputCls}
                 type="password"
+                autoFocus={presetKeyFocus}
                 value={draft.apiKey}
                 onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
                 placeholder={profiles.find((profile) => profile.id === draft.id)?.api_key_configured ? "已配置；留空保持不变" : "输入 API Key"}
@@ -452,6 +470,57 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
         </div>
       ) : null}
 
+      {presetCategory ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setPresetCategory(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl bg-surface shadow-card overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 pt-5 pb-3 border-b border-line flex items-start justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-ink">
+                  选择模型服务商 · {CATEGORY_META[presetCategory].title}
+                </h4>
+                <p className="mt-1 text-xs text-muted">地址和模型已预填，保存前只需填写 API Key。</p>
+              </div>
+              <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => setPresetCategory(null)}>
+                取消
+              </button>
+            </div>
+            <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto">
+              {MODEL_PRESETS.filter((preset) => preset.category === presetCategory).map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  className="text-left rounded-lg border border-line px-3 py-2.5 hover:border-brand hover:bg-brand-50/40"
+                >
+                  <span className="block text-sm font-medium text-ink">{preset.label}</span>
+                  <span className="block mt-0.5 text-[11px] text-muted truncate">{preset.model}</span>
+                  <span className="block mt-0.5 text-[11px] text-muted truncate">{preset.note}</span>
+                </button>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-line">
+              <button
+                type="button"
+                className="text-xs text-brand hover:underline"
+                onClick={() => {
+                  const category = presetCategory;
+                  setPresetCategory(null);
+                  openEditor(newDraft(category));
+                }}
+              >
+                自定义配置（手动填写地址与模型）
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {(Object.keys(CATEGORY_META) as ModelProfileCategory[]).map((category) => {
         const meta = CATEGORY_META[category];
         const items = profiles.filter((profile) => profile.category === category);
@@ -462,7 +531,12 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
                 <h4 className="text-sm font-semibold text-ink">{meta.title}</h4>
                 <p className="mt-0.5 text-[11px] text-muted leading-relaxed">{meta.hint}</p>
               </div>
-              <button className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs text-ink hover:border-brand hover:text-brand" onClick={() => openEditor(newDraft(category))}>
+              <button
+                className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs text-ink hover:border-brand hover:text-brand"
+                onClick={() => (category === "text" || category === "multimodal" || category === "stt" || category === "tts"
+                  ? setPresetCategory(category)
+                  : openEditor(newDraft(category)))}
+              >
                 新增档案
               </button>
             </div>
@@ -484,7 +558,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
                       {testResult[profile.id] ? <p className="mt-1 text-[11px] text-muted">{testResult[profile.id]}</p> : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {category === "text" || category === "multimodal" ? (
+                      {category === "text" || category === "multimodal" || category === "stt" || category === "tts" ? (
                         <button className="rounded-md border border-line px-2.5 py-1 text-xs text-ink hover:border-brand hover:text-brand disabled:opacity-50" onClick={() => void test(profile)} disabled={busy}>
                           测试连接
                         </button>

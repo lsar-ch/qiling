@@ -165,6 +165,52 @@ export default function VrmStage({
       let currentClipName: string | null = null;
       // 一次性反馈动作在播期间不抢戏：状态切换与空闲重挑都要等它收尾
       let oneShotPlaying = false;
+      // 安装包不分发 Mixamo VRMA（授权限制）：动作片一条都加载不到时，
+      // 用程序化待机兜底（沉肩垂臂 + 呼吸 + 头部微动），不呈现绑定姿态 T-pose。
+      let procedural = false;
+      let proceduralBlend = 0;
+      const procStart = performance.now();
+      const procBones = {
+        leftUpperArm: vrm.humanoid?.getNormalizedBoneNode("leftUpperArm") ?? null,
+        rightUpperArm: vrm.humanoid?.getNormalizedBoneNode("rightUpperArm") ?? null,
+        chest: vrm.humanoid?.getNormalizedBoneNode("chest") ?? null,
+        spine: vrm.humanoid?.getNormalizedBoneNode("spine") ?? null,
+        head: vrm.humanoid?.getNormalizedBoneNode("head") ?? null,
+      };
+      const enterProcedural = (): void => {
+        procedural = true;
+        // clampWhenFinished 会让已结束的一次性动作按住末帧；停掉它，把骨骼交还给程序化姿态。
+        // shortcut: 正在播的循环动作保留（另一个状态的动作库缺失时，旧循环动着总比 T-pose 好）；
+        // 将来若要严格按 trigger 回收，需要在动作上记录所属 trigger。
+        if (current && !current.isRunning()) {
+          current.stop();
+          current = null;
+          currentClipName = null;
+        }
+      };
+      const isLoopTrigger = (name: ActionTrigger): boolean =>
+        (vrmConfigRef.current?.loop_triggers?.length
+          ? new Set(vrmConfigRef.current.loop_triggers)
+          : LOOP_TRIGGERS
+        ).has(name);
+      const applyProceduralPose = (blend: number, elapsedMs: number): void => {
+        const t = elapsedMs / 1000;
+        const breathe = Math.sin(t * 1.5) * 0.5 + 0.5; // 0..1
+        const armSway = Math.sin(t * 0.7) * 0.02;
+        if (procBones.leftUpperArm) {
+          procBones.leftUpperArm.rotation.set(0.05 * blend, 0, (-1.25 + armSway) * blend);
+        }
+        if (procBones.rightUpperArm) {
+          procBones.rightUpperArm.rotation.set(0.05 * blend, 0, (1.25 - armSway) * blend);
+        }
+        if (procBones.spine) procBones.spine.rotation.x = (-0.03 + breathe * 0.02) * blend;
+        if (procBones.chest) procBones.chest.rotation.x = (-0.02 + breathe * 0.025) * blend;
+        if (procBones.head) {
+          procBones.head.rotation.z = Math.sin(t * 0.45) * 0.05 * blend;
+          procBones.head.rotation.y = Math.sin(t * 0.31) * 0.08 * blend;
+          procBones.head.rotation.x = Math.sin(t * 0.5) * 0.03 * blend;
+        }
+      };
 
       const fetchClipBytes = async (clipName: string): Promise<ArrayBuffer | null> => {
         // 共享动作库优先（male / female），库里没有才回退角色自己的 vrma/。
@@ -206,13 +252,18 @@ export default function VrmStage({
           Date.now(),
           lipSyncBus.long,
         );
-        if (!choice) return;
+        if (!choice) {
+          // 该状态没有任何候选可播（动作库缺失时的常态）→ 循环状态回落程序化待机
+          if (isLoopTrigger(name)) enterProcedural();
+          return;
+        }
         // 抽回正在播的同一条：直接放行，重播会让循环动作跳一下
         if (choice.clip === currentClipName && current?.isRunning()) return;
         const clip = await ensureClip(choice.clip);
         if (disposed || !clip) {
           // 片段被删/改名：用冷却机制永久排除，否则每次重挑都撞它，后面的候选永远轮不到
           clipPlayedAt[choice.clip] = Number.POSITIVE_INFINITY;
+          if (isLoopTrigger(name)) enterProcedural();
           return;
         }
         clipPlayedAt[choice.clip] = Date.now();
@@ -234,6 +285,7 @@ export default function VrmStage({
         // 非循环 trigger（success/error 等）播完后按住末帧；否则动作权重归零会闪回绑定姿态（T-pose）
         action.clampWhenFinished = true;
         action.play();
+        procedural = false;
         if (current && current !== action) current.crossFadeTo(action, crossfade, false);
         current = action;
       };
@@ -265,6 +317,7 @@ export default function VrmStage({
         action.setLoop(THREE.LoopRepeat, choice.repeat);
         action.clampWhenFinished = true;
         action.play();
+        procedural = false;
         if (current && current !== action) current.crossFadeTo(action, crossfade, false);
         current = action;
       };
@@ -392,6 +445,13 @@ export default function VrmStage({
               em.setValue(name, next);
             }
           }
+        }
+
+        const proceduralWanted = procedural && !(current?.isRunning());
+        proceduralBlend +=
+          ((proceduralWanted ? 1 : 0) - proceduralBlend) * Math.min(1, delta * 3);
+        if (proceduralBlend > 0.01) {
+          applyProceduralPose(proceduralBlend, performance.now() - procStart);
         }
 
         vrm.update(delta);

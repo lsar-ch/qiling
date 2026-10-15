@@ -4,6 +4,7 @@ import type { AgentInfo, AgentIntegrationStatus, Task } from "@qiling/contracts"
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
+import { MODEL_PRESETS } from "./modelPresets";
 import {
   connectEvents,
   addMemoryEntry,
@@ -1961,6 +1962,7 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
+  const [presetId, setPresetId] = useState("");
   const [dashscopeKey, setDashscopeKey] = useState("");
   const [minimaxKey, setMinimaxKey] = useState("");
   const [personas, setPersonas] = useState<PersonaCard[]>([]);
@@ -2019,21 +2021,83 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
         <div className="px-6 py-5 space-y-4">
           {step === 0 ? (
             <>
-              <div>
-                <label className="block text-xs font-medium text-ink mb-1.5">API Base URL</label>
-                <input className={inputCls} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="https://api.openai.com/v1" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-ink mb-1.5">API Key</label>
-                <input className={inputCls} type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-ink mb-1.5">模型名称</label>
-                <input className={inputCls} value={model} onChange={(e) => setModel(e.target.value)}
-                  placeholder="gpt-4o-mini" />
-              </div>
+              {presetId === "" ? (
+                <>
+                  <p className="text-xs text-muted leading-relaxed">
+                    选择已开通的模型服务商，API 地址与模型名会自动填好，之后只需粘贴 API Key。
+                  </p>
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {MODEL_PRESETS.filter((preset) => preset.category === "text").map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setPresetId(preset.id);
+                          setBaseUrl(preset.baseUrl);
+                          setModel(preset.model);
+                        }}
+                        className="w-full text-left px-3 py-2.5 rounded-lg border border-line hover:border-brand hover:bg-brand-50/40 transition-colors"
+                      >
+                        <span className="block text-sm font-medium text-ink">{preset.label}</span>
+                        <span className="block text-[11px] text-muted truncate">{preset.note}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setPresetId("custom")}
+                      className="w-full text-left px-3 py-2.5 rounded-lg border border-dashed border-line hover:border-brand text-sm text-ink"
+                    >
+                      自定义 OpenAI 兼容服务（手动填写地址和模型）
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <b className="text-sm text-ink">
+                      {presetId === "custom"
+                        ? "自定义 OpenAI 兼容服务"
+                        : MODEL_PRESETS.find((preset) => preset.id === presetId)?.label}
+                    </b>
+                    <button type="button" className="text-xs text-brand hover:underline" onClick={() => setPresetId("")}>
+                      重新选择
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-ink mb-1.5">API Key</label>
+                    <input
+                      className={inputCls}
+                      type="password"
+                      autoFocus
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder={
+                        presetId === "custom"
+                          ? "sk-..."
+                          : MODEL_PRESETS.find((preset) => preset.id === presetId)?.keyPlaceholder
+                      }
+                    />
+                  </div>
+                  {presetId === "custom" ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium text-ink mb-1.5">API Base URL</label>
+                        <input className={inputCls} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+                          placeholder="https://api.openai.com/v1" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-ink mb-1.5">模型名称</label>
+                        <input className={inputCls} value={model} onChange={(e) => setModel(e.target.value)}
+                          placeholder="gpt-4o-mini" />
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted leading-relaxed break-all">
+                      {baseUrl} · {model}（已预填；需要改地址或模型请点「重新选择」→ 自定义）
+                    </p>
+                  )}
+                </>
+              )}
             </>
           ) : step === 1 ? (
             <>

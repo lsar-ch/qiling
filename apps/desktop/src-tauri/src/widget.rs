@@ -219,7 +219,9 @@ impl Default for WidgetPreferences {
             x: None,
             y: None,
             monitor: None,
-            auto_hide: true,
+            // 开箱默认完整显示挂件，贴边隐藏交给用户在右键菜单开启
+            // （Windows 验收观察项：默认隐藏 + 边缘停靠被当成「看不到挂件」）。
+            auto_hide: false,
             scale: 1.0,
             visible_edges: VisibleEdges::default(),
             hidden_edge: None,
