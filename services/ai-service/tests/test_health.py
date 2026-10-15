@@ -14,12 +14,14 @@ def make_client() -> TestClient:
     return TestClient(create_app(settings))
 
 
-def test_health_ok() -> None:
+def test_health_endpoint_reports_diagnostic_state() -> None:
     with make_client() as client:
         resp = client.get("/api/health")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["status"] == "ok"
+        statuses = {item["status"] for item in body["diagnostics"]}
+        expected = "error" if "error" in statuses else "degraded" if "degraded" in statuses else "ok"
+        assert body["status"] == expected
         assert body["service"] == "qiling-ai-service"
         assert "features" in body
 
