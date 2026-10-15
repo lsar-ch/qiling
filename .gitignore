@@ -81,6 +81,13 @@ data/motion-library/
 data/persona-assets/*/model.vrm
 !data/persona-assets/qiling/model.vrm
 data/persona-assets/*/vrma/
+# 已从仓库与历史清除的非分发角色素材（第三方/实验角色），物理文件仅本地保留
+data/persona-assets/k81/
+data/persona-assets/komano/
+data/persona-assets/vrm_demo/
+data/persona-assets/persona_3/
+data/persona-assets/qianwen_t4/
+data/persona-assets/realistic_proto/
 
 # OpenQodex 审查产物（本地报告，不入库）
 /.openqodex/
