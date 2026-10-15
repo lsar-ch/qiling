@@ -140,20 +140,25 @@
 ### E. 打包与真机（M5）
 - [x] 定打包形态（2026-10-14）：**内置 Python sidecar**。PyInstaller onedir 冻结 ai-service（`services/ai-service/ai-service.spec` + `sidecar_entry.py`）；home 模板（config + web dist + 三角色资产，28M）由 Rust 首启拷到 `~/Library/Application Support/app.qiling.desktop`；Rust 按「Resources 里有 sidecar → 打包态，否则走 .venv 开发态」自动分流（`lib.rs`）。构建：`scripts/package/build-macos.sh` + `stage-home.sh`。
 - [x] macOS x86_64 `.dmg` 本机构建 + 端到端验证（2026-10-14）：ad-hoc 签名（`codesign --verify --deep --strict` 通过），`Qiling_0.1.0_x64.dmg` 123MB；首启播种、/api/health、UI/角色/头像 200、挂件租约正常。
-- [ ] **架构口径变更（2026-10-14 决策）：改发 arm64 / intel 两份 DMG，放弃 universal。** 内置 Python sidecar 无法在 Intel 机交叉冻结 arm64（PyInstaller 只能用本机架构 Python/wheels），Reor 等同类产品也是双包。CI 用 macos-13（x64）+ macos-14（arm64）各跑 `scripts/package/build-macos.sh x86_64|aarch64`；`MACOSX_DEPLOYMENT_TARGET=12.0` 维持。
-- [x] macOS arm64 `.dmg`：CI（macos-14）构建成功（2026-10-15，artifact 113MB）；M 系真机实装验证仍待做
-- [ ] macOS x86_64：全新用户目录（非本机开发环境）实装一次并截图
+- [x] **架构口径变更（2026-10-14 决策）：改发 arm64 / intel 两份 DMG，放弃 universal。** 内置 Python sidecar 无法在 Intel 机交叉冻结 arm64（PyInstaller 只能用本机架构 Python/wheels），Reor 等同类产品也是双包。CI 用 macos-13（x64）+ macos-14（arm64）各跑 `scripts/package/build-macos.sh x86_64|aarch64`；`MACOSX_DEPLOYMENT_TARGET=12.0` 维持。→ 口径已落地：x64 本机（2026-10-14）+ arm64 CI（2026-10-15）两份包均已产出。
+- [x] macOS arm64 `.dmg`：CI（macos-14）构建成功（2026-10-15，artifact 113MB）。**M 系真机实装验证移出 v0.1 发布清单，延后 v0.1.x 补丁**（2026-10-15 决策：CI 产物已出且与 x64 同一构建脚本，作者本机为 Intel 无 M 系真机，不为借机器阻塞发布）
+- [ ] macOS x86_64：全新用户目录实装一次并截图。**做法纠正（2026-10-15）：不需要新建 macOS 系统用户** —— 应用的每用户数据只有 `~/Library/Application Support/app.qiling.desktop`（28M），改名备份即为全新目录，首启会重新播种。本机已有 2026-10-15 12:35 构建的 `Qiling_0.1.0_x64.dmg`（117M，路径 `apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/`），但正式验收取本节末尾「产物重建」后的新包
 - [x] Windows x64 NSIS 链路配置完成（2026-10-14）并在 windows-latest runner 构建成功（2026-10-15，artifact 79MB）；真机实装验证仍待做。
-- [ ] Windows x64 `.exe` 实装 + 真机截图（ARM Windows 走 x64 模拟，如有条件顺带验证）
+- [ ] Windows x64 `.exe` 实装 + 真机截图（ARM Windows 走 x64 模拟，如有条件顺带验证）。**任务卡已建（2026-10-15）**：`docs/CROSS-PLATFORM-TESTING.md` §「Windows v0.1 安装包实装验收（外部协作者任务卡）」，交 WorkBuddy 在 Windows 真机执行，等回传截图与逐项结论
 - [x] release CI 落地（2026-10-14）：`.github/workflows/release-desktop.yml` 手动触发，macos-13(x64)/macos-14(arm64)/windows-latest 三 runner，产物上传 artifacts（不公开发布）；构建脚本 `scripts/package/build-macos.sh`、`build-windows.ps1`、跨平台 `stage_home.py`。首次实跑（run 38662701917，2026-10-15）arm64 DMG + Windows EXE 成功；x64 macos-13 因 GitHub runner 容量长时间排队待调度（x64 DMG 已于 2026-10-14 本机 Intel 构建并端到端验证）。
 - [x] macOS v0.1 不买 Apple Developer 账号（2026-10-14 拍板）：ad-hoc 签名 + README/Release Notes 写右键打开 / xattr 绕过说明；技术社区先行，后续有非技术用户再补 Developer ID 与公证。Windows 同样不签名，接受 SmartScreen 首运警告。
-- [ ] M 系真机核对 `scripts/launch-desktop-macos.sh` PATH（`/opt/homebrew/bin` vs `/usr/local/bin`）
+- [ ] M 系真机核对 `scripts/launch-desktop-macos.sh` PATH（`/opt/homebrew/bin` vs `/usr/local/bin`）→ 随 M 系实机延后 v0.1.x。已核实（2026-10-15）该脚本只在 docs 里被引用，打包链路（`build-macos.sh` / `lib.rs` sidecar 分流）不依赖它，**不影响安装用户**；它另含硬编码 `/Users/lxb/...`，属 F 段公开前清理项
+
+- [ ] **三平台产物需在 F 段第 1 项修复后全部重建**（2026-10-15 发现）：现有 x64 DMG（本机 12:35）、arm64 DMG 与 Windows EXE（CI run `38662701917`）都构建于 `config.py` 硬编码 vault 路径修复之前，PyInstaller 已把该字符串冻结进 sidecar。功能上对其他用户无害（该路径在其机器不存在），但发布物不应含作者个人路径 → 提交修复后重跑 `release-desktop` 三个 runner，并用新产物做实装验收。
 
 ### F. 公开前最终核对
-- [ ] `.env` / API key / 运行数据 / 缓存不入库（复查 `.gitignore`）
+- [ ] `.env` / API key / 运行数据 / 缓存不入库（复查 `.gitignore`）。**2026-10-15 复查结果**：密钥侧干净（仅 `.env.example` 入库且全是注释占位；无 `.env`/key/pem/音频/db/`__pycache__`/`apps/web/dist` 被跟踪）。但发现两处**个人数据残留，公开前必须处理**：
+  1. `data/project_nodes/*.json`（17 个，68K）被跟踪且不在 `.gitignore`：内含本机绝对路径 `/Users/lxb/...` 与内部任务节点，属运行数据。最小修复 = 加 `.gitignore` + `git rm --cached`（保留本地文件），**需授权**。历史中同样存在，若要彻底清除需再跑一次 `filter-repo`。
+  2. ~~`services/ai-service/app/config.py` 把作者 iCloud vault 路径写成 `DEFAULT_OBSIDIAN_VAULT_PATH`~~ → **已修（2026-10-15）**：默认值改空串，新增 `obsidian_vault_dir()` 统一判空（`Path("")` 会退化成 cwd 且 `is_dir()` 恒真，原逻辑会把进程当前目录误当成用户的库并触发镜像/全文搜索），health/settings/memories 四处调用点改为共用该 helper，补回归测试 `test_unset_vault_path_is_never_treated_as_linked`。作者本机路径存于已 gitignore 的 `data/settings.local.json`，不受影响。
+  3. 其余 `/Users/lxb` 出现在 `AGENTS.md`、`WORKBUDDY-WINDOWS-MIGRATION.md`、`scripts/launch-desktop-macos.sh`、`assets/icon/candidates/*.html`、8 个 docs 文件：非密钥，属观感/隐私噪声，公开前决定是否一并参数化（`$HOME`）或保留。
 - [x] CI 两个 workflow 跑通（2026-10-15，新历史 `0929f0f`）：cross-platform-regression macOS 干净环境 + Windows 双绿（修掉干净 runner 无 key 时 `test_health` 误断言 ok），security-scan success。release-desktop 见 E 段（x64 待 runner 调度）。
 - [ ] Release Notes / 截图 / 安装步骤就位
-- [ ] 全新环境走通安装 → 启动 → 核心闭环（语音 / 对话 / 执行）
+- [ ] 全新环境走通安装 → 启动 → 核心闭环（语音 / 对话 / 执行）：macOS x64 侧本机可做（见 E 段「做法纠正」，DMG 已就绪）；Windows 侧已发任务卡给 WorkBuddy（见 E 段与 `docs/CROSS-PLATFORM-TESTING.md`）
 
 ### G. 发布与宣传（需授权推送）
 - [ ] 公开仓库 + 挂 Release

@@ -172,3 +172,50 @@ Windows 的麦克风权限位置：
 5. 拒绝麦克风后仍能文字对话。
 6. 关闭启动器后 uvicorn 退出。
 7. 有真实 Codex 任务时，Codex CLI/ACP 配置按 Windows 本地安装路径再检查一遍。
+
+## Windows v0.1 安装包实装验收（外部协作者任务卡）
+
+> 2026-10-15 建卡。对应 `docs/RELEASE-PLAN-2026-10-10.md` §E「Windows x64 `.exe` 实装 + 真机截图」与 §F「全新环境走通安装 → 启动 → 核心闭环」。
+> 执行方：WorkBuddy（Windows 真机）。发起方：mac（作者本机为 Intel macOS，无 Windows 环境）。
+
+### 上下文
+
+- 安装包：GitHub Actions → workflow `release-desktop`（手动触发）→ artifact `Qiling-0.1.0_windows_x64`（约 79MB，NSIS `.exe`）。
+  **必须用 2026-10-15 之后的新 run**：此前的 run `38662701917` 冻结了 `config.py` 里硬编码的作者 vault 路径，已修但产物需重新构建。发卡前把最终 run 号填到这里：`__________`。
+- 该包**未签名**，首次运行会出 SmartScreen 警告，属预期行为，不算缺陷；点「更多信息 → 仍要运行」继续。
+- 环境要求：Windows 10 1809 (build 17763) 及以上，或 Windows 11，x64。ARM Windows 走 x64 模拟，如手头正好是 ARM 机型请顺带记录一句。
+- WebView2 Runtime：Win11 自带；Win10 若缺失，NSIS 安装器会自动拉取 bootstrapper。
+- 应用数据目录：`%APPDATA%\app.qiling.desktop`（首启时由安装包内的 home 模板播种，约 28M）。
+- 服务日志：`%APPDATA%\app.qiling.desktop\data\run\ai-service.log`。
+
+### 交付要求
+
+**「全新用户目录」怎么造**：不需要新建 Windows 系统账户。只要 `%APPDATA%\app.qiling.desktop` 不存在即为全新。若该机此前装过或跑过：先完全退出应用（含托盘），把该目录改名为 `app.qiling.desktop.bak-<日期>`，再开始。
+
+**执行步骤**（每一步截图，文件名按序号命名）：
+
+1. 双击 `.exe`，SmartScreen 警告出现 → 截图 → 「更多信息 → 仍要运行」。
+2. NSIS 安装向导首页（含版本号）→ 截图。
+3. 安装进度中 → 截图。
+4. 安装完成页 → 截图。
+5. 首次启动，等待窗口出现 → 截图。
+6. 首次配置向导第 1 步（LLM，必填）→ 截图。填一个可用的 OpenAI 兼容端点与 key。
+7. 向导第 2 步（角色选择，读 `/api/personas`）→ 截图，确认三个角色可选。
+8. 向导第 3 步（语音，可选）→ 截图。无 key 可直接跳过，记录跳过是否顺畅。
+9. 主界面加载完成，服务状态为正常（`GET /api/health` 顶层 `status=ok`）→ 截图。
+10. 桌面挂件出现且可拖动 → 截图。
+11. 文字对话发一条，收到回复 → 截图。
+12. 语音对话一轮（麦克风授权 → 说话 → STT → 回复 → TTS 播报）→ 截图。若麦克风不可用，改为验证「拒绝麦克风后仍能文字对话」并说明。
+13. 关闭主界面/退出应用，确认后台 ai-service 进程一并退出（任务管理器搜 `ai-service`）→ 截图。
+
+**回传物**：
+
+- 上述截图（打包成一个 zip）。
+- 一段结论：逐条标注 1-13 通过/失败，失败项附现象一句话。
+- 任一失败项：附 `%APPDATA%\app.qiling.desktop\data\run\ai-service.log` 的末尾 100 行。
+
+### 质量预期与红线
+
+- 验收标准：步骤 1-11、13 全部通过即视为 v0.1 Windows 端可发布；步骤 12 视麦克风条件，允许以降级验证替代但必须写明。
+- 只读验收：**不要修改仓库任何代码或文档，不要提交、不要推送**。发现问题只回传报告，修复由作者侧处理。
+- 不要在回传内容里包含真实 API key；截图若拍到 key 输入框请先打码。
