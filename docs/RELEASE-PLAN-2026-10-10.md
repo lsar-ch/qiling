@@ -132,6 +132,7 @@
 - [x] 核对仓库体积（`.git` 956M → 21M）
 - [x] 清理后构建确认功能正常（gitleaks 待 B 阶段统一复跑）
 - [x] 清理后完整 check.sh 回归（369 passed + typecheck + vitest，2026-10-10）
+- [x] 二次清理残留衍生图（2026-10-15）：`k81/komano/vrm_demo` 的 avatar/original/manifest，以及实验素材 `persona_3/qianwen_t4/realistic_proto`，共 36 个跟踪文件从当前树与全部历史清除；物理文件备份在 `~/qiling-assets-backup-20261015-084838.tar.gz`，本地恢复并 gitignore；清前 bundle 备份 `~/qiling-git-bundle-before-asset-purge-20261015-084838.bundle`；`.git` 29M，远端 main 强推后仅剩 default/persona_2/qiling 三个角色目录。
 
 > VRM/VRMA 物理文件已拷回原路径并 gitignore，仅本地测试用；自制可再分发资产完成后删除并正式替换。
 > filter-repo 已移除 origin，已重新配置（不推送）。
@@ -140,17 +141,17 @@
 - [x] 定打包形态（2026-10-14）：**内置 Python sidecar**。PyInstaller onedir 冻结 ai-service（`services/ai-service/ai-service.spec` + `sidecar_entry.py`）；home 模板（config + web dist + 三角色资产，28M）由 Rust 首启拷到 `~/Library/Application Support/app.qiling.desktop`；Rust 按「Resources 里有 sidecar → 打包态，否则走 .venv 开发态」自动分流（`lib.rs`）。构建：`scripts/package/build-macos.sh` + `stage-home.sh`。
 - [x] macOS x86_64 `.dmg` 本机构建 + 端到端验证（2026-10-14）：ad-hoc 签名（`codesign --verify --deep --strict` 通过），`Qiling_0.1.0_x64.dmg` 123MB；首启播种、/api/health、UI/角色/头像 200、挂件租约正常。
 - [ ] **架构口径变更（2026-10-14 决策）：改发 arm64 / intel 两份 DMG，放弃 universal。** 内置 Python sidecar 无法在 Intel 机交叉冻结 arm64（PyInstaller 只能用本机架构 Python/wheels），Reor 等同类产品也是双包。CI 用 macos-13（x64）+ macos-14（arm64）各跑 `scripts/package/build-macos.sh x86_64|aarch64`；`MACOSX_DEPLOYMENT_TARGET=12.0` 维持。
-- [ ] macOS arm64 `.dmg`：CI（macos-14）构建 + M 系真机实装验证
+- [x] macOS arm64 `.dmg`：CI（macos-14）构建成功（2026-10-15，artifact 113MB）；M 系真机实装验证仍待做
 - [ ] macOS x86_64：全新用户目录（非本机开发环境）实装一次并截图
-- [x] Windows x64 NSIS 链路配置完成（2026-10-14，Tauri 默认 downloadBootstrapper + `build-windows.ps1`）；**待 windows runner 与真机实装验证**。
+- [x] Windows x64 NSIS 链路配置完成（2026-10-14）并在 windows-latest runner 构建成功（2026-10-15，artifact 79MB）；真机实装验证仍待做。
 - [ ] Windows x64 `.exe` 实装 + 真机截图（ARM Windows 走 x64 模拟，如有条件顺带验证）
-- [x] release CI 落地（2026-10-14）：`.github/workflows/release-desktop.yml` 手动触发，macos-13(x64)/macos-14(arm64)/windows-latest 三 runner，产物上传 artifacts（不公开发布）；构建脚本 `scripts/package/build-macos.sh`、`build-windows.ps1`、跨平台 `stage_home.py`。**待 CI 首次实跑验证**。
+- [x] release CI 落地（2026-10-14）：`.github/workflows/release-desktop.yml` 手动触发，macos-13(x64)/macos-14(arm64)/windows-latest 三 runner，产物上传 artifacts（不公开发布）；构建脚本 `scripts/package/build-macos.sh`、`build-windows.ps1`、跨平台 `stage_home.py`。首次实跑（run 38662701917，2026-10-15）arm64 DMG + Windows EXE 成功；x64 macos-13 因 GitHub runner 容量长时间排队待调度（x64 DMG 已于 2026-10-14 本机 Intel 构建并端到端验证）。
 - [x] macOS v0.1 不买 Apple Developer 账号（2026-10-14 拍板）：ad-hoc 签名 + README/Release Notes 写右键打开 / xattr 绕过说明；技术社区先行，后续有非技术用户再补 Developer ID 与公证。Windows 同样不签名，接受 SmartScreen 首运警告。
 - [ ] M 系真机核对 `scripts/launch-desktop-macos.sh` PATH（`/opt/homebrew/bin` vs `/usr/local/bin`）
 
 ### F. 公开前最终核对
 - [ ] `.env` / API key / 运行数据 / 缓存不入库（复查 `.gitignore`）
-- [ ] CI 两个 workflow 跑通
+- [x] CI 两个 workflow 跑通（2026-10-15，新历史 `0929f0f`）：cross-platform-regression macOS 干净环境 + Windows 双绿（修掉干净 runner 无 key 时 `test_health` 误断言 ok），security-scan success。release-desktop 见 E 段（x64 待 runner 调度）。
 - [ ] Release Notes / 截图 / 安装步骤就位
 - [ ] 全新环境走通安装 → 启动 → 核心闭环（语音 / 对话 / 执行）
 
