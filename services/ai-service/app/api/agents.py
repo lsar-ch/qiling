@@ -33,6 +33,10 @@ class AgentConfigUpdate(BaseModel):
     set_default: bool | None = None         # True = 把该执行器设为兜底默认
 
 
+class AgentLoginRequest(BaseModel):
+    method_id: str
+
+
 def _registry(request: Request) -> AgentRegistry:
     return request.app.state.agent_registry
 
@@ -156,6 +160,22 @@ async def refresh_agent(name: str, request: Request) -> dict:
     return agent.model_dump(mode="json")
 
 
+@router.post("/{name}/login")
+async def login_agent(name: str, payload: AgentLoginRequest, request: Request) -> dict:
+    adapter = _registry(request).get(name)
+    if adapter is None:
+        raise HTTPException(status_code=404, detail="Agent 不存在")
+    login = getattr(adapter, "authenticate", None)
+    if not callable(login):
+        raise HTTPException(status_code=400, detail=f"{name} 不支持页面登录。")
+    try:
+        await login(payload.method_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    agent = await _registry(request).detect(name)
+    return agent.model_dump(mode="json")
+
+
 @router.get("/{name}")
 async def get_agent(name: str, request: Request) -> dict:
     registry = _registry(request)
@@ -193,7 +213,9 @@ async def update_agent_config(name: str, payload: AgentConfigUpdate, request: Re
             config_updates["internet_environment"] = env_val
         if "api_key" in fields:
             declares_env = bool(str((entry.config or {}).get("api_key_env") or "").strip())
-            if adapter != "workbuddy" and not (adapter == "acp-cli" and declares_env):
+            if adapter not in {"workbuddy", "codex", "acp-cli"} or (
+                adapter == "acp-cli" and not declares_env
+            ):
                 raise HTTPException(
                     status_code=400,
                     detail=f"{name} 未声明 api_key_env，请改用该 CLI 自身的登录方式。",

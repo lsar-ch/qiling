@@ -405,6 +405,25 @@ export async function updateAgentConfig(
   return (await resp.json()) as AgentInfo;
 }
 
+export async function loginAgent(name: string, methodId: "api-key" | "chat-gpt"): Promise<AgentInfo> {
+  const resp = await fetch(`/api/agents/${encodeURIComponent(name)}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method_id: methodId }),
+  });
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const data = (await resp.json()) as { detail?: unknown };
+      if (typeof data?.detail === "string") detail = data.detail;
+    } catch {
+      // 保留默认错误信息
+    }
+    throw new Error(`「${name}」登录失败：${detail}`);
+  }
+  return (await resp.json()) as AgentInfo;
+}
+
 export async function addCustomAgent(body: {
   name: string;
   label?: string | null;

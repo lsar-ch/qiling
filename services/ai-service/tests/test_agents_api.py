@@ -60,6 +60,12 @@ class FakeAdapter(AgentAdapter):
     adapter_id = "fake-adapter"
     display_name = "Fake Agent"
 
+    def __init__(self) -> None:
+        self.auth_method: str | None = None
+
+    async def authenticate(self, method_id: str) -> None:
+        self.auth_method = method_id
+
     async def detect(self) -> AgentInfo:
         return AgentInfo(
             name=self.name,
@@ -71,6 +77,18 @@ class FakeAdapter(AgentAdapter):
             command="fake",
             capabilities=["fake"],
         )
+
+
+def test_agent_login_endpoint_delegates_to_adapter(tmp_path, monkeypatch) -> None:
+    adapter = FakeAdapter()
+    registry = AgentRegistry()
+    registry.register(adapter)
+    with make_client(tmp_path, monkeypatch) as client:
+        client.app.state.agent_registry = registry
+        resp = client.post("/api/agents/fake/login", json={"method_id": "chat-gpt"})
+        assert resp.status_code == 200
+        assert resp.json()["integration_status"] == "ready"
+        assert adapter.auth_method == "chat-gpt"
 
 
 class FailingAdapter(FakeAdapter):
@@ -315,6 +333,15 @@ def test_codex_adapter_detect_matches_local_codex_presence() -> None:
     else:
         assert info.integration_status == "ready"
         assert info.available is True
+
+
+def test_codex_auth_fallback_keeps_existing_login_modes(monkeypatch) -> None:
+    monkeypatch.delenv("CODEX_API_KEY", raising=False)
+    adapter = CodexAdapter()
+    env = adapter._child_env()
+    assert "DEFAULT_AUTH_REQUEST" not in env, "不能覆盖 Codex++/代理的既有登录配置"
+    assert "Codex++" in adapter._auth_hint("401")
+    assert adapter._is_auth_error("401 Unauthorized")
 
 
 def test_workbuddy_detect_without_runtime_returns_not_installed(monkeypatch) -> None:
@@ -635,9 +662,16 @@ def test_workbuddy_api_key_is_injected_and_never_returned(tmp_path, monkeypatch)
         assert workbuddy["api_key_configured"] is False
         assert "CODEBUDDY_API_KEY" not in client.app.state.agent_registry.get("workbuddy")._child_env(runtime)
 
-        # 其余执行器沿用自身登录态，不接受这个字段
-        rejected = client.put("/api/agents/codex/config", json={"api_key": "nope"})
-        assert rejected.status_code == 400
+        # Codex 也支持页面自备 Key，但不覆盖已有 Codex++/代理登录态。
+        saved = client.put("/api/agents/codex/config", json={"api_key": "codex-test-secret"})
+        assert saved.status_code == 200
+        listed = client.get("/api/agents/config")
+        assert "codex-test-secret" not in listed.text, "明文密钥不得出现在配置接口里"
+        codex = next(item for item in listed.json()["items"] if item["name"] == "codex")
+        assert codex["api_key_configured"] is True
+        codex_adapter = client.app.state.agent_registry.get("codex")
+        assert codex_adapter is not None
+        assert codex_adapter._child_env()["CODEX_API_KEY"] == "codex-test-secret"
 
 
 def test_workbuddy_exec_probe_flags_refusal(monkeypatch) -> None:

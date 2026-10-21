@@ -13,7 +13,7 @@ from typing import Any
 
 from qiling_contracts.agent import AgentInfo
 
-from app.agents.acp import AcpClient
+from app.agents.acp import AcpClient, AcpRequestError
 from app.agents.base import (
     AgentAdapter,
     AgentCancelled,
@@ -131,6 +131,83 @@ class CodexAdapter(AgentAdapter):
         self._outputs: dict[str, list[str]] = {}
         self._run_errors: dict[str, list[str]] = {}
 
+    def _child_env(self) -> dict[str, str]:
+        env = dict(os.environ)
+        api_key = str(
+            self.catalog_entry.config.get(f"{self.name}_api_key")
+            or self.catalog_entry.config.get("api_key")
+            or ""
+        ).strip()
+        if api_key:
+            env["CODEX_API_KEY"] = api_key
+        return env
+
+    def _auth_hint(self, raw: str) -> str:
+        hint = str(self.catalog_entry.config.get("login_hint") or "").strip()
+        url = str(self.catalog_entry.config.get("signup_url") or "").strip()
+        if hint:
+            suffix = f" 申请地址：{url}" if url else ""
+            return f"{hint}{suffix}（原始错误：{raw}）"
+        if url:
+            return f"请先在 {url} 获取 API Key，填入执行器配置后重试。（原始错误：{raw}）"
+        return (
+            "请先保留现有的 Codex++/代理/ChatGPT 登录态，或配置可用的 Codex API Key 后重试。"
+            f"（原始错误：{raw}）"
+        )
+
+    @staticmethod
+    def _is_auth_error(raw: str) -> bool:
+        lowered = raw.lower()
+        return any(
+            token in lowered
+            for token in ("authentication required", "api key", "credential", "401")
+        )
+
+    async def authenticate(self, method_id: str) -> None:
+        """让页面显式发起一次 Codex ACP 登录。"""
+        method = method_id.strip()
+        if method not in {"api-key", "chat-gpt"}:
+            raise AgentExecutionError("Codex 登录方式仅支持 api-key 或 chat-gpt。")
+        codex_bin = resolve_codex_command(self._codex_command)
+        acp_bin = shutil.which(self._acp_command)
+        if not codex_bin or not acp_bin:
+            raise AgentExecutionError("Codex ACP 不可用：请先安装 codex 与 codex-acp。")
+        client = await AcpClient.spawn(
+            acp_bin,
+            cwd=str(Path.home()),
+            env={
+                **self._child_env(),
+                "CODEX_PATH": codex_bin,
+                "INITIAL_AGENT_MODE": "read-only",
+            },
+            logs_dir=Path(tempfile.gettempdir()) / "qiling-codex-login",
+        )
+        try:
+            await client.request(
+                "initialize",
+                {
+                    "protocolVersion": 1,
+                    "clientCapabilities": {
+                        "fs": {"readTextFile": False, "writeTextFile": False},
+                        "terminal": False,
+                        "auth": {"terminal": False},
+                    },
+                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
+                },
+                timeout_s=30.0,
+            )
+            await client.request(
+                "authenticate",
+                {"methodId": method},
+                timeout_s=300.0,
+            )
+        except AcpRequestError as exc:
+            if self._is_auth_error(str(exc)):
+                raise AgentExecutionError(self._auth_hint(str(exc))) from exc
+            raise AgentExecutionError(str(exc)) from exc
+        finally:
+            await client.close()
+
     async def detect(self) -> AgentInfo:
         resolved = resolve_codex_command(self._codex_command)
         acp_found = shutil.which(self._acp_command) is not None
@@ -227,9 +304,8 @@ class CodexAdapter(AgentAdapter):
             acp_bin,
             cwd=request.cwd,
             env={
-                **os.environ,
+                **self._child_env(),
                 "CODEX_PATH": codex_bin,
-                "NO_BROWSER": "1",
                 "INITIAL_AGENT_MODE": mode,
                 "APP_SERVER_LOGS": str(logs_dir / request.task_id),
             },
@@ -307,6 +383,11 @@ class CodexAdapter(AgentAdapter):
             )
         except asyncio.CancelledError:
             raise
+        except AcpRequestError as exc:
+            if self._is_auth_error(str(exc)):
+                self._run_errors.setdefault(request.task_id, []).append(str(exc))
+                raise AgentExecutionError(self._auth_hint(str(exc))) from exc
+            raise AgentExecutionError(str(exc)) from exc
         except Exception as exc:
             event = self._cancel_events.get(request.task_id)
             if event is not None and event.is_set():

@@ -25,6 +25,10 @@ executors:
     source_url: "https://github.com/openai/codex"
     tags: ["official", "acp", "cli"]
     detail: "OpenAI 本地编码 agent，支持 codex CLI 与 codex-acp"
+    config:
+      api_key_env: "CODEX_API_KEY"
+      login_hint: "优先保留现有 Codex++、代理程序或 ChatGPT 登录态；没有可用登录态时，再使用下方 API Key。"
+      signup_url: "https://platform.openai.com/api-keys"
 
   - name: claude-code
     label: Claude Code
@@ -95,6 +99,9 @@ executors:
     source_url: null
     tags: ["custom", "acp"]
     detail: "WorkBuddy 自带 CLI，通过 ACP/stdio 提交真实任务"
+    config:
+      login_hint: "WorkBuddy 桌面端登录态不能复用；请打开申请页面获取 API Key，填入下方后测试连接。"
+      signup_url: "https://copilot.tencent.com/profile/"
 
   - name: browser
     label: 浏览器

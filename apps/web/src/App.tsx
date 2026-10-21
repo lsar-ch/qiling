@@ -43,6 +43,7 @@ import {
   saveMemoryDoc,
   updateSettings,
   updateAgentConfig,
+  loginAgent,
   refreshAgentDetection,
   fetchPersonas,
   type AppSettings,
@@ -940,6 +941,7 @@ function MyAgentsPage() {
   const [agentLoading, setAgentLoading] = useState(true);
   const [agentError, setAgentError] = useState("");
   const [configName, setConfigName] = useState<string | null>(null);
+  const [loginName, setLoginName] = useState<string | null>(null);
   const [configCommand, setConfigCommand] = useState("");
   const [configApiKey, setConfigApiKey] = useState("");
   const [configKeyConfigured, setConfigKeyConfigured] = useState(false);
@@ -1052,6 +1054,7 @@ function MyAgentsPage() {
 
   const closeAgentConfig = (): void => {
     setConfigName(null);
+    setLoginName(null);
     setConfigCommand("");
     setConfigApiKey("");
     setConfigKeyConfigured(false);
@@ -1060,6 +1063,11 @@ function MyAgentsPage() {
     setConfigSignupUrl("");
     setConfigError("");
     setConfigNotice("");
+  };
+
+  const openAgentLogin = async (name: string): Promise<void> => {
+    setLoginName(name);
+    await openAgentConfig(name);
   };
 
   const saveAgentConfig = async (name: string, commandOverride?: string | null): Promise<void> => {
@@ -1118,6 +1126,9 @@ function MyAgentsPage() {
         setConfigApiKey("");
         setConfigKeyConfigured(true);
       }
+      if (name === "codex" && typedKey) {
+        await loginAgent("codex", "api-key");
+      }
       await refreshAgentDetection(name);
       const data = await fetchAgents();
       const agent = data.items.find((item) => item.name === name);
@@ -1165,6 +1176,21 @@ function MyAgentsPage() {
     }
   };
 
+  const loginCodexWithChatGpt = async (): Promise<void> => {
+    setKeyTesting(true);
+    setConfigError("");
+    setConfigNotice("");
+    try {
+      await loginAgent("codex", "chat-gpt");
+      setConfigNotice("ChatGPT 登录完成，可以关闭对话框后重新运行任务。");
+      await loadAgents();
+    } catch (e) {
+      setConfigError(e instanceof Error ? e.message : "ChatGPT 登录失败");
+    } finally {
+      setKeyTesting(false);
+    }
+  };
+
   const reload = async (): Promise<void> => {
     try {
       const nextTasks = await fetchTasks();
@@ -1186,6 +1212,15 @@ function MyAgentsPage() {
         }),
       );
       setRuns(next);
+      const authFailure = Object.values(next).find(
+        (run) =>
+          run.status === "failed" &&
+          /authentication required|api key|credential|凭据|401/i.test(run.error || ""),
+      );
+      if (authFailure && !loginName) {
+        setLoginName(authFailure.executor);
+        void openAgentConfig(authFailure.executor);
+      }
     } catch (e) {
       setTaskError(e instanceof Error ? `运行状态获取失败：${e.message}` : "运行状态获取失败");
     }
@@ -1199,7 +1234,7 @@ function MyAgentsPage() {
       if (hasActiveRuns()) void reloadRuns();
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [runs]);
+  }, [runs, loginName]);
 
   useEffect(() => {
     void reload();
@@ -1265,6 +1300,11 @@ function MyAgentsPage() {
       await reload();
     } catch (e) {
       setTaskError(e instanceof Error ? `运行失败：${e.message}` : "运行失败");
+      const message = e instanceof Error ? e.message : String(e);
+      if (executor && /authentication required|api key|credential|凭据|401/i.test(message)) {
+        setLoginName(executor);
+        void openAgentConfig(executor);
+      }
     } finally {
       setBusyRun("");
     }
@@ -1317,12 +1357,24 @@ function MyAgentsPage() {
   const agentByName = (name: string | null): AgentInfo | undefined =>
     agentItems.find((item) => item.name === name);
 
-  const resolveRun = (task: Task): { executor: string | null; ready: boolean; detail: string; run?: AgentRun } => {
+  const resolveRun = (task: Task): {
+    executor: string | null;
+    ready: boolean;
+    needsAuth: boolean;
+    detail: string;
+    run?: AgentRun;
+  } => {
     const run = runs[task.task_id];
     const executorName = task.preferred_executor || defaultExecutor || "codex";
     const agent = agentByName(executorName);
     const ready = Boolean(agent?.available && agent.integration_status === "ready");
-    return { executor: agent?.name || executorName, ready, detail: agent?.detail ?? "", run };
+    return {
+      executor: agent?.name || executorName,
+      ready,
+      needsAuth: agent?.integration_status === "auth_required",
+      detail: agent?.detail ?? "",
+      run,
+    };
   };
 
   const canStartRun = (task: Task): boolean => {
@@ -1687,6 +1739,15 @@ function MyAgentsPage() {
                     )}
                   </div>
                 )}
+                {!resolved.ready && resolved.needsAuth && canStartRun(task) && (
+                  <button
+                    className="mt-1 min-h-[30px] px-3 rounded-lg bg-warn-50 border border-warn-50 text-warn text-xs font-medium hover:opacity-80 transition-opacity"
+                    type="button"
+                    onClick={() => void openAgentLogin(resolved.executor || defaultExecutor || "codex")}
+                  >
+                    登录 / 配置凭据
+                  </button>
+                )}
                 {resolved.ready && canStartRun(task) && (
                   <div className="grid grid-cols-[minmax(0,180px)_minmax(0,120px)] gap-1.5 mt-1">
                     <select
@@ -1776,6 +1837,108 @@ function MyAgentsPage() {
           })}
         </div>
       </section>
+      {loginName && (
+        <dialog
+          open
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          aria-modal="true"
+          aria-labelledby="agent-login-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-surface shadow-card overflow-hidden">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-line">
+              <div>
+                <h3 id="agent-login-title" className="text-sm font-semibold text-ink">
+                  登录 / 配置 {agentItems.find((item) => item.name === loginName)?.label ?? loginName}
+                </h3>
+                <p className="text-[11px] text-muted mt-1">首次执行需要可用凭据，Key 只保存在本机。</p>
+              </div>
+              <button
+                className="text-xs text-muted hover:text-ink"
+                type="button"
+                onClick={closeAgentConfig}
+              >
+                关闭
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs leading-relaxed text-ink">
+                {configLoginHint || "请打开登录或申请页面，完成登录后把 API Key 粘贴到下方。"}
+              </p>
+              {configSignupUrl && (
+                <a
+                  className="inline-flex items-center text-xs text-brand hover:underline"
+                  href={configSignupUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  打开登录 / 申请页面
+                </a>
+              )}
+              <label className="block">
+                <span className="text-[11px] text-muted">API Key</span>
+                <input
+                  className="mt-1 w-full border border-line rounded-md px-2.5 py-2 text-xs font-mono text-ink bg-surface focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+                  type="password"
+                  autoComplete="off"
+                  value={configApiKey}
+                  onChange={(event) => setConfigApiKey(event.target.value)}
+                  placeholder={configKeyConfigured ? "已配置（留空则不改动）" : "粘贴 API Key"}
+                />
+              </label>
+              {configKeyConfigured && (
+                <button
+                  className="text-xs text-muted hover:text-bad"
+                  type="button"
+                  onClick={() => void clearAgentKey(loginName)}
+                  disabled={configSaving || keyTesting}
+                >
+                  清除已保存的 Key
+                </button>
+              )}
+              {configNotice && <p className="text-[11px] text-ok">{configNotice}</p>}
+              {configError && <p className="text-[11px] text-bad break-anywhere">{configError}</p>}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  className="px-3 py-1.5 rounded-md bg-brand text-onbrand text-xs font-medium hover:bg-brand-600 transition-colors disabled:opacity-50"
+                  type="button"
+                  onClick={() => void saveAgentConfig(loginName)}
+                  disabled={configSaving || keyTesting}
+                >
+                  {configSaving ? "保存中…" : "保存"}
+                </button>
+                <button
+                  className="px-3 py-1.5 rounded-md border border-line text-xs text-ink hover:bg-surface-secondary transition-colors disabled:opacity-50"
+                  type="button"
+                  onClick={() => void (loginName === "workbuddy" ? testWorkBuddy() : testAgentConnection(loginName))}
+                  disabled={configSaving || keyTesting || (!configApiKey.trim() && !configKeyConfigured)}
+                >
+                  {keyTesting ? "测试中…" : "保存并测试"}
+                </button>
+                {loginName === "codex" && (
+                  <>
+                    <button
+                      className="px-3 py-1.5 rounded-md text-xs text-muted hover:text-ink"
+                      type="button"
+                      onClick={closeAgentConfig}
+                      disabled={configSaving || keyTesting}
+                    >
+                      使用现有 Codex 登录态
+                    </button>
+                    <button
+                      className="px-3 py-1.5 rounded-md text-xs text-brand hover:underline"
+                      type="button"
+                      onClick={() => void loginCodexWithChatGpt()}
+                      disabled={configSaving || keyTesting}
+                    >
+                      使用 ChatGPT 登录
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </dialog>
+      )}
     </section>
   );
 }
