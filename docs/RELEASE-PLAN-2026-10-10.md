@@ -115,7 +115,7 @@
 ### C. VRM 资产授权（硬阻塞）
 - [x] 自制可再分发 VRM 完成并验证（栖灵 qiling，VRoid 原创，`allowRedistribution=True`+可商用，三道闸+motion-lab 观感验收，2026-10-14）
 - [x] 移除 komano / k81 / vrm_demo 三个第三方角色卡（`config/personas/`，2026-10-14）；`data/persona-assets/` 资料库物理文件保留本地（gitignore，不入库不入包）
-- [x] 确认 motion-library（Mixamo 来源 VRMA）授权链路：见 `docs/MIXAMO-LICENSE-2026-10-11.md`；~~打包不入库/不入包~~ → **2026-10-21 改为随包分发 + NOTICE 声明派生来源**（用户决策，见 MIXAMO-LICENSE 行动项变更记录）
+- [x] 确认 motion-library（Mixamo 参考片派生 VRMA）授权链路：见 `docs/MIXAMO-LICENSE-2026-10-11.md`；**2026-10-21 随仓库和安装包分发，并由 NOTICE 声明派生来源**（用户决策，见 MIXAMO-LICENSE 行动项变更记录）
 
 **C 段发布前剩余要点（2026-10-14 更新）：**
 - [x] 代码层默认形象切 qiling（2026-10-14，374 passed + web build 验证）：
