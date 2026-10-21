@@ -146,6 +146,35 @@ def update_local_executor_config(
     _write_local_overlay(local_path, default_executor, executors)
 
 
+def migrate_legacy_executor_secret(
+    name: str,
+    store,
+    catalog_path: Path | None = None,
+) -> bool:
+    """把旧版明文执行器 Key 迁移到安全存储；失败时保留原配置。"""
+    path = (catalog_path or default_catalog_path()).expanduser().resolve()
+    local_path = local_catalog_path(path)
+    if not local_path.exists():
+        return False
+    default_executor, executors = _read_local_overlay(local_path)
+    entry = next((item for item in executors if item.get("name") == name), None)
+    if entry is None:
+        return False
+    config = dict(entry.get("config") or {})
+    key_name = f"{name}_api_key"
+    value = str(config.get(key_name) or "").strip()
+    if not value:
+        return False
+    store.store(name, value)
+    config.pop(key_name, None)
+    if config:
+        entry["config"] = config
+    else:
+        entry.pop("config", None)
+    _write_local_overlay(local_path, default_executor, executors)
+    return True
+
+
 def update_local_default_executor(catalog_path: Path, name: str) -> None:
     """把 name 写成覆盖层默认执行器，压过 agents.yaml 的默认值。"""
     local_path = local_catalog_path(catalog_path)

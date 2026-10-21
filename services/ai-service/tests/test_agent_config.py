@@ -9,9 +9,14 @@ from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
 
 import pytest
+import yaml
 
 from app.agents import workbuddy
-from app.agents.catalog import load_agent_catalog, update_local_executor_config
+from app.agents.catalog import (
+    load_agent_catalog,
+    migrate_legacy_executor_secret,
+    update_local_executor_config,
+)
 from app.agents.codex import resolve_codex_command
 from app.agents.windows_install import (
     _UNINSTALL_KEY,
@@ -117,6 +122,30 @@ def test_local_override_writes_and_deep_merges_config(tmp_path: Path) -> None:
     assert codex.config["codex_command"] == str(custom)
     # 默认 config 其它键应保留（config 深合并）
     assert codex.config["acp_command"] == "codex-acp"
+
+
+def test_legacy_workbuddy_key_migrates_to_secret_store(tmp_path: Path) -> None:
+    catalog_path = tmp_path / "agents.yaml"
+    write_base_catalog(catalog_path)
+    update_local_executor_config(
+        catalog_path,
+        "workbuddy",
+        {"workbuddy_api_key": "legacy-secret"},
+    )
+
+    class Store:
+        def __init__(self):
+            self.values = {}
+
+        def store(self, name, value):
+            self.values[name] = value
+
+    store = Store()
+    assert migrate_legacy_executor_secret("workbuddy", store, catalog_path)
+    assert store.values == {"workbuddy": "legacy-secret"}
+    overlay = yaml.safe_load(catalog_path.with_name("agents.local.yaml").read_text(encoding="utf-8"))
+    workbuddy = next(item for item in overlay["executors"] if item["name"] == "workbuddy")
+    assert "workbuddy_api_key" not in workbuddy.get("config", {})
 
 
 def test_local_override_clear_removes_key_only(tmp_path: Path) -> None:

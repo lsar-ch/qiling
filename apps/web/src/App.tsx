@@ -1083,7 +1083,10 @@ function MyAgentsPage() {
     setConfigError("");
     setConfigNotice("");
     try {
-      const updated = await updateAgentConfig(name, body);
+      const updated =
+        name === "workbuddy" && commandOverride === undefined && typedKey
+          ? await loginAgent("workbuddy", "api-key", typedKey)
+          : await updateAgentConfig(name, body);
       setConfigNotice(command ? "已保存手动路径。" : "已恢复自动检测。");
       if (updated.integration_status === "not_installed") {
         setConfigError(command ? `路径已保存，但该路径不可用：${command}` : `自动检测未找到 ${name}。`);
@@ -1151,7 +1154,7 @@ function MyAgentsPage() {
     try {
       const typedKey = configApiKey.trim();
       if (typedKey) {
-        await updateAgentConfig("workbuddy", { api_key: typedKey });
+        await loginAgent("workbuddy", "api-key", typedKey);
         setConfigApiKey("");
         setConfigKeyConfigured(true);
       }

@@ -100,7 +100,7 @@ executors:
     tags: ["custom", "acp"]
     detail: "WorkBuddy 自带 CLI，通过 ACP/stdio 提交真实任务"
     config:
-      login_hint: "WorkBuddy 桌面端登录态不能复用；请打开申请页面获取 API Key，填入下方后测试连接。"
+      login_hint: "WorkBuddy 免费版不支持 API Key，桌面端登录态也不能复用；请确认已订阅付费版后再打开申请页面获取 Key。"
       signup_url: "https://copilot.tencent.com/profile/"
 
   - name: browser

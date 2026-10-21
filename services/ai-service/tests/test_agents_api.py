@@ -11,13 +11,14 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from app.agents.base import AgentAdapter
+from app.agents.base import AgentAdapter, AgentExecutionError
 from app.agents.catalog import AgentCatalogError, load_agent_catalog
 from app.agents.codex import CodexAdapter
 from app.agents import workbuddy as workbuddy_module
 from app.agents.registry import AgentRegistry
 from app.config import load_settings
 from app.main import create_app
+from app.api import agents as agents_api
 from qiling_contracts.agent import AgentInfo
 
 
@@ -639,9 +640,16 @@ def test_workbuddy_api_key_is_injected_and_never_returned(tmp_path, monkeypatch)
         electron=True,
     )
     with make_client(tmp_path, monkeypatch) as client:
-        saved = client.put(
-            "/api/agents/workbuddy/config",
-            json={"api_key": "wb-test-secret"},
+        adapter = client.app.state.agent_registry.get("workbuddy")
+        assert adapter is not None
+
+        async def validate(_key):
+            return None
+
+        monkeypatch.setattr(adapter, "validate_api_key", validate)
+        saved = client.post(
+            "/api/agents/workbuddy/login",
+            json={"method_id": "api-key", "api_key": "wb-test-secret"},
         )
         assert saved.status_code == 200
 
@@ -729,6 +737,68 @@ def test_workbuddy_exec_probe_flags_refusal(monkeypatch) -> None:
 
     healthy = probe_with("end_turn")
     assert healthy._exec_probe[1] == "ready"
+
+
+def test_workbuddy_validate_api_key_uses_candidate_without_persisting(monkeypatch) -> None:
+    runtime = workbuddy_module.WorkBuddyRuntime(
+        cli=Path("/tmp/qiling-workbuddy-cli"),
+        runner=Path("/tmp/qiling-workbuddy-runner"),
+        electron=True,
+    )
+    seen: list[str | None] = []
+
+    async def fake_probe(_runtime, api_key=None):
+        seen.append(api_key)
+        return "ready", "ok"
+
+    adapter = workbuddy_module.WorkBuddyAdapter()
+    monkeypatch.setattr(workbuddy_module, "resolve_workbuddy_runtime", lambda _configured: runtime)
+    monkeypatch.setattr(adapter, "_probe_with_api_key", fake_probe)
+    asyncio.run(adapter.validate_api_key("candidate-key"))
+    assert seen == ["candidate-key"]
+
+
+def test_workbuddy_login_endpoint_only_stores_after_validation(tmp_path, monkeypatch) -> None:
+    secrets: dict[str, str] = {}
+
+    class MemorySecretStore:
+        def store(self, name, value):
+            secrets[name] = value
+
+        def read(self, name):
+            return secrets.get(name)
+
+        def exists(self, name):
+            return name in secrets
+
+        def delete(self, name):
+            secrets.pop(name, None)
+
+    monkeypatch.setattr(workbuddy_module, "SecretStore", MemorySecretStore)
+    monkeypatch.setattr(agents_api, "SecretStore", MemorySecretStore)
+
+    with make_client(tmp_path, monkeypatch) as client:
+        adapter = client.app.state.agent_registry.get("workbuddy")
+        assert adapter is not None
+
+        async def validate(key):
+            if key == "bad-key":
+                raise AgentExecutionError("Key 无效")
+
+        monkeypatch.setattr(adapter, "validate_api_key", validate)
+        rejected = client.post(
+            "/api/agents/workbuddy/login",
+            json={"method_id": "api-key", "api_key": "bad-key"},
+        )
+        assert rejected.status_code == 400
+        assert secrets == {}
+
+        accepted = client.post(
+            "/api/agents/workbuddy/login",
+            json={"method_id": "api-key", "api_key": "good-key"},
+        )
+        assert accepted.status_code == 200
+        assert secrets == {"workbuddy": "good-key"}
 
 
 def test_workbuddy_exec_probe_is_off_the_request_path(monkeypatch) -> None:

@@ -19,6 +19,7 @@ from app.agents.catalog import (
 )
 from app.agents.factory import rebuild_agent_registry
 from app.agents.registry import AgentRegistry
+from app.agents.secret_store import SecretStore, SecretStoreError
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -35,6 +36,7 @@ class AgentConfigUpdate(BaseModel):
 
 class AgentLoginRequest(BaseModel):
     method_id: str
+    api_key: str | None = None
 
 
 def _registry(request: Request) -> AgentRegistry:
@@ -51,6 +53,15 @@ def _can_be_default(registry: AgentRegistry, name: str) -> bool:
     if adapter is None:
         return False
     return bool(adapter.executable and getattr(adapter, "default_eligible", True))
+
+
+def _api_key_configured(entry_name: str, config: dict) -> bool:
+    if str(config.get(f"{entry_name}_api_key") or "").strip():
+        return True
+    try:
+        return SecretStore().exists(entry_name)
+    except SecretStoreError:
+        return False
 
 
 @router.get("")
@@ -70,8 +81,8 @@ async def agent_config(request: Request) -> dict:
     for entry in catalog.executors:
         item = asdict(entry)
         config = dict(item.get("config") or {})
-        key_name = f"{entry.name}_api_key"
-        configured = bool(str(config.pop(key_name, "") or "").strip())
+        configured = _api_key_configured(entry.name, config)
+        config.pop(f"{entry.name}_api_key", None)
         item["config"] = config
         item["api_key_configured"] = configured
         items.append(item)
@@ -165,6 +176,26 @@ async def login_agent(name: str, payload: AgentLoginRequest, request: Request) -
     adapter = _registry(request).get(name)
     if adapter is None:
         raise HTTPException(status_code=404, detail="Agent 不存在")
+    if name == "workbuddy":
+        api_key = (payload.api_key or "").strip()
+        if not api_key:
+            raise HTTPException(status_code=400, detail="请先粘贴 WorkBuddy API Key。")
+        validate = getattr(adapter, "validate_api_key", None)
+        if not callable(validate):
+            raise HTTPException(status_code=400, detail="WorkBuddy 不支持页面登录。")
+        try:
+            await validate(api_key)
+            SecretStore().store(name, api_key)
+        except SecretStoreError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        update_local_executor_config(default_catalog_path(), name, {f"{name}_api_key": None})
+        catalog = load_agent_catalog()
+        rebuild_agent_registry(_registry(request), catalog, getattr(request.app.state, "llm_provider", None))
+        request.app.state.agent_catalog = catalog
+        agent = await _registry(request).detect(name)
+        return agent.model_dump(mode="json")
     login = getattr(adapter, "authenticate", None)
     if not callable(login):
         raise HTTPException(status_code=400, detail=f"{name} 不支持页面登录。")
@@ -220,8 +251,18 @@ async def update_agent_config(name: str, payload: AgentConfigUpdate, request: Re
                     status_code=400,
                     detail=f"{name} 未声明 api_key_env，请改用该 CLI 自身的登录方式。",
                 )
-            # 空字符串视为清除：删掉后回落系统环境里已有的同名变量。
-            config_updates[f"{name}_api_key"] = (payload.api_key or "").strip() or None
+            key = (payload.api_key or "").strip()
+            if name == "workbuddy":
+                if key:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="WorkBuddy API Key 必须通过登录向导完成真实探测后保存。",
+                    )
+                SecretStore().delete(name)
+                config_updates[f"{name}_api_key"] = None
+            else:
+                # 空字符串视为清除：删掉后回落系统环境里已有的同名变量。
+                config_updates[f"{name}_api_key"] = key or None
         update_local_executor_config(catalog_path, name, config_updates)
 
     if payload.enabled is not None:

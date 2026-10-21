@@ -17,7 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.agents.factory import build_agent_registry
-from app.agents.catalog import load_agent_catalog
+from app.agents.catalog import load_agent_catalog, migrate_legacy_executor_secret
+from app.agents.secret_store import SecretStore, SecretStoreError
 from app.agents.runtime import AgentRunManager, AgentRunStore
 from app.api import agent_runs, agents, chat, events, extensions, health, memories, persona_tasks, project_nodes, recording, reminders, session, settings as settings_api, state, tasks, voice
 from app.chat.store import ConversationStore
@@ -142,6 +143,11 @@ def create_app(
     )
     app.state.memory = MemoryService(settings.memory_dir, persona_dir=settings.personas_dir)
     app.state.agent_catalog = load_agent_catalog()
+    try:
+        if migrate_legacy_executor_secret("workbuddy", SecretStore()):
+            app.state.agent_catalog = load_agent_catalog()
+    except SecretStoreError:
+        pass
     app.state.agent_registry = build_agent_registry(app.state.agent_catalog, provider)
     app.state.agent_run_manager = AgentRunManager(
         registry=app.state.agent_registry,

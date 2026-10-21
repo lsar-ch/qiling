@@ -54,6 +54,7 @@ from app.agents.base import (
     AgentTaskResult,
 )
 from app.agents.catalog import AgentCatalogEntry
+from app.agents.secret_store import SecretStore, SecretStoreError
 from app.agents.windows_install import fixed_drive_roots, registry_candidates
 
 # CLI 相对安装根目录的位置（Windows / macOS 一致，只是根目录形态不同）
@@ -368,6 +369,12 @@ class WorkBuddyAdapter(AgentAdapter):
             or self.catalog_entry.config.get("api_key")
             or ""
         ).strip()
+        self._secret_store = SecretStore()
+        if not self._api_key:
+            try:
+                self._api_key = self._secret_store.read(self.name) or ""
+            except SecretStoreError:
+                self._api_key = ""
         self._probe_cache: tuple[float, str, str] | None = None  # (ts, status, detail)
         # 真实 prompt 探测结果。健康检查带 3~5s 超时，而真实 prompt 要十几秒，
         # 所以它只在后台跑，detect() 读缓存，绝不占住请求。
@@ -501,14 +508,20 @@ class WorkBuddyAdapter(AgentAdapter):
             self._exec_task = asyncio.create_task(self._run_exec_probe(runtime))
         return (cached[1], cached[2]) if cached is not None else (None, None)
 
-    async def _run_exec_probe(self, runtime: WorkBuddyRuntime) -> None:
-        """initialize + session/new + 极短 session/prompt，判「能不能真执行」。
-
-        失败只影响结论措辞，不抛出：探测是后台任务，异常会污染事件循环。
-        """
+    async def _probe_with_api_key(
+        self,
+        runtime: WorkBuddyRuntime,
+        api_key: str | None = None,
+    ) -> tuple[str, str]:
+        """用指定 Key 执行真实 prompt 探测，返回状态与用户可读结论。"""
         client: AcpClient | None = None
         try:
-            client = await self._spawn(runtime, cwd=_probe_workdir(), logs_dir=None)
+            client = await self._spawn(
+                runtime,
+                cwd=_probe_workdir(),
+                logs_dir=None,
+                api_key=api_key,
+            )
             await client.request(
                 "initialize",
                 {
@@ -565,7 +578,21 @@ class WorkBuddyAdapter(AgentAdapter):
         finally:
             if client is not None:
                 await client.close()
+        return result
+
+    async def _run_exec_probe(self, runtime: WorkBuddyRuntime) -> None:
+        """后台真实-prompt 探测；异常只影响结论，不污染事件循环。"""
+        result = await self._probe_with_api_key(runtime)
         self._exec_probe = (time.monotonic(), result[0], result[1])
+
+    async def validate_api_key(self, api_key: str) -> None:
+        """先用临时 Key 真实探测，成功后才允许调用方写入安全存储。"""
+        runtime = resolve_workbuddy_runtime(self._configured)
+        if runtime is None or runtime.runner is None:
+            raise AgentExecutionError("WorkBuddy 不可用：未检测到可执行的 CLI。")
+        status, detail = await self._probe_with_api_key(runtime, api_key.strip())
+        if status != "ready":
+            raise AgentExecutionError(detail or "WorkBuddy API Key 验证失败。")
 
     def invalidate_probe(self) -> None:
         """用户点「重新检测」时清掉缓存。"""
@@ -601,7 +628,11 @@ class WorkBuddyAdapter(AgentAdapter):
 
     # ------------------------------------------------------------------ 启动
 
-    def _child_env(self, runtime: WorkBuddyRuntime) -> dict[str, str]:
+    def _child_env(
+        self,
+        runtime: WorkBuddyRuntime,
+        api_key: str | None = None,
+    ) -> dict[str, str]:
         """子进程环境：保留基础变量，只叠加 CLI 需要的几项。
 
         ``SERVER__PORT=0`` 是必需的：WorkBuddy 桌面端与 CLI 会抢同一个本地端口，
@@ -616,8 +647,9 @@ class WorkBuddyAdapter(AgentAdapter):
         env["SERVER__HOST"] = "127.0.0.1"
         if self._internet_env:
             env["CODEBUDDY_INTERNET_ENVIRONMENT"] = self._internet_env
-        if self._api_key:
-            env["CODEBUDDY_API_KEY"] = self._api_key
+        key = api_key if api_key is not None else self._api_key
+        if key:
+            env["CODEBUDDY_API_KEY"] = key
         env["NO_COLOR"] = "1"
         return env
 
@@ -630,13 +662,14 @@ class WorkBuddyAdapter(AgentAdapter):
         on_update=None,
         on_permission=None,
         stderr_log_name: str = "workbuddy-acp-stderr.log",
+        api_key: str | None = None,
     ) -> AcpClient:
         assert runtime.runner is not None
         return await AcpClient.spawn(
             str(runtime.runner),
             args=[str(runtime.cli), "--acp"],
             cwd=cwd or _probe_workdir(),
-            env=self._child_env(runtime),
+            env=self._child_env(runtime, api_key),
             on_update=on_update,
             on_permission=on_permission,
             logs_dir=logs_dir,

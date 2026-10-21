@@ -405,11 +405,15 @@ export async function updateAgentConfig(
   return (await resp.json()) as AgentInfo;
 }
 
-export async function loginAgent(name: string, methodId: "api-key" | "chat-gpt"): Promise<AgentInfo> {
+export async function loginAgent(
+  name: string,
+  methodId: "api-key" | "chat-gpt",
+  apiKey?: string,
+): Promise<AgentInfo> {
   const resp = await fetch(`/api/agents/${encodeURIComponent(name)}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ method_id: methodId }),
+    body: JSON.stringify({ method_id: methodId, api_key: apiKey }),
   });
   if (!resp.ok) {
     let detail = `HTTP ${resp.status}`;
