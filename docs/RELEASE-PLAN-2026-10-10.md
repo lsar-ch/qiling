@@ -39,7 +39,7 @@
    - `.git` 当前 **956M**；历史含上述三个 VRM（合计 ~140M）及早期 9M 版本。
    - 用 `git filter-repo`（推荐）在公开前清历史；操作不可逆、会改变所有 commit hash，私有阶段做。
    - 清理后核对：历史无禁止 VRM、仓库体积可接受、gitleaks 复跑通过。
-   - Mixamo 来源的 `data/motion-library`（71M，VRMA）授权已核对（2026-10-11，`docs/MIXAMO-LICENSE-2026-10-11.md`）：可免版税商用但禁止原始资产再分发；当前树与历史均无 VRMA，仓库公开无风险；**M5 打包时安装包不打 VRMA（按需下载或自制替换）**。
+   - Mixamo 参考片派生的 `data/motion-library`（15 条修正后 VRMA）授权口径已核对（2026-10-11，`docs/MIXAMO-LICENSE-2026-10-11.md`）：随仓库和安装包分发，并在根目录 `NOTICE` 声明“由 Mixamo 参考片逐帧重定向派生、非原始文件”。
 5. **M5 打包 + 真机**：定打包形态（是否内置 Python/ai-service sidecar）；`npm run tauri build` 出 `.dmg` / `.msi`，双平台实装验证；Windows 真机截图补齐。
    - **⚠️ 芯片架构 / 系统版本口径（2026-10-11 核实，打包时逐条照做）**：
      - **macOS 出一份 universal 包**：先 `rustup target add x86_64-apple-darwin aarch64-apple-darwin`，再 `npm run tauri build -- --target universal-apple-darwin`，一份 `.dmg` 通吃 Intel + M 系（体积约单架构两倍，可接受）。代码层已双架构就绪：Rust 依赖纯源码、Python 依赖均有双架构 wheel、`requirements.txt` 已锁 Intel 的 `cryptography<49`。
@@ -134,7 +134,7 @@
 - [x] 清理后完整 check.sh 回归（369 passed + typecheck + vitest，2026-10-10）
 - [x] 二次清理残留衍生图（2026-10-15）：`k81/komano/vrm_demo` 的 avatar/original/manifest，以及实验素材 `persona_3/qianwen_t4/realistic_proto`，共 36 个跟踪文件从当前树与全部历史清除；物理文件备份在 `~/qiling-assets-backup-20261015-084838.tar.gz`，本地恢复并 gitignore；清前 bundle 备份 `~/qiling-git-bundle-before-asset-purge-20261015-084838.bundle`；`.git` 29M，远端 main 强推后仅剩 default/persona_2/qiling 三个角色目录。
 
-> VRM/VRMA 物理文件已拷回原路径并 gitignore，仅本地测试用；自制可再分发资产完成后删除并正式替换。
+> 第三方角色 VRM 物理文件仍仅本地保留；`data/motion-library` 的 15 条修正后派生动作随仓库和安装包分发，并由 `NOTICE` 声明来源。
 > filter-repo 已移除 origin，已重新配置（不推送）。
 
 ### E. 打包与真机（M5）

@@ -1,17 +1,17 @@
 # Mixamo 动作库授权链路核对（2026-10-11）
 
 > 对应发布计划硬阻塞：确认 `data/motion-library` 授权链路。
-> 当前现状：**本机 `female` 15 条、2.3M；VRMA 不入库，但按 2026-10-21 决策随安装包分发并附 `NOTICE`。**
-> GitHub 源码仍不含 VRMA；安装包的派生作品口径见下方行动项。
+> 当前现状：**`female` 15 条、2.3M；已随仓库和安装包分发，并附 `NOTICE`。**
+> 这些文件由 Mixamo 参考片逐帧重定向并修正后生成，不是原始文件；完整声明见下方行动项。
 
 ## 事实
 
 - 来源：`idle` / `hover` / `speaking` / `success` / `project` 等候选片段源自 Mixamo（Adobe），
   经 Blender 重定向到 VRM 1.0 标准 52 骨后导出为 `.vrma`（见 `data/motion-library/README.md`）。
 - 当前处置（2026-10-10 已完成）：
-  - `.gitignore` 已忽略 `data/motion-library/`，`git ls-files` 跟踪数 = **0**；
-  - `git filter-repo` 清历史后，全历史 `git rev-list --objects | rg '\.vrma$'` 无任何命中；
-  - 物理文件保留在本机，用于测试和本地打包；干净 checkout 不会得到这些文件。
+  - `.gitignore` 不再排除 `data/motion-library/`，15 条 `.vrma` 随仓库提交；
+  - 2026-10-21 清理前的历史不含这些动作文件，本次提交新增 15 条并保留 `NOTICE`；
+  - 本地与干净 checkout 使用同一份随仓库分发的动作库。
 
 ## Mixamo 条款要点（2026-10-11 核对）
 
@@ -22,7 +22,7 @@
 
 ## 对栖灵的判定
 
-1. **公开 GitHub 仓库（v0.1）**：VRMA 既不在当前树也不在历史中，下载源码的人拿不到 Mixamo 派生文件 → 无再分发行为，无风险。
+1. **公开 GitHub 仓库（v0.1）**：15 条修正后的派生动作随仓库分发；根目录 `NOTICE` 明确声明其为 Mixamo 参考片逐帧重定向派生、非原始文件。
 2. **公开 Release 安装包（M5）**：2026-10-21 已由用户决策改为方案 B，VRMA 随 `.dmg/.msi` 分发。
    我方口径是动作文件已重定向到自有 VRM 骨架并嵌入应用，不作为独立动画库分发；
    `NOTICE` 明示其为 Mixamo 参考片派生作品并附使用条款链接。该问题仍不是 Adobe 明文许可，
@@ -32,7 +32,7 @@
 
 ## 行动项
 
-- [x] 确认当前仓库与历史无 VRMA（0 tracked / 0 history hits）
+- [x] 15 条修正后的派生 VRMA 随本次提交入库，根目录 `NOTICE` 声明来源与非原始文件属性
 - [x] ~~M5 打包时按方案 A 处理：打包流程排除 `data/motion-library/`~~
   **→ 2026-10-21 决策变更为方案 B（随包分发）**：不含动作库时安装后只剩程序化待机，
   用户体验不完整；改为打包动作库 + 源码/安装包内声明「动作由 Mixamo 参考片派生」
