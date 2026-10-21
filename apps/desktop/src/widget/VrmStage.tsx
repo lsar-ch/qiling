@@ -163,9 +163,21 @@ export default function VrmStage({
       const clipPlayedAt: Record<string, number> = {};
       let current: THREE.AnimationAction | null = null;
       let currentClipName: string | null = null;
+      let currentTrigger: ActionTrigger | null = null;
       // 一次性反馈动作在播期间不抢戏：状态切换与空闲重挑都要等它收尾
       let oneShotPlaying = false;
-      // 安装包不分发 Mixamo VRMA（授权限制）：动作片一条都加载不到时，
+      let oneShotUntil = 0;
+      const ONE_SHOT_MAX_MS = 15000;
+      /** 一次性动作是否仍占用舞台（带超时，防止 finished 没派发把切换永久挡住）。 */
+      const oneShotBusy = (): boolean => {
+        if (!oneShotPlaying) return false;
+        if (performance.now() > oneShotUntil) {
+          oneShotPlaying = false;
+          return false;
+        }
+        return true;
+      };
+      // 动作库缺失（旧安装包不分发，或显式排除）时，
       // 用程序化待机兜底（沉肩垂臂 + 呼吸 + 头部微动），不呈现绑定姿态 T-pose。
       let procedural = false;
       let proceduralBlend = 0;
@@ -193,6 +205,17 @@ export default function VrmStage({
           ? new Set(vrmConfigRef.current.loop_triggers)
           : LOOP_TRIGGERS
         ).has(name);
+      /**
+       * 目标动作没片可播、且与当前动作不是同一状态时，停掉旧动作。
+       * 不停的话画面会一直停在**上一个状态**的循环上（语音停了还在"说话"就是这个）。
+       */
+      const releaseCurrent = (next: ActionTrigger): void => {
+        if (!current || currentTrigger === next) return;
+        current.stop();
+        current = null;
+        currentClipName = null;
+        currentTrigger = null;
+      };
       const applyProceduralPose = (blend: number, elapsedMs: number): void => {
         const t = elapsedMs / 1000;
         const breathe = Math.sin(t * 1.5) * 0.5 + 0.5; // 0..1
@@ -243,7 +266,7 @@ export default function VrmStage({
       };
 
       const play = async (name: ActionTrigger): Promise<void> => {
-        if (oneShotPlaying) return;
+        if (oneShotBusy()) return;
         // 多候选：按 weight 随机挑，cooldownMs 挡刚播过的；全在冷却就保持当前动作。
         const choice = pickVrmClip(
           name,
@@ -253,8 +276,13 @@ export default function VrmStage({
           lipSyncBus.long,
         );
         if (!choice) {
-          // 该状态没有任何候选可播（动作库缺失时的常态）→ 循环状态回落程序化待机
-          if (isLoopTrigger(name)) enterProcedural();
+          // 该状态没有任何候选可播（动作库缺失时的常态）→ 循环状态回落程序化待机。
+          // 目标状态与当前不同时必须停掉旧动作，否则画面会停在**上一个状态**的动作上
+          // （典型症状：语音早结束了，角色还在循环讲话动作）。
+          if (isLoopTrigger(name)) {
+            releaseCurrent(name);
+            enterProcedural();
+          }
           return;
         }
         // 抽回正在播的同一条：直接放行，重播会让循环动作跳一下
@@ -263,11 +291,15 @@ export default function VrmStage({
         if (disposed || !clip) {
           // 片段被删/改名：用冷却机制永久排除，否则每次重挑都撞它，后面的候选永远轮不到
           clipPlayedAt[choice.clip] = Number.POSITIVE_INFINITY;
-          if (isLoopTrigger(name)) enterProcedural();
+          if (isLoopTrigger(name)) {
+            releaseCurrent(name);
+            enterProcedural();
+          }
           return;
         }
         clipPlayedAt[choice.clip] = Date.now();
         currentClipName = choice.clip;
+        currentTrigger = name;
         const action = mixer.clipAction(clip, vrm.scene);
         action.reset();
         const cfg = vrmConfigRef.current;
@@ -307,7 +339,9 @@ export default function VrmStage({
         }
         clipPlayedAt[choice.clip] = Date.now();
         currentClipName = choice.clip;
+        currentTrigger = null; // 一次性动作不隶属任何状态，避免回落判断把它当同状态
         oneShotPlaying = true;
+        oneShotUntil = performance.now() + ONE_SHOT_MAX_MS;
         const action = mixer.clipAction(clip, vrm.scene);
         action.reset();
         action.setEffectiveTimeScale(choice.timeScale);
@@ -324,9 +358,13 @@ export default function VrmStage({
 
       // 一次性动作（反馈/状态单次）播完 → 回落**当前**状态 trigger，而不是硬编码 idle，
       // 否则思考中点击会把角色降级到待机。循环动作不触发 finished，天然不会误入。
+      // 但回落目标本身也可能是一次性 trigger（completed → success）：
+      // 那样「播完 → 再播同一条」会无限套娃，看起来就是动作卡住不停，
+      // 所以非循环 trigger 播完统一回 idle，等下一次状态事件再上台词。
       mixer.addEventListener("finished", () => {
         oneShotPlaying = false;
-        void play(triggerRef.current);
+        const t = triggerRef.current;
+        void play(isLoopTrigger(t) ? t : "idle");
       });
 
       rigRef.current = { vrm, mixer, play, playOneShot };

@@ -339,7 +339,7 @@ presentation:
     - thinking
     crossfade_ms: 200
     # 多候选：同一状态列多条候选，按 weight 加权随机；cooldownMs 内不再挑同一条。
-    # 只给 idle / speaking / success / click 配了多候选，其余 trigger 默认回退同名文件。
+    # 未列出的 trigger（thinking / awaiting_approval / error / hover）默认回退同名文件。
     actions:
       listening:
       - clip: listening
@@ -353,22 +353,23 @@ presentation:
       idle:
       - clip: idle
         weight: 4
-      - clip: idle_yawn
-        weight: 0.5
+      - clip: idle_alt
+        weight: 1.5
+        cooldownMs: 30000
+      - clip: idle_happy
+        weight: 1
         cooldownMs: 45000
       speaking:
       - clip: speaking
         weight: 3
-      - clip: speak_alt
-        weight: 1
+      - clip: speaking_alt
+        weight: 1.5
         cooldownMs: 20000
-        long: true
+      executing:
+      - clip: executing
       success:
       - clip: success
         weight: 2.5
-      - clip: success_happy
-        weight: 1
-        cooldownMs: 12000
       click:
       - clip: click
         weight: 1
@@ -377,6 +378,12 @@ presentation:
         timeScale: 0.7
         weight: 0.5
         cooldownMs: 8000
+      project:
+      - clip: project
+        weight: 3
+      - clip: project_alt
+        weight: 1
+        cooldownMs: 60000
   animations:
     idle_action_interval_ms: 8000
     transition_ms: 300

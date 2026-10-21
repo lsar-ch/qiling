@@ -115,7 +115,7 @@
 ### C. VRM 资产授权（硬阻塞）
 - [x] 自制可再分发 VRM 完成并验证（栖灵 qiling，VRoid 原创，`allowRedistribution=True`+可商用，三道闸+motion-lab 观感验收，2026-10-14）
 - [x] 移除 komano / k81 / vrm_demo 三个第三方角色卡（`config/personas/`，2026-10-14）；`data/persona-assets/` 资料库物理文件保留本地（gitignore，不入库不入包）
-- [x] 确认 motion-library（Mixamo 来源 VRMA）授权链路：见 `docs/MIXAMO-LICENSE-2026-10-11.md`；打包不入库/不入包
+- [x] 确认 motion-library（Mixamo 来源 VRMA）授权链路：见 `docs/MIXAMO-LICENSE-2026-10-11.md`；~~打包不入库/不入包~~ → **2026-10-21 改为随包分发 + NOTICE 声明派生来源**（用户决策，见 MIXAMO-LICENSE 行动项变更记录）
 
 **C 段发布前剩余要点（2026-10-14 更新）：**
 - [x] 代码层默认形象切 qiling（2026-10-14，374 passed + web build 验证）：
@@ -143,7 +143,7 @@
 - [x] **架构口径变更（2026-10-14 决策）：改发 arm64 / intel 两份 DMG，放弃 universal。** 内置 Python sidecar 无法在 Intel 机交叉冻结 arm64（PyInstaller 只能用本机架构 Python/wheels），Reor 等同类产品也是双包。CI 用 macos-13（x64）+ macos-14（arm64）各跑 `scripts/package/build-macos.sh x86_64|aarch64`；`MACOSX_DEPLOYMENT_TARGET=12.0` 维持。→ 口径已落地：x64 本机（2026-10-14）+ arm64 CI（2026-10-15）两份包均已产出。
 - [x] macOS arm64 `.dmg`：CI（macos-14）构建成功（2026-10-15，artifact 113MB）。**M 系真机实装验证移出 v0.1 发布清单，延后 v0.1.x 补丁**（2026-10-15 决策：CI 产物已出且与 x64 同一构建脚本，作者本机为 Intel 无 M 系真机，不为借机器阻塞发布）
 - [ ] macOS x86_64：全新用户目录实装一次并截图。**做法纠正（2026-10-15）：不需要新建 macOS 系统用户** —— 应用的每用户数据只有 `~/Library/Application Support/app.qiling.desktop`（28M），改名备份即为全新目录，首启会重新播种。本机已有 2026-10-15 12:35 构建的 `Qiling_0.1.0_x64.dmg`（117M，路径 `apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/`），但正式验收取本节末尾「产物重建」后的新包
-- [~] macOS x86_64 全新目录实装第一轮（2026-10-15 20:34，**部分通过**）：用修复后重建的 DMG（117M，20:33）装到 `/Applications`，`codesign --verify --deep --strict` valid；旧数据目录改名备份为 `app.qiling.desktop.bak-20261015-203420`；首启播种 28M 正常，`qiling-desktop` + 冻结 `ai-service` 双进程起，`/api/personas`（3 角色）、`/api/agents`（8 执行器）、`/api/health` 均 200。**vault 路径修复已在安装包内验证**：`/api/settings` 的 `obsidian_default_path` 与 `obsidian_vault_path` 均为空串（修复前会是作者 iCloud 路径）。两项未完成：① 截图 —— 终端未获「屏幕录制」权限；② 真实对话一轮 —— `.env` 里 `OPENAI_API_KEY` 与 `DASHSCOPE_API_KEY` 均返回 403 Free quota exhausted（账号额度问题，非打包问题；链路已通到供应商，并把 403 优雅降级成可读错误事件）。
+- [~] macOS x86_64 全新目录实装第一轮（2026-10-15 20:34，**部分通过**）：用修复后重建的 DMG（117M，20:33）装到 `/Applications`，`codesign --verify --deep --strict` valid；旧数据目录改名备份为 `app.qiling.desktop.bak-20261015-203420`；首启播种 28M 正常，`qiling-desktop` + 冻结 `ai-service` 双进程起，`/api/personas`（3 角色）、`/api/agents`（8 执行器）、`/api/health` 均 200。**vault 路径修复已在安装包内验证**：`/api/settings` 的 `obsidian_default_path` 与 `obsidian_vault_path` 均为空串（修复前会是作者 iCloud 路径）。两项未完成：① 截图 —— 终端未获「屏幕录制」权限；② 真实对话一轮 —— `.env` 里 `OPENAI_API_KEY` 与 `DASHSCOPE_API_KEY` 均返回 403 Free quota exhausted（账号额度问题，非打包问题；链路已通到供应商，并把 403 优雅降级成可读错误事件）。**10-16 复测**：屏幕录制权限已授予（系统设置勾选 ChatGPT 与 Codex，无需重启即生效），全屏与窗口级捕获均通过（窗口捕获含栖灵挂件真实内容，遮罩消失），① 解除；STT 端点实测 200（dashscope 逐字回传、约 1.3s），用户真机麦克风对话一轮 + TTS 播报通过（当前 dev 实例），② 全新安装实例待复测。
 - [x] Windows x64 NSIS 链路配置完成（2026-10-14）并在 windows-latest runner 构建成功（2026-10-15，artifact 79MB）；真机实装验证仍待做。
 - [ ] Windows x64 `.exe` 实装 + 真机截图（ARM Windows 走 x64 模拟，如有条件顺带验证）。**任务卡已建（2026-10-15）**：`docs/CROSS-PLATFORM-TESTING.md` §「Windows v0.1 安装包实装验收（外部协作者任务卡）」，交 WorkBuddy 在 Windows 真机执行，等回传截图与逐项结论
 - [x] release CI 落地（2026-10-14）：`.github/workflows/release-desktop.yml` 手动触发，macos-13(x64)/macos-14(arm64)/windows-latest 三 runner，产物上传 artifacts（不公开发布）；构建脚本 `scripts/package/build-macos.sh`、`build-windows.ps1`、跨平台 `stage_home.py`。首次实跑（run 38662701917，2026-10-15）arm64 DMG + Windows EXE 成功；x64 macos-13 因 GitHub runner 容量长时间排队待调度（x64 DMG 已于 2026-10-14 本机 Intel 构建并端到端验证）。

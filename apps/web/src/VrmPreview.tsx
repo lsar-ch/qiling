@@ -36,8 +36,21 @@ export default function VrmPreview({ personaId, library, trigger, clipBase, loop
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(28, mount.clientWidth / mount.clientHeight, 0.1, 50);
-    camera.position.set(0, 1.2, 3.2);
-    camera.lookAt(0, 1.2, 0);
+
+    const fitCamera = (vrm: any): void => {
+      const box = new THREE.Box3().setFromObject(vrm.scene);
+      const head = vrm.humanoid?.getNormalizedBoneNode("head");
+      const foot =
+        vrm.humanoid?.getNormalizedBoneNode("leftFoot") ??
+        vrm.humanoid?.getNormalizedBoneNode("rightFoot");
+      const headY = head ? head.getWorldPosition(new THREE.Vector3()).y : box.max.y;
+      const footY = foot ? foot.getWorldPosition(new THREE.Vector3()).y : box.min.y;
+      const height = Math.max(0.1, headY - footY);
+      const targetY = headY - height * 0.42;
+      const distance = Math.max((height / 2 / Math.tan((camera.fov * Math.PI) / 360)) * 1.35, 0.8);
+      camera.position.set(0, targetY, distance);
+      camera.lookAt(0, targetY, 0);
+    };
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.4));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -83,6 +96,7 @@ export default function VrmPreview({ personaId, library, trigger, clipBase, loop
         if (!vrm) return;
         vrm.scene.traverse((o: THREE.Object3D) => { o.frustumCulled = false; });
         scene.add(vrm.scene);
+        fitCamera(vrm);
 
         const clipName = `${clipBase || trigger}.vrma`;
         const shared = library ? await fetch(libraryUrl(library, clipName)) : null;

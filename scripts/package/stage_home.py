@@ -42,6 +42,29 @@ def main(out: str) -> int:
         shutil.copytree(src, assets_dst / persona_id, dirs_exist_ok=True)
     (dst / "data" / "run").mkdir(parents=True, exist_ok=True)
 
+    # 动作库**随包分发**（方案 B，2026-10-21 决策）。理由：不含动作库时安装后只剩
+    # 程序化待机（沉肩垂臂 + 呼吸 + 眨眼），用户装完看到的是没动作的角色，体验不完整。
+    #
+    # 授权口径（必须随源码保留，见 NOTICE / docs/MIXAMO-LICENSE-2026-10-11.md）：
+    #   data/motion-library 下的 .vrma 为「Mixamo 参考片派生」动作——逐帧采样参考片骨骼
+    #   旋转后重定向到本项目 VRM 骨架并做幅度调整，非 Mixamo 原始文件，但属衍生作品。
+    #   随包分发时须保留“动作由 Mixamo 参考片派生”的声明与 Mixamo 使用条款链接。
+    #
+    # CI/干净环境无此目录时自动跳过（installer 退化为程序化待机）。
+    # 需要出「无动作资产」包时显式排除：QILING_STAGE_NO_MOTION_LIB=1
+    import os
+
+    motion_src = root / "data" / "motion-library"
+    if os.environ.get("QILING_STAGE_NO_MOTION_LIB") == "1":
+        print("· 已按 QILING_STAGE_NO_MOTION_LIB=1 跳过动作库（安装后退化为程序化待机）")
+    elif motion_src.is_dir():
+        shutil.copytree(motion_src, dst / "data" / "motion-library", dirs_exist_ok=True)
+        n = len(list((dst / "data" / "motion-library").rglob("*.vrma")))
+        print(f"· 动作库已入包：{n} 个 .vrma（Mixamo 参考片派生，声明见 NOTICE）")
+        notice = root / "NOTICE"
+        if notice.is_file():
+            shutil.copy2(notice, dst / "NOTICE")
+
     import yaml
 
     settings = yaml.safe_load((root / "config" / "settings.yaml").read_text(encoding="utf-8"))

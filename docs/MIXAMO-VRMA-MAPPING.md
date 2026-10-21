@@ -13,8 +13,8 @@
 ## 2. 映射表
 
 Desktop 的 11 个 trigger 已在 `apps/desktop/src/widget/actions.ts` 定义。
-2026-09-29 起改用**男/女共享动作库**，片段放在
-`data/motion-library/{male,female}/<trigger>.vrma`，角色卡里用 `presentation.vrm.library` 选库；
+当前 qiling 使用 `data/motion-library/female/` 的 **15 条**片段，角色卡里用
+`presentation.vrm.library` 选库；未显式列出的 trigger 按同名文件回退；
 同状态多动作在 `presentation.vrm.actions` 里列候选（`weight` / `cooldownMs`），不再靠文件名区分。
 下表基名相同，只是从“每个 persona 一份”挪到了共享库。
 
@@ -32,16 +32,15 @@ Desktop 的 11 个 trigger 已在 `apps/desktop/src/widget/actions.ts` 定义。
 | `listening` | Thinking（复用） | 凑合 | 倾听凑思考 |
 | `hover` | Idle Transition | 凑合 | 悬停凑过渡 |
 
-## 3. 未使用动作（候选池）
+## 3. 已使用候选池
 
-| Mixamo 源动作 | 可作 | 现状 |
+| 片段 | 所属 trigger | 现状 |
 | --- | --- | --- |
-| Yawn | `idle` 变体 | **已入库** `idle_yawn.vrma`，配在 `idle` 候选、低权重 + 45s 冷却 |
-| Happy | `success` 备选 | **已入库** `success_happy.vrma`，配在 `success` 候选 |
-| Talking (1) | `speaking` 变体 | **已入库** `speak_alt.vrma`，配在 `speaking` 候选 |
-| Blow A Kiss | `success` / 特殊交互 | 已作 `click` 基名（与 `error` 互为候选） |
-| Talking (2) | `speaking` 变体 | 未用，可作第三条 `speaking` 候选 |
-| Idle Transition | `idle` 备选 | 已作 `hover` 基名，未进 idle 候选（内容与 hover 重复） |
+| `idle_alt` / `idle_happy` | `idle` | 已配置为低权重、高冷却候选 |
+| `speaking_alt` | `speaking` | 已配置为低权重、20s 冷却候选 |
+| `project_alt` | `project` | 已配置为低权重、60s 冷却候选 |
+| `error` | `click` | 已配置为 `click` 的低权重、8s 冷却候选 |
+| `hover` / `idle` | `listening` | 已配置为 `listening` 的低权重、40s 冷却候选 |
 
 ## 4. 缺口
 

@@ -1,0 +1,46 @@
+栖灵（Qiling）第三方资源与资产来源声明
+=====================================
+
+本文件随安装包与源码一同分发。安装包内 data/motion-library 目录下的动作资产
+受下列声明约束。
+
+
+一、角色动作（data/motion-library/**/*.vrma）
+--------------------------------------------
+
+这些动作文件**由 Mixamo 参考片派生**（Mixamo 为 Adobe 提供的在线角色动画服务）。
+
+派生方式：
+  1. 取得 Mixamo 导出的参考动画（.vrma / .fbx），仅作为动作参考；
+  2. 逐帧采样其骨骼旋转，重定向到本项目自有 VRM 1.0 人形骨架；
+  3. 按角色比例与项目规范调整幅度、位移与节奏；
+  4. 以 24fps 全帧 LINEAR 关键帧重新烘焙导出为 .vrma。
+
+因此：
+  · 这些文件不是 Mixamo 原始素材，不包含 Mixamo 的模型、贴图、骨架命名或原始文件；
+  · 动作设计与节奏来源于 Mixamo，属于**衍生作品**；
+  · 若需商用或再分发，请自行确认符合 Adobe Mixamo 的使用条款
+    （https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html）。
+    通常理解为：可将 Mixamo 内容用于自有项目（含商业项目），
+    但不得将其作为动画素材库单独再分发或转售。
+
+本仓库不对上述条款作法律解释，仅如实声明资产来源。
+
+
+二、若你 fork 本项目并希望完全规避该来源
+--------------------------------------
+
+把 data/motion-library 替换为自有或明确可再分发（如 CMU Motion Capture
+Database、CC0 素材）的动作即可，接口约定不变：
+  · 每段动作为 VRMA 文件，文件名对应 trigger（idle / speaking / …）；
+  · 须满 52 骨（VRM 1.0 humanoid 全集去掉 leftEye / rightEye / jaw）；
+  · 24fps 全帧烘焙、LINEAR 插值、仅 hips 有位移；
+  · 校验：node scripts/vrm/check_vrma.mjs <文件…>
+仓库内 scripts/vrm/cmu_retarget.py 提供了 CMU FBX → VRM VRMA 的重定向通道。
+
+
+三、其他第三方组件
+------------------
+
+前端 / 服务端依赖的 npm 包与 Python 包，其许可见各自 package.json、
+pyproject.toml 及 node_modules / .venv 内的 LICENSE 文件。

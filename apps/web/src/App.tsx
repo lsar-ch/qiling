@@ -238,6 +238,9 @@ function useHashPage(): [PageKey, (key: PageKey) => void] {
 function eventToState(eventType: string): string | null {
   const map: Record<string, string> = {
     "speech.started": "listening",
+    // 播报收尾：后端 state_mapper 映射为 idle，前端漏了它就会把事件当未知丢弃，
+    // 状态一直挂在 speaking（主界面徽标 + 挂件动作都降不下来）。
+    "speech.stopped": "idle",
     "conversation.input": "thinking",
     "conversation.transcript": "thinking",
     "conversation.response": "speaking",

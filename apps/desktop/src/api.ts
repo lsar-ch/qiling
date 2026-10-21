@@ -325,6 +325,9 @@ export async function fetchPersonaAssetMetrics(personaId: string): Promise<Perso
 export function eventToState(eventType: string): WidgetState | null {
   const map: Record<string, WidgetState> = {
     "speech.started": "listening",
+    // 播报收尾事件：后端 state_mapper 映射为 idle，前端必须同步，
+    // 否则此事件会被当成未知类型丢弃，state 永远停在 speaking（动作一直循环讲话）。
+    "speech.stopped": "idle",
     "conversation.input": "thinking",
     "conversation.transcript": "thinking",
     "conversation.response": "speaking",

@@ -352,6 +352,10 @@ export default function Widget() {
   const announceActiveRef = useRef(false);
   const speakStartAtRef = useRef(0);
   const speakEndAtRef = useRef(0);
+  /** 一轮播报的兜底看门狗：到点还在 speaking 就强制收尾（防流挂住/事件丢失）。 */
+  const speakGuardRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 播报结束后若服务端状态仍卡在 speaking，多久后本地强制回落。 */
+  const stateFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSpokenRef = useRef("");
   const lastSpokenAtRef = useRef(0);
   const voiceModeRef = useRef<VoiceMode>("off");
@@ -660,6 +664,10 @@ export default function Widget() {
   };
 
   const stopSpeaking = (): void => {
+    if (speakGuardRef.current) {
+      window.clearTimeout(speakGuardRef.current);
+      speakGuardRef.current = null;
+    }
     playbackAbortRef.current?.abort();
     playbackAbortRef.current = null;
     playbackRef.current?.stop();
@@ -683,11 +691,27 @@ export default function Widget() {
     lipSyncBus.analyser = analyser;
     playbackRef.current = source;
     return new Promise<void>((resolve) => {
-      source.onended = () => {
+      let done = false;
+      const finish = (): void => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(guard);
         if (playbackRef.current === source) playbackRef.current = null;
         if (lipSyncBus.analyser === analyser) lipSyncBus.analyser = null;
         resolve();
       };
+      source.onended = finish;
+      // 看门狗：WKWebView 在窗口失焦/被遮挡时偶发不派发 onended，
+      // 卡住会让 speak() 的 for-await 永不结束、speaking 永久为真（动作一直"讲话中"）。
+      // 以音频真实时长 + 1.5s 容差强制收尾。
+      const guard = window.setTimeout(() => {
+        try {
+          source.stop();
+        } catch {
+          /* 已停止 */
+        }
+        finish();
+      }, Math.max(1500, buffer.duration * 1000 + 1500));
       source.start();
     });
   };
@@ -724,6 +748,15 @@ export default function Widget() {
     const ctx = await ensureAudioContext();
     if (!ctx) return;
     lipSyncBus.long = false; // 任务短播报不算长回复
+    // 短播报也走同一条规则：有声就摆说话动作，声停立刻收。
+    // ownsSpeaking 防串台：主回复正在播时不抢 speaking 所有权。
+    const ownsSpeaking = !speakingRef.current;
+    if (ownsSpeaking) {
+      cancelStateFallback(); // 新播报开始：作废上一轮可能还在排队的 idle 兜底
+      speakingRef.current = true;
+      setSpeaking(true);
+      armSpeakGuard(12000);
+    }
     const abort = new AbortController();
     playbackAbortRef.current = abort;
     const startedAt = performance.now();
@@ -737,6 +770,7 @@ export default function Widget() {
           if (import.meta.env.DEV) console.info("[widget-tts] first chunk ms:", Math.round(performance.now() - startedAt));
         }
         await _playAudioBlob(ctx, chunk.audio);
+        armSpeakGuard(8000); // 有进展就续期：只有真正停住才会触发兜底
       }
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) {
@@ -744,6 +778,7 @@ export default function Widget() {
       }
     } finally {
       if (playbackAbortRef.current === abort) playbackAbortRef.current = null;
+      if (ownsSpeaking) finishSpeaking();
     }
   };
 
@@ -764,6 +799,81 @@ export default function Widget() {
     }
   };
 
+  /**
+   * 通知服务端「本轮播报真的结束了」。
+   *
+   * 语音合成接口（/api/voice/synthesize[\/stream]）只 publish 了 conversation.response
+   * （→ speaking），没有对应的收尾事件，服务端 widget_state 会一直停在 speaking，
+   * 挂件徽标和「程序驱动」的动作就一起卡在说话态。音频播完/被打断时补这一发，
+   * 把状态收回 idle（state_mapper: speech.stopped → idle）。
+   */
+  /**
+   * 取消上一轮播报遗留的 3s 状态兜底。
+   *
+   * 新旧播报若在 3s 内重叠，旧定时器会在新一轮已经进入 speaking 之后触发，
+   * 把刚开播的回复提前拉回 idle（表现为动作早退、徽标跳动）。开播前必须清掉。
+   */
+  const cancelStateFallback = (): void => {
+    if (stateFallbackRef.current) {
+      window.clearTimeout(stateFallbackRef.current);
+      stateFallbackRef.current = null;
+    }
+  };
+
+  const notifySpeechStopped = (): void => {
+    void fetch(`${SERVICE_BASE}/api/events/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_type: "speech.stopped", source: "speech", payload: {} }),
+    }).catch(() => {
+      /* 服务不可用时仅本地回落，下一轮 health 会带最新状态 */
+    });
+    // 事件可能丢失（WS 未连、服务端状态机没收到）：3s 后服务端状态还卡在
+    // speaking，就本地强制回落。否则徽标和「说话动作」会被一个没送到的收尾事件钉死。
+    cancelStateFallback();
+    stateFallbackRef.current = window.setTimeout(() => {
+      stateFallbackRef.current = null;
+      setState((cur) => (cur === "speaking" ? "idle" : cur));
+    }, 3000);
+  };
+
+  /**
+   * 一轮播报的兜底看门狗。
+   *
+   * 音频层正常路径由 onended / SSE done 收尾；但 WKWebView 在窗口失焦时可能
+   * 不派发 onended，或 SSE 连接不关闭，for-await 就永远挂着，`speaking` 会一直是
+   * true —— 表现就是「声音早停了，角色还在循环讲话动作」。
+   *
+   * 每收到一块音频就续期；流/播放停住超过 timeoutMs 就强制收尾。
+   */
+  const armSpeakGuard = (timeoutMs: number): void => {
+    if (speakGuardRef.current) window.clearTimeout(speakGuardRef.current);
+    speakGuardRef.current = window.setTimeout(() => {
+      speakGuardRef.current = null;
+      if (!speakingRef.current) return;
+      if (import.meta.env.DEV) {
+        console.warn("[widget-tts] guard fired, force-stop speaking", { timeoutMs });
+      }
+      playbackAbortRef.current?.abort();
+      playbackAbortRef.current = null;
+      playbackRef.current?.stop();
+      playbackRef.current = null;
+      finishSpeaking();
+    }, timeoutMs);
+  };
+
+  /** 一轮播报的统一收尾：本地标志、服务端事件、状态兜底三件事一起做。 */
+  const finishSpeaking = (): void => {
+    if (speakGuardRef.current) {
+      window.clearTimeout(speakGuardRef.current);
+      speakGuardRef.current = null;
+    }
+    speakingRef.current = false;
+    speakEndAtRef.current = Date.now();
+    setSpeaking(false);
+    if (stateRef.current === "speaking") notifySpeechStopped();
+  };
+
   const speak = async (text: string, emotion?: ExpressionEmotion): Promise<void> => {
     const voice = voiceStatusRef.current;
     if (!voice?.enabled || !voice.tts.available || speakingRef.current) return;
@@ -772,6 +882,7 @@ export default function Widget() {
 
     lastSpokenRef.current = text;
     lastSpokenAtRef.current = Date.now();
+    cancelStateFallback(); // 新播报开始：作废上一轮可能还在排队的 idle 兜底
     speakingRef.current = true;
     speakStartAtRef.current = Date.now();
     speakEndAtRef.current = 0;
@@ -782,6 +893,8 @@ export default function Widget() {
     let firstChunk = true;
     // 中文 TTS 约 6 字/秒；60 字 ≈ 10s，够放完整条长手势。
     lipSyncBus.long = text.length >= 60;
+    // 首块之前的最长等待：按"中文 5 字/秒 + 10s 余量"；收到音频后由循环内续期接管。
+    armSpeakGuard(12000 + Math.ceil(text.length / 5) * 1000);
 
     try {
       const stream = await synthesizeSpeechStream(
@@ -797,6 +910,7 @@ export default function Widget() {
           if (import.meta.env.DEV) console.info("[widget-tts] first chunk ms:", Math.round(performance.now() - startedAt));
         }
         await _playAudioBlob(ctx, chunk.audio);
+        armSpeakGuard(10000); // 每块续期：流还在推进就不急着收尾
       }
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) {
@@ -805,9 +919,7 @@ export default function Widget() {
     } finally {
       if (playbackAbortRef.current === abort) playbackAbortRef.current = null;
       playbackRef.current = null;
-      speakingRef.current = false;
-      speakEndAtRef.current = Date.now();
-      setSpeaking(false);
+      finishSpeaking();
     }
   };
 
@@ -1713,7 +1825,10 @@ export default function Widget() {
 
   const vrmPath = presentation?.asset?.vrm_path;
   const vrmPersonaId = presentation?.persona_id;
-  const activeTrigger = triggerFor(state, emotion);
+  // 动作以「真实播放状态」为准：音频还在放就是 speaking，音频一停立刻回落。
+  // 只看服务端 state 会踩两个坑：/api/voice/synthesize 只发 conversation.response
+  // 不发结束事件（状态卡在 speaking）；chat 侧的 completed 又早于音频播完。
+  const activeTrigger = speaking ? "speaking" : triggerFor(state, emotion);
   const activeSpriteSheet =
     spritesheets.find((sheet) => sheet.state_name === activeTrigger) ??
     spritesheets.find((sheet) => sheet.state_name === state) ??
