@@ -2,9 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-#[cfg(target_os = "windows")]
-use std::sync::Mutex;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -191,6 +189,17 @@ pub struct InteractiveArea {
     pub height: f64,
 }
 
+/// 前端按素材内容包围盒实测的“角色内容矩形”，窗口逻辑坐标（CSS px）。
+/// 贴边吸附的触发与落点都以它为基准：角色视觉贴边即吸附，
+/// 吸附后只保留 `handle` 逻辑像素的“抓手”露在屏幕内。
+/// 为空（前端尚未测量 / VRM 等）时回落到旧的窗口矩形行为。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentGeometry {
+    pub rect: InteractiveArea,
+    pub handle: i32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PositionMode {
     Preserve,
@@ -239,6 +248,8 @@ impl WidgetPreferences {
 pub struct WidgetRuntimeState {
     move_tx: Sender<()>,
     dragging: Arc<AtomicBool>,
+    /// 前端实测的角色内容矩形（全平台都需要：贴边吸附以它为基准）。
+    content: Mutex<Option<ContentGeometry>>,
     #[cfg(target_os = "windows")]
     interactive: Arc<Mutex<Option<InteractiveArea>>>,
 }
@@ -261,9 +272,20 @@ impl WidgetRuntimeState {
         Self {
             move_tx,
             dragging,
+            content: Mutex::new(None),
             #[cfg(target_os = "windows")]
             interactive,
         }
+    }
+
+    pub fn set_content_geometry(&self, geometry: Option<ContentGeometry>) {
+        if let Ok(mut guard) = self.content.lock() {
+            *guard = geometry;
+        }
+    }
+
+    pub fn content_geometry(&self) -> Option<ContentGeometry> {
+        self.content.lock().ok().and_then(|guard| *guard)
     }
 
     #[cfg(target_os = "windows")]
@@ -310,9 +332,17 @@ pub fn settle_position_in_work_area(
     auto_hide: bool,
     scale_factor: f64,
     visible: VisibleEdges,
+    content: Option<ContentGeometry>,
 ) -> WidgetPosition {
     let width = size.width as i64;
     let height = size.height as i64;
+
+    // 内容基准路径：触发与落点都按角色内容矩形计算，角色视觉贴边即吸附，
+    // 吸附后仅保留 handle 宽度的“抓手”露在屏幕内，窗口跳变量恰好贴合，无瞬移感。
+    if let Some(geometry) = content {
+        return settle_position_by_content(position, area, auto_hide, scale_factor, geometry);
+    }
+
     let max_x = (area.right() - width).max(area.x as i64);
     let max_y = (area.bottom() - height).max(area.y as i64);
     let clamped_x = (position.x as i64).clamp(area.x as i64, max_x);
@@ -371,15 +401,107 @@ pub fn settle_position_in_work_area(
     }
 }
 
+/// 内容基准的吸附结算。`keep_axis_inside` 把另一条轴夹到“角色内容完整落在工作区内”的范围，
+/// 允许窗口为了角色贴边而部分越出屏幕（非隐藏模式同样适用，角色这才真正碰得到屏幕边）。
+fn settle_position_by_content(
+    position: WidgetPosition,
+    area: WorkArea,
+    auto_hide: bool,
+    scale_factor: f64,
+    geometry: ContentGeometry,
+) -> WidgetPosition {
+    let rect = &geometry.rect;
+    let to_physical = |value: f64| (value * scale_factor).round() as i64;
+    let offset_x = to_physical(rect.x);
+    let offset_y = to_physical(rect.y);
+    let content_w = to_physical(rect.width).max(1);
+    let content_h = to_physical(rect.height).max(1);
+    let handle = to_physical(geometry.handle as f64).max(0);
+
+    let keep_axis_inside = |value: i64, offset: i64, len: i64, low: i64, high: i64| -> i64 {
+        let min_value = low - offset;
+        let max_value = high - offset - len;
+        value.clamp(min_value.min(max_value), max_value)
+    };
+    let inside_x = keep_axis_inside(position.x as i64, offset_x, content_w, area.x as i64, area.right());
+    let inside_y = keep_axis_inside(position.y as i64, offset_y, content_h, area.y as i64, area.bottom());
+
+    if !auto_hide {
+        return WidgetPosition {
+            x: inside_x as i32,
+            y: inside_y as i32,
+        };
+    }
+
+    let content_left = position.x as i64 + offset_x;
+    let content_right = content_left + content_w;
+    let content_top = position.y as i64 + offset_y;
+    let content_bottom = content_top + content_h;
+    let distances = [
+        ((content_left - area.x as i64).max(0), 0_u8),
+        ((area.right() - content_right).max(0), 1_u8),
+        ((content_top - area.y as i64).max(0), 2_u8),
+        ((area.bottom() - content_bottom).max(0), 3_u8),
+    ];
+    let (distance, edge) = distances
+        .into_iter()
+        .min_by_key(|candidate| candidate.0)
+        .expect("edge list is not empty");
+
+    let edge_trigger = (WIDGET_EDGE_TRIGGER as f64 * scale_factor).round() as i64;
+    if distance > edge_trigger {
+        return WidgetPosition {
+            x: inside_x as i32,
+            y: inside_y as i32,
+        };
+    }
+
+    let mut x = inside_x;
+    let mut y = inside_y;
+    match edge {
+        0 => x = area.x as i64 - handle - offset_x,
+        1 => x = area.right() + handle - offset_x - content_w,
+        2 => y = area.y as i64 - handle - offset_y,
+        3 => y = area.bottom() + handle - offset_y - content_h,
+        _ => unreachable!("edge index is bounded"),
+    }
+
+    WidgetPosition {
+        x: x as i32,
+        y: y as i32,
+    }
+}
+
 fn preserve_position_in_work_area(
     position: WidgetPosition,
     size: PhysicalSize<u32>,
     area: WorkArea,
     scale_factor: f64,
     visible: VisibleEdges,
+    content: Option<ContentGeometry>,
 ) -> WidgetPosition {
     let width = size.width as i64;
     let height = size.height as i64;
+
+    // 内容基准：位置必须仍能被用户抓回来 —— 角色至少保留 handle 宽度露在屏幕内。
+    if let Some(geometry) = content {
+        let rect = &geometry.rect;
+        let to_physical = |value: f64| (value * scale_factor).round() as i64;
+        let offset_x = to_physical(rect.x);
+        let offset_y = to_physical(rect.y);
+        let content_w = to_physical(rect.width).max(1);
+        let content_h = to_physical(rect.height).max(1);
+        let handle = to_physical(geometry.handle as f64).max(0);
+        let min_x = area.x as i64 - handle - offset_x;
+        let max_x = area.right() + handle - offset_x - content_w;
+        let min_y = area.y as i64 - handle - offset_y;
+        let max_y = area.bottom() + handle - offset_y - content_h;
+        return WidgetPosition {
+            x: (position.x as i64).clamp(min_x.min(max_x), max_x) as i32,
+            y: (position.y as i64).clamp(min_y.min(max_y), max_y) as i32,
+        };
+    }
+
     let to_physical = |value: i32| ((value as f64) * scale_factor).round() as i64;
     let visible_left = to_physical(visible.when_left).min(width);
     let visible_right = to_physical(visible.when_right).min(width);
@@ -462,6 +584,30 @@ pub fn set_widget_visible_edges(
     settle_current_widget_position(&app, mode, &mut preferences)?;
     save_preferences(&app, &preferences)?;
     Ok(preferences)
+}
+
+/// 前端把「角色内容矩形 + 抓手宽度」实测值回传，贴边吸附按角色基准结算。
+#[tauri::command]
+pub fn set_widget_content_rect(
+    app: AppHandle,
+    rect: Option<InteractiveArea>,
+    handle: Option<i32>,
+) -> Result<(), String> {
+    let state = app
+        .try_state::<WidgetRuntimeState>()
+        .ok_or_else(|| "挂件运行状态不可用".to_string())?;
+    let geometry = rect.map(|value| ContentGeometry {
+        rect: value,
+        handle: handle.unwrap_or(64).clamp(24, 320),
+    });
+    state.set_content_geometry(geometry);
+    Ok(())
+}
+
+/// 读取当前生效的角色内容几何信息；前端尚未测量时为 None（回落窗口基准行为）。
+fn content_geometry(app: &AppHandle) -> Option<ContentGeometry> {
+    app.try_state::<WidgetRuntimeState>()
+        .and_then(|state| state.content_geometry())
 }
 
 /// 前端把「角色/右键菜单当前占据的矩形」报上来，供 Windows 下的鼠标穿透判定使用。
@@ -557,7 +703,8 @@ pub fn resize_widget_height(app: AppHandle, height: u32) -> Result<(), String> {
     } else {
         PositionMode::ClampInside
     };
-    apply_position(&window, next_position, mode, &mut preferences)?;
+    let content = content_geometry(&app);
+    apply_position(&window, next_position, mode, &mut preferences, content)?;
     save_preferences(&app, &preferences)
 }
 
@@ -576,7 +723,8 @@ pub fn restore_widget_position(app: &AppHandle) -> Result<(), String> {
     } else {
         PositionMode::ClampInside
     };
-    apply_position(&window, saved, mode, &mut preferences)?;
+    let content = content_geometry(app);
+    apply_position(&window, saved, mode, &mut preferences, content)?;
     save_preferences(app, &preferences)
 }
 
@@ -701,6 +849,7 @@ fn settle_current_widget_position(
         },
         mode,
         preferences,
+        content_geometry(app),
     )
 }
 
@@ -709,6 +858,7 @@ fn apply_position(
     position: WidgetPosition,
     mode: PositionMode,
     preferences: &mut WidgetPreferences,
+    content: Option<ContentGeometry>,
 ) -> Result<(), String> {
     let size = window
         .inner_size()
@@ -719,15 +869,15 @@ fn apply_position(
         .map_err(|error| format!("读取显示器缩放失败: {error}"))?;
     let visible = preferences.visible_edges;
     let settled = match mode {
-        PositionMode::Preserve => {
-            preserve_position_in_work_area(position, size, area, scale_factor, visible)
-        }
-        PositionMode::ClampInside => {
-            settle_position_in_work_area(position, size, area, false, scale_factor, visible)
-        }
-        PositionMode::SnapToEdge => {
-            settle_position_in_work_area(position, size, area, true, scale_factor, visible)
-        }
+        PositionMode::Preserve => preserve_position_in_work_area(
+            position, size, area, scale_factor, visible, content,
+        ),
+        PositionMode::ClampInside => settle_position_in_work_area(
+            position, size, area, false, scale_factor, visible, content,
+        ),
+        PositionMode::SnapToEdge => settle_position_in_work_area(
+            position, size, area, true, scale_factor, visible, content,
+        ),
     };
     let (target, top_peek) = clamp_top_peek(settled, area, PLATFORM_CLAMPS_WINDOW_TOP);
     window
@@ -901,6 +1051,7 @@ mod tests {
             false,
             1.0,
             VisibleEdges::default(),
+            None,
         );
         assert_eq!(result, WidgetPosition { x: 1490, y: 600 });
     }
@@ -908,19 +1059,19 @@ mod tests {
     #[test]
     fn hides_at_each_edge_but_keeps_visible_pixels() {
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 20, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
+            settle_position_in_work_area(WidgetPosition { x: 20, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default(), None),
             WidgetPosition { x: -302, y: 300 }
         );
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 1640, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
+            settle_position_in_work_area(WidgetPosition { x: 1640, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default(), None),
             WidgetPosition { x: 1688, y: 300 }
         );
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 300, y: 20 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
+            settle_position_in_work_area(WidgetPosition { x: 300, y: 20 }, SIZE, AREA, true, 1.0, VisibleEdges::default(), None),
             WidgetPosition { x: 300, y: -304 }
         );
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 300, y: 780 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
+            settle_position_in_work_area(WidgetPosition { x: 300, y: 780 }, SIZE, AREA, true, 1.0, VisibleEdges::default(), None),
             WidgetPosition { x: 300, y: 904 }
         );
     }
@@ -929,7 +1080,7 @@ mod tests {
     fn leaves_center_positions_unchanged() {
         let position = WidgetPosition { x: 600, y: 400 };
         assert_eq!(
-            settle_position_in_work_area(position, SIZE, AREA, true, 1.0, VisibleEdges::default()),
+            settle_position_in_work_area(position, SIZE, AREA, true, 1.0, VisibleEdges::default(), None),
             position
         );
     }
@@ -937,14 +1088,14 @@ mod tests {
     #[test]
     fn snaps_only_the_dominant_edge_at_a_corner() {
         let result =
-            settle_position_in_work_area(WidgetPosition { x: 20, y: 10 }, SIZE, AREA, true, 1.0, VisibleEdges::default());
+            settle_position_in_work_area(WidgetPosition { x: 20, y: 10 }, SIZE, AREA, true, 1.0, VisibleEdges::default(), None);
         assert_eq!(result, WidgetPosition { x: 20, y: -304 });
     }
 
     #[test]
     fn snaps_when_drag_crosses_an_edge() {
         assert_eq!(
-            settle_position_in_work_area(WidgetPosition { x: 2000, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default()),
+            settle_position_in_work_area(WidgetPosition { x: 2000, y: 300 }, SIZE, AREA, true, 1.0, VisibleEdges::default(), None),
             WidgetPosition { x: 1688, y: 300 }
         );
     }
@@ -968,6 +1119,7 @@ mod tests {
                 true,
                 2.0,
                 VisibleEdges::default(),
+                None,
             ),
             WidgetPosition { x: 3376, y: 1000 }
         );
@@ -976,11 +1128,11 @@ mod tests {
     #[test]
     fn preserves_saved_offscreen_position_but_keeps_it_reachable() {
         assert_eq!(
-            preserve_position_in_work_area(WidgetPosition { x: 1688, y: 600 }, SIZE, AREA, 1.0, VisibleEdges::default()),
+            preserve_position_in_work_area(WidgetPosition { x: 1688, y: 600 }, SIZE, AREA, 1.0, VisibleEdges::default(), None),
             WidgetPosition { x: 1688, y: 600 }
         );
         assert_eq!(
-            preserve_position_in_work_area(WidgetPosition { x: 5000, y: -5000 }, SIZE, AREA, 1.0, VisibleEdges::default()),
+            preserve_position_in_work_area(WidgetPosition { x: 5000, y: -5000 }, SIZE, AREA, 1.0, VisibleEdges::default(), None),
             WidgetPosition { x: 1688, y: -304 }
         );
     }
@@ -988,7 +1140,8 @@ mod tests {
     #[test]
     fn normalizes_scale_to_safe_bounds() {
         assert_eq!(normalize_scale(0.2), 0.75);
-        assert_eq!(normalize_scale(4.0), 1.15);
+        // 上限与 WIDGET_MAX_SCALE（2.0）一致；前端滑杆自身限制在 1.15。
+        assert_eq!(normalize_scale(4.0), 2.0);
         assert_eq!(normalize_scale(f64::NAN), 1.0);
     }
 
@@ -1009,7 +1162,8 @@ mod tests {
                 AREA,
                 true,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: -230, y: 300 }
         );
@@ -1021,7 +1175,8 @@ mod tests {
                 AREA,
                 true,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: 1800, y: 300 }
         );
@@ -1033,7 +1188,8 @@ mod tests {
                 AREA,
                 true,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: 600, y: -390 }
         );
@@ -1045,7 +1201,8 @@ mod tests {
                 AREA,
                 true,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: 600, y: 930 }
         );
@@ -1056,7 +1213,8 @@ mod tests {
                 SIZE,
                 AREA,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: -230, y: 930 }
         );
@@ -1078,7 +1236,8 @@ mod tests {
                 AREA,
                 true,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: 0, y: 300 }
         );
@@ -1089,7 +1248,8 @@ mod tests {
                 AREA,
                 true,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: 1490, y: 300 }
         );
@@ -1100,7 +1260,8 @@ mod tests {
                 AREA,
                 true,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: 600, y: 0 }
         );
@@ -1111,7 +1272,8 @@ mod tests {
                 AREA,
                 true,
                 1.0,
-                visible
+                visible,
+                None,
             ),
             WidgetPosition { x: 600, y: 600 }
         );
@@ -1175,5 +1337,134 @@ mod tests {
             assert_eq!(target, settled);
             assert!(!peek);
         }
+    }
+
+    // ── 内容基准吸附：触发与落点按角色内容矩形计算 ──
+
+    /// 窗口 430×480，角色内容居中偏下：窗口内逻辑矩形 (100, 60, 230, 400)，抓手 64。
+    fn content() -> ContentGeometry {
+        ContentGeometry {
+            rect: InteractiveArea {
+                x: 100.0,
+                y: 60.0,
+                width: 230.0,
+                height: 400.0,
+            },
+            handle: 64,
+        }
+    }
+
+    #[test]
+    fn content_far_from_edge_does_not_snap() {
+        // 旧实现按窗口矩形判定：窗口 x=20（距左边缘 20 < 44）就会吸附；
+        // 角色实际距左边缘 120px —— 内容基准下不应吸附。
+        let result = settle_position_in_work_area(
+            WidgetPosition { x: 20, y: 300 },
+            SIZE,
+            AREA,
+            true,
+            1.0,
+            VisibleEdges::default(),
+            Some(content()),
+        );
+        assert_eq!(result, WidgetPosition { x: 20, y: 300 });
+    }
+
+    #[test]
+    fn content_based_snap_keeps_handle_visible_at_left_edge() {
+        // 角色内容左缘距屏幕左边缘 40px（≤ 触发阈值）→ 吸附，
+        // 吸附后内容左缘位于 -64（只露出 64px 抓手）。
+        let result = settle_position_in_work_area(
+            WidgetPosition { x: -60, y: 300 },
+            SIZE,
+            AREA,
+            true,
+            1.0,
+            VisibleEdges::default(),
+            Some(content()),
+        );
+        assert_eq!(result, WidgetPosition { x: -164, y: 300 });
+        // 验证语义：吸附后内容左缘 = -164 + 100 = -64。
+        assert_eq!(result.x + 100, -64);
+    }
+
+    #[test]
+    fn content_based_snap_works_on_bottom_edge() {
+        // 内容下缘 = 780 + 460 = 1240，越过工作区底部（1080）→ 吸附下边缘，
+        // 内容下缘落到 1080 + 64 = 1144 → y = 1144 - 460 = 684。
+        let result = settle_position_in_work_area(
+            WidgetPosition { x: 600, y: 780 },
+            SIZE,
+            AREA,
+            true,
+            1.0,
+            VisibleEdges::default(),
+            Some(content()),
+        );
+        assert_eq!(result, WidgetPosition { x: 600, y: 684 });
+    }
+
+    #[test]
+    fn content_clamp_lets_character_touch_the_edge_without_auto_hide() {
+        // 关闭自动隐藏时，角色也应该能真正贴到屏幕左缘（窗口允许部分越界）：
+        // 用户把内容拖过左缘时，结算把内容左缘收回到 area.x=0 → 窗口 x = -100。
+        // （旧实现把整窗夹回屏幕内，角色永远隔着透明边碰不到屏幕边。）
+        let result = settle_position_in_work_area(
+            WidgetPosition { x: -200, y: 300 },
+            SIZE,
+            AREA,
+            false,
+            1.0,
+            VisibleEdges::default(),
+            Some(content()),
+        );
+        assert_eq!(result, WidgetPosition { x: -100, y: 300 });
+    }
+
+    #[test]
+    fn content_preserve_keeps_position_reachable() {
+        // 已吸附在左缘的位置必须原样保留（内容仍有 64px 抓手露在屏幕内）。
+        assert_eq!(
+            preserve_position_in_work_area(
+                WidgetPosition { x: -164, y: 300 },
+                SIZE,
+                AREA,
+                1.0,
+                VisibleEdges::default(),
+                Some(content()),
+            ),
+            WidgetPosition { x: -164, y: 300 }
+        );
+        // 远离屏幕的保存位置被拉回到“内容至少露 64px 抓手”的可达范围。
+        assert_eq!(
+            preserve_position_in_work_area(
+                WidgetPosition { x: -9000, y: 300 },
+                SIZE,
+                AREA,
+                1.0,
+                VisibleEdges::default(),
+                Some(content()),
+            ),
+            WidgetPosition { x: -164, y: 300 }
+        );
+    }
+
+    #[test]
+    fn content_top_snap_falls_back_to_peek_on_macos() {
+        // 内容上缘 = -30 + 60 = 30（≤ 触发阈值）→ 吸附上边缘：y = 0 - 64 - 60 = -124。
+        let settled = settle_position_in_work_area(
+            WidgetPosition { x: 600, y: -30 },
+            SIZE,
+            AREA,
+            true,
+            1.0,
+            VisibleEdges::default(),
+            Some(content()),
+        );
+        assert_eq!(settled, WidgetPosition { x: 600, y: -124 });
+        // macOS 不允许窗口越过工作区顶部：钳回顶边，交给前端做窗口内上移。
+        let (target, peek) = clamp_top_peek(settled, AREA, true);
+        assert_eq!(target, WidgetPosition { x: 600, y: 0 });
+        assert!(peek, "上边缘被平台钳制时必须让前端做窗口内上移");
     }
 }

@@ -665,6 +665,7 @@ pub fn run() {
             widget::set_widget_scale,
             widget::set_widget_visible_edges,
             widget::set_widget_interactive_area,
+            widget::set_widget_content_rect,
             widget::start_widget_drag,
             widget::cancel_widget_drag,
             widget::finish_widget_drag,

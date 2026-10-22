@@ -54,6 +54,11 @@ interface Props {
    * 靠计数器 seq 驱动重复触发；仅由 Widget 在非播报的空闲态推入。
    */
   oneShot?: { trigger: ActionTrigger; seq: number } | null;
+  /**
+   * 模型实际渲染范围（画布 CSS px 坐标）回报。挂件舞台按它贴合 3D 角色，
+   * 贴边吸附也以它为基准；模型加载完成或取景变化时触发，失败报 null。
+   */
+  onContentBox?: (rect: { x: number; y: number; width: number; height: number } | null) => void;
 }
 
 interface Rig {
@@ -72,6 +77,7 @@ export default function VrmStage({
   vrmConfig,
   idleIntervalMs,
   oneShot,
+  onContentBox,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rigRef = useRef<Rig | null>(null);
@@ -81,6 +87,9 @@ export default function VrmStage({
   const emotionRef = useRef<ExpressionEmotion>(emotion);
   triggerRef.current = trigger;
   emotionRef.current = emotion;
+  // 回调走 ref：避免父组件每次渲染都重建测量副作用
+  const onContentBoxRef = useRef(onContentBox);
+  onContentBoxRef.current = onContentBox;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -112,14 +121,23 @@ export default function VrmStage({
     fill.position.set(-0.8, 1.6, -1);
     scene.add(fill);
 
+    // 模型渲染范围测量（画布 CSS px）。取景/窗口尺寸变化后重算，
+    // 让挂件舞台贴合 3D 角色实际占用的区域（模型加载前为 null，不测量）。
+    let measureBox: (() => void) | null = null;
+    let remeasureTimer = 0;
     const fit = (): void => {
       const w = canvas.clientWidth || 338;
       const h = canvas.clientHeight || 338;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      measureBox?.();
     };
     fit();
+    // 画布尺寸变化不一定来自 window resize：用户手动调整挂件大小改的是
+    // --mascot-size，画布随之缩放，必须重设渲染器分辨率和相机纵横比。
+    const resizeObserver = new ResizeObserver(() => fit());
+    resizeObserver.observe(canvas);
     window.addEventListener("resize", fit);
 
     void (async () => {
@@ -154,6 +172,83 @@ export default function VrmStage({
       const distance = Math.max(((height / 2) / Math.tan(fovRad / 2)) * 1.6, 0.6);
       camera.position.set(0, targetY + height * 0.4, distance);
       camera.lookAt(0, targetY, 0);
+
+      // 把模型包围盒投影到画布坐标，得到角色实际占用的矩形。
+      // 优先用蒙皮后的当前姿态顶点（SkinnedMesh.computeBoundingBox 跟随骨骼动作，
+      // 比 T-pose 几何包围盒贴合得多——待机垂臂时不会把手臂张开的宽度算进来），
+      // 非蒙皮网格（配件等）用几何包围盒；最后向外扩 8% 容忍动作摆动。
+      measureBox = (): void => {
+        const report = onContentBoxRef.current;
+        if (!report) return;
+        const w = canvas.clientWidth || 1;
+        const h = canvas.clientHeight || 1;
+        vrm.scene.updateMatrixWorld(true);
+        const posed = new THREE.Box3();
+        let any = false;
+        vrm.scene.traverse((obj) => {
+          const skinned = obj as THREE.SkinnedMesh;
+          const mesh = obj as THREE.Mesh;
+          let bounds: THREE.Box3 | null = null;
+          if (skinned.isSkinnedMesh) {
+            skinned.computeBoundingBox();
+            bounds = skinned.boundingBox;
+          } else if (mesh.isMesh) {
+            bounds = mesh.geometry?.boundingBox ?? null;
+          }
+          if (!bounds) return;
+          const world = new THREE.Box3().copy(bounds).applyMatrix4(mesh.matrixWorld);
+          if (!any) {
+            posed.copy(world);
+            any = true;
+          } else {
+            posed.union(world);
+          }
+        });
+        if (!any || posed.isEmpty()) {
+          report(null);
+          return;
+        }
+        const expandX = (posed.max.x - posed.min.x) * 0.08;
+        const expandY = (posed.max.y - posed.min.y) * 0.08;
+        const expandZ = (posed.max.z - posed.min.z) * 0.08;
+        posed.min.x -= expandX;
+        posed.max.x += expandX;
+        posed.min.y -= expandY;
+        posed.max.y += expandY;
+        posed.min.z -= expandZ;
+        posed.max.z += expandZ;
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        const corner = new THREE.Vector3();
+        for (let i = 0; i < 8; i++) {
+          corner.set(i & 1 ? posed.max.x : posed.min.x, i & 2 ? posed.max.y : posed.min.y, i & 4 ? posed.max.z : posed.min.z);
+          corner.project(camera);
+          const px = (corner.x * 0.5 + 0.5) * w;
+          const py = (1 - (corner.y * 0.5 + 0.5)) * h;
+          minX = Math.min(minX, px);
+          minY = Math.min(minY, py);
+          maxX = Math.max(maxX, px);
+          maxY = Math.max(maxY, py);
+        }
+        report({
+          x: Math.max(0, minX),
+          y: Math.max(0, minY),
+          width: Math.min(w, maxX) - Math.max(0, minX),
+          height: Math.min(h, maxY) - Math.max(0, minY),
+        });
+      };
+      measureBox();
+      // 交叉淡化落定后按已摆出待机姿态的顶点重测一次（首测发生在绑定姿态附近），
+      // 之后周期性重测：VRMA 动作会持续改变轮廓，舞台命中区要跟着走。
+      // 舞台每次重定位都以「内容保持原位」为基准，视觉上不会抖，只有命中区在动。
+      setTimeout(() => {
+        if (!disposed) measureBox?.();
+      }, 1200);
+      remeasureTimer = window.setInterval(() => {
+        if (!disposed && !document.hidden) measureBox?.();
+      }, 2000);
 
       const mixer = new THREE.AnimationMixer(vrm.scene);
       const vrmaLoader = new GLTFLoader();
@@ -504,7 +599,10 @@ export default function VrmStage({
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
+      window.clearInterval(remeasureTimer);
+      resizeObserver.disconnect();
       window.removeEventListener("resize", fit);
+      onContentBoxRef.current?.(null);
       const rig = rigRef.current;
       rigRef.current = null;
       if (followCbRef) offFollowUpdate(followCbRef);

@@ -15,7 +15,9 @@ html, body, #root {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
-/* ── 角色舞台：整块可拖动，后续动作/角色卡替换点 ── */
+/* ── 角色舞台：整块可拖动，后续动作/角色卡替换点 ──
+   尺寸默认 400×400 兜底；有素材内容包围盒时由前端按实测结果内联覆盖，
+   让点击/拖拽/右键区域紧贴角色本身，而不是一大块透明区域。 */
 .stage {
   position: absolute;
   left: 50%;
@@ -27,18 +29,11 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: bottom 0.22s ease;
+  transition: top 0.22s ease;
 }
-.w-root[data-input-open="1"] .stage { bottom: 68px; }
 .stage:active { cursor: grabbing; }
-
-/* ── 上边缘隐藏 ──
-   macOS 的窗口顶边越不过菜单栏，窗口挪不出屏幕上方，于是改成「窗口留在顶部、
-   角色在窗口内上移」：底部 [whenTop, innerHeight] 那段正好落到窗口顶部。
-   窗口屏幕占位不变，所以不会多出透明死区。 */
-.w-root[data-hidden-edge="top"] .stage {
-  bottom: calc(8px + var(--top-peek-offset, 0px));
-}
+/* 输入条展开时舞台整体上移（2D 角色由 JS 内联 top 覆盖时此规则自动失效） */
+.w-root[data-input-open="1"] .stage { bottom: 68px; }
 /* 藏起来时只留可抓取的那一条，状态徽标 / 语音点 / 气泡不要浮在屏幕中央。 */
 .w-root[data-hidden-edge="top"] .badge,
 .w-root[data-hidden-edge="top"] .voice-chip,
@@ -65,6 +60,11 @@ html, body, #root {
 /* ── 分层资产：z 升序叠放，同 role 多图层整体变换；无 layers 时回退单图 ── */
 .mascot-wrap {
   position: relative;
+  /* 固定为角色方块尺寸：不随舞台贴合收缩，否则画布大小 ← 舞台 ← 测量值形成反馈回路 */
+  width: var(--mascot-size, 338px);
+  height: var(--mascot-size, 338px);
+  /* 舞台贴合后可能比角色窄：禁止 flex 压缩，画布必须保持完整方块 */
+  flex-shrink: 0;
   /* Phase 1: 鼠标视线跟随 — CSS rotate 属性独立于 transform，不与呼吸动画冲突 */
   rotate: var(--mf-rotate, 0deg);
   transition: rotate 0.18s ease-out;
@@ -303,11 +303,11 @@ html, body, #root {
   50% { transform: scaleY(1.15); }
 }
 
-/* ── 短消息气泡：位于宠物上方 ── */
+/* ── 短消息气泡：位于角色上方（跟随舞台顶边，舞台贴合角色后自动对齐） ── */
 .bubble {
   position: absolute;
   left: 50%;
-  bottom: 414px;
+  bottom: calc(100% + 14px);
   transform: translateX(-50%);
   width: max-content;
   min-width: 113px;

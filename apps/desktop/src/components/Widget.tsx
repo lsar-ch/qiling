@@ -181,6 +181,10 @@ const WIDGET_HIDE_HANDLE_MAX = 140;
 const WIDGET_HIDE_HANDLE_RATIO = 0.34;
 // 判定鼠标是否落在挂件可交互区域时给的额外容差，便于隐藏后把角色拖回来。
 const WIDGET_INTERACTIVE_PADDING = 16;
+// 舞台按角色内容矩形贴合时四周预留的操作余量：贴住内容会让边角动作难以点中。
+const STAGE_HUG_PADDING = 14;
+// 输入条展开时舞台上移的距离（与旧 CSS bottom: 8px→68px 的位移一致）。
+const INPUT_OPEN_STAGE_SHIFT = 60;
 // 同一轮对话里 submitText 与 conversation.completed 都会要求展开主界面，去重窗口。
 const MAIN_UI_AUTO_DEDUPE_MS = 2000;
 // 交互模式调整空闲动作节奏：casual 更活跃、work 更克制、project 居中。
@@ -319,10 +323,10 @@ export default function Widget() {
     autoHide: false,
     scale: 1,
   });
-  /** 上边缘隐藏时角色要上移的像素（窗口逻辑坐标）。 */
-  const [topPeekOffset, setTopPeekOffset] = useState(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+  /** VrmStage 投影出的模型渲染范围（画布 CSS px 坐标），VRM 舞台贴合与内容吸附的数据源。 */
+  const vrmBoxRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1642,12 +1646,28 @@ export default function Widget() {
    * 把素材清单里的内容包围盒换算成窗口逻辑坐标矩形。
    * 用 stage 的 getBoundingClientRect（含 translateX(-50%)）叠加 img 的 offset 系列，
    * 既含舞台定位偏移、又不含呼吸缩放动画，测量值不会随动画抖动。
+   * img 可能嵌在定位过的 .mascot-wrap 里，offset 系列要沿 offsetParent 链累计到 stage。
    */
   const measureContentBox = (): InteractiveBox | null => {
     const img = mascotRef.current;
     const stage = stageRef.current;
     const metrics = assetMetrics;
-    if (!img || !stage || !metrics?.contentBbox) return null;
+    if (!img || !stage) return null;
+    // VRM 3D 角色：没有 2D 立绘的 contentBbox，用 VrmStage 投影出的模型渲染范围
+    // （画布 CSS px 坐标）叠加画布在窗口里的位置。
+    if (!metrics?.contentBbox) {
+      const canvas = stage.querySelector<HTMLCanvasElement>("canvas.vrm-canvas");
+      const rect = vrmBoxRef.current;
+      if (!canvas || !rect) return null;
+      const canvasRect = canvas.getBoundingClientRect();
+      if (canvasRect.width <= 0 || canvasRect.height <= 0) return null;
+      return {
+        x: canvasRect.left + rect.x,
+        y: canvasRect.top + rect.y,
+        width: Math.max(1, rect.width),
+        height: Math.max(1, rect.height),
+      };
+    }
     const baseW = metrics.canvasWidth || img.naturalWidth;
     const baseH = metrics.canvasHeight || img.naturalHeight;
     const boxW = img.offsetWidth;
@@ -1655,9 +1675,17 @@ export default function Widget() {
     if (!baseW || !baseH || !boxW || !boxH) return null;
     // .mascot 是 object-fit: contain —— 图片在元素内等比居中绘制
     const drawScale = Math.min(boxW / baseW, boxH / baseH);
+    let offsetX = img.offsetLeft;
+    let offsetY = img.offsetTop;
+    let parent = img.offsetParent as HTMLElement | null;
+    while (parent && parent !== stage) {
+      offsetX += parent.offsetLeft;
+      offsetY += parent.offsetTop;
+      parent = parent.offsetParent as HTMLElement | null;
+    }
     const stageRect = stage.getBoundingClientRect();
-    const drawX = stageRect.left + img.offsetLeft + (boxW - baseW * drawScale) / 2;
-    const drawY = stageRect.top + img.offsetTop + (boxH - baseH * drawScale) / 2;
+    const drawX = stageRect.left + offsetX + (boxW - baseW * drawScale) / 2;
+    const drawY = stageRect.top + offsetY + (boxH - baseH * drawScale) / 2;
     const [x0, y0, x1, y1] = metrics.contentBbox;
     return {
       x: drawX + x0 * drawScale,
@@ -1685,14 +1713,27 @@ export default function Widget() {
   };
 
   /**
-   * 把「贴边保留量」和「鼠标穿透区域」回传给 Rust 侧。
-   * 旧实现把保留量写死成四个常量（假设立绘左侧有大片透明区），换角色或调大小后
-   * 切边位置立刻错位，极端情况下整个角色被推出屏幕、拖不回来；现在按实际内容包围盒推算。
+   * 同步角色几何：
+   * 1. 舞台按角色内容矩形贴合（点击/拖拽/右键区域紧贴角色，不再是一大片固定区域）；
+   * 2. 「贴边保留量」与「鼠标穿透区域」回传给 Rust 侧（保留量按内容包围盒推算，
+   *    旧实现写死常量，换角色或调大小后切边位置就会错位）；
+   * 3. 「角色内容矩形 + 抓手宽度」回传，贴边吸附的触发与落点改为角色基准 ——
+   *    角色视觉贴边即吸附，吸附后只露抓手宽度，不再出现“角色贴边了却不吸附”。
    */
   const syncWidgetOverlayGeometry = (includeEdges: boolean): void => {
+    const stage = stageRef.current;
+    if (includeEdges && stage) {
+      // 先把舞台还原到自然布局再测量：内联贴合样式会让测量形成反馈回路。
+      stage.style.left = "";
+      stage.style.top = "";
+      stage.style.width = "";
+      stage.style.height = "";
+      stage.style.transform = "";
+    }
     const box = measureContentBox();
+    let handle = WIDGET_HIDE_HANDLE_MIN;
     if (includeEdges && box) {
-      const handle = Math.min(
+      handle = Math.min(
         WIDGET_HIDE_HANDLE_MAX,
         Math.max(
           WIDGET_HIDE_HANDLE_MIN,
@@ -1707,11 +1748,42 @@ export default function Widget() {
         whenTop: Math.round(window.innerHeight - box.y - box.height + handle),
         whenBottom: Math.round(box.y + handle),
       };
-      // 上边缘隐藏时角色上移这么多，窗口底部 [whenTop, innerHeight] 那段正好落到窗口顶部。
-      setTopPeekOffset(Math.max(0, Math.round(window.innerHeight - edges.whenTop)));
       void invoke("set_widget_visible_edges", { edges }).catch(() => {
         /* 非 Tauri 环境或后端不支持时忽略 */
       });
+      void invoke("set_widget_content_rect", {
+        rect: { x: box.x, y: box.y, width: box.width, height: box.height },
+        handle,
+      }).catch(() => {
+        /* 同上 */
+      });
+    }
+    if (includeEdges) {
+      if (stage && box) {
+        // 舞台贴合 + 手感余量；吸附状态/输入条展开的位移在内联 top 上叠加。
+        const pad = STAGE_HUG_PADDING;
+        // VRM 3D：画布是固定 --mascot-size 方块（自然布局下位置稳定），
+        // 舞台必须锚定画布矩形而不是动画中的内容矩形 —— 内容矩形每 2s 随动作
+        // 重测，若用它驱动可见布局，角色动作一改变轮廓，整个角色就被舞台重摆
+        // 拖着抖动/瞬移（录屏逐帧分析证实）。紧凑内容矩形仍原样回传 Rust
+        // （吸附/鼠标穿透），只是不再影响可见布局。
+        const vrmCanvas = assetMetrics?.contentBbox
+          ? null
+          : stage.querySelector<HTMLCanvasElement>("canvas.vrm-canvas");
+        const hug = vrmCanvas ? vrmCanvas.getBoundingClientRect() : box;
+        let top = hug.y - pad;
+        if (inputOpen) top -= INPUT_OPEN_STAGE_SHIFT;
+        if (preferences.hiddenEdge === "top") {
+          // 上边缘隐藏（macOS 窗口越不过菜单栏）：角色在窗口内上移，
+          // 上移量让内容下缘正好落在窗口顶部 handle 像素处，与其它三边的隐藏效果对齐。
+          top -= Math.max(0, Math.round(box.y + box.height - handle));
+        }
+        stage.style.left = `${Math.round(hug.x - pad)}px`;
+        stage.style.top = `${Math.round(top)}px`;
+        stage.style.width = `${Math.round(hug.width + pad * 2)}px`;
+        stage.style.height = `${Math.round(hug.height + pad * 2)}px`;
+        stage.style.transform = "none";
+      }
     }
     void invoke("set_widget_interactive_area", { area: interactiveArea(box) }).catch(() => {
       /* 同上 */
@@ -1719,11 +1791,20 @@ export default function Widget() {
   };
   syncOverlayRef.current = () => syncWidgetOverlayGeometry(true);
 
-  // 素材 / 缩放 / 气泡 / 输入条变化会同时改变内容位置与窗口高度，需重新测量。
+  /** VrmStage 模型范围回报：记下矩形并立即重跑几何同步（舞台贴合 + 内容吸附）。 */
+  const handleVrmContentBox = useCallback(
+    (rect: { x: number; y: number; width: number; height: number } | null): void => {
+      vrmBoxRef.current = rect;
+      syncOverlayRef.current?.();
+    },
+    [],
+  );
+
+  // 素材 / 缩放 / 气泡 / 输入条 / 隐藏边变化会同时改变内容位置与窗口高度，需重新测量。
   useLayoutEffect(() => {
     syncWidgetOverlayGeometry(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetMetrics, mascotArt, preferences.scale, preferences.autoHide, bubble, inputOpen]);
+  }, [assetMetrics, mascotArt, preferences.scale, preferences.autoHide, preferences.hiddenEdge, bubble, inputOpen]);
 
   // 右键菜单展开时把菜单本身并入可交互区域。
   useLayoutEffect(() => {
@@ -1853,7 +1934,6 @@ export default function Widget() {
       data-active={active ? "1" : "0"}
       data-input-open={inputOpen ? "1" : "0"}
       data-hidden-edge={preferences.hiddenEdge === "top" ? "top" : undefined}
-      style={{ "--top-peek-offset": `${topPeekOffset}px` } as CSSProperties}
     >
       {inputOpen && (
         <div className="composer" data-no-drag ref={composerRef}>
@@ -1980,6 +2060,7 @@ export default function Widget() {
                 vrmConfig={presentation?.vrm}
                 idleIntervalMs={idleActionIntervalMs}
                 oneShot={vrmOneShot}
+                onContentBox={handleVrmContentBox}
               />
             </Suspense>
           </div>
