@@ -181,7 +181,7 @@ Windows 的麦克风权限位置：
 ### 上下文
 
 - 安装包：GitHub Actions → workflow `release-desktop`（手动触发）→ artifact `Qiling-0.1.0_windows_x64`（约 79MB，NSIS `.exe`）。
-  **必须用 2026-10-15 之后的新 run**：此前的 run `38662701917` 冻结了 `config.py` 里硬编码的作者 vault 路径，已修但产物需重新构建。发卡前把最终 run 号填到这里：`__________`。
+  **最终 run：`39736528601`（2026-10-22，artifact 80MB）** —— 构建自含 vault 路径修复的 `3318ccc`，已不含作者本机路径；取代此前冻结了硬编码路径的 `38662701917`。发卡前只需确认该 run 的 artifact 仍有效。
 - 该包**未签名**，首次运行会出 SmartScreen 警告，属预期行为，不算缺陷；点「更多信息 → 仍要运行」继续。
 - 环境要求：Windows 10 1809 (build 17763) 及以上，或 Windows 11，x64。ARM Windows 走 x64 模拟，如手头正好是 ARM 机型请顺带记录一句。
 - WebView2 Runtime：Win11 自带；Win10 若缺失，NSIS 安装器会自动拉取 bootstrapper。

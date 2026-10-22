@@ -150,10 +150,12 @@
 - [x] macOS v0.1 不买 Apple Developer 账号（2026-10-14 拍板）：ad-hoc 签名 + README/Release Notes 写右键打开 / xattr 绕过说明；技术社区先行，后续有非技术用户再补 Developer ID 与公证。Windows 同样不签名，接受 SmartScreen 首运警告。
 - [ ] M 系真机核对 `scripts/launch-desktop-macos.sh` PATH（`/opt/homebrew/bin` vs `/usr/local/bin`）→ 随 M 系实机延后 v0.1.x。已核实（2026-10-15）该脚本只在 docs 里被引用，打包链路（`build-macos.sh` / `lib.rs` sidecar 分流）不依赖它，**不影响安装用户**；它另含硬编码 `/Users/lxb/...`，属 F 段公开前清理项
 
-- [~] **三平台产物重建（2026-10-22 复核，原"全部重建"表述已部分作废）**：
-  - **x64 已完成**：`a62b237`（10-15 20:29 修 vault 路径）之后，本机 10-15 20:33 产出 DMG，冻结 sidecar `grep 'iCloud~md~obsidian'` 无命中，`/api/settings` 两个 vault 字段均空（E 段首装验收已验证）。原条目写的"本机 12:35"是重建前的旧包，作废。
-  - **arm64 + Windows 仍需重建**：CI run `38662701917` 构建早于修复，仍冻结了作者路径。
-  - **重建方式**：把修复及其后提交 push，再手动触发 `release-desktop`。matrix = macos-13 x64 / macos-14 arm64 / windows x64，一次重建三个，x64 也会一并更新到当前代码（10-22 的挂件抖动修复与语音口径改动在其中）。重建后用新产物做实装验收。
+- [x] **三平台产物重建（2026-10-22 完成，CI run `39736528601`）**，取代此前冻结了硬编码 vault 路径的 `38662701917`：
+  - **x64**：本机 `build-macos.sh x86_64` 于 10-22 14:41 出包 124MB；挂载后 grep 整个 app（含 `Resources/runtime/ai-service`），作者 iCloud 路径 **0 命中**。
+  - **arm64**：CI 成功，产物 120.9MB；同样挂载 grep **0 命中**。
+  - **Windows x64**：CI 成功（17m10s），产物 80MB；原始字节 grep **0 命中**。局限：NSIS 安装包为压缩格式，macOS 上无法解包穷举，故以「构建自含 vault 修复的 `3318ccc` + 同链路 x64 挂载验证干净 + 原始 grep 0 命中」三重佐证。
+  - 顺带修掉一个 **Windows CI 回归**：`stage_home.py` 在 cp1252 控制台 print 中文会 `UnicodeEncodeError` 崩溃（`3318ccc` 把 stdout/stderr 切 UTF-8）。
+  - 已知非阻塞：`macos-13 x64` runner 排队满 24h 超时导致 run 整体显示 cancelled，但 arm64/Windows 产物已上传，x64 改由本机出包。
 
 ### F. 公开前最终核对
 - [ ] `.env` / API key / 运行数据 / 缓存不入库（复查 `.gitignore`）。**2026-10-15 复查结果**：密钥侧干净（仅 `.env.example` 入库且全是注释占位；无 `.env`/key/pem/音频/db/`__pycache__`/`apps/web/dist` 被跟踪）。但发现两处**个人数据残留，公开前必须处理**：
