@@ -49,6 +49,33 @@ def prepare_home(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(workbuddy_module, "resolve_workbuddy_runtime", lambda _configured: None)
 
 
+def patch_secret_store(monkeypatch) -> None:
+    """把三处直接 import 的 SecretStore 换成共享内存实现。
+
+    密钥落库/回读是宿主机 Keychain（macOS）或 DPAPI（Windows）行为，
+    API 与子进程注入链路的测试不该依赖它——否则同一用例在两个平台结果不同。
+    """
+    from app import main as app_main
+
+    data: dict[str, str] = {}
+
+    class MemorySecretStore:
+        def store(self, name: str, value: str) -> None:
+            data[name] = value
+
+        def read(self, name: str) -> str | None:
+            return data.get(name)
+
+        def delete(self, name: str) -> None:
+            data.pop(name, None)
+
+        def exists(self, name: str) -> bool:
+            return name in data
+
+    for module in (agents_api, workbuddy_module, app_main):
+        monkeypatch.setattr(module, "SecretStore", MemorySecretStore)
+
+
 @contextmanager
 def make_client(tmp_path, monkeypatch) -> TestClient:
     prepare_home(tmp_path, monkeypatch)
@@ -639,6 +666,7 @@ def test_workbuddy_api_key_is_injected_and_never_returned(tmp_path, monkeypatch)
         runner=Path("/tmp/qiling-workbuddy-runner"),
         electron=True,
     )
+    patch_secret_store(monkeypatch)
     with make_client(tmp_path, monkeypatch) as client:
         adapter = client.app.state.agent_registry.get("workbuddy")
         assert adapter is not None

@@ -19,6 +19,8 @@ def test_macos_secret_store_uses_security_commands(monkeypatch) -> None:
 
     monkeypatch.setattr(secret_store.sys, "platform", "darwin")
     monkeypatch.setattr(secret_store.subprocess, "run", fake_run)
+    # _binary() 走 shutil.which，Windows/macOS CI 上未必装了 security；这里只验命令拼接。
+    monkeypatch.setattr(secret_store.shutil, "which", lambda name: f"/usr/bin/{name}")
     store = secret_store.SecretStore()
 
     store.store("workbuddy", "secret-value")
