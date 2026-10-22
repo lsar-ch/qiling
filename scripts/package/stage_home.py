@@ -10,6 +10,12 @@ import shutil
 import sys
 from pathlib import Path
 
+# Windows 控制台默认 cp1252，无法编码中文；统一切到 UTF-8，
+# 否则打包脚本会在 CI 上因 print 中文而中断（2026-10-22 Windows 构建回归）。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 PERSONA_IDS = ("default", "persona_2", "qiling")
 
 
