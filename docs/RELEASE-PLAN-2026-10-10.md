@@ -154,12 +154,12 @@
 
 ### F. 公开前最终核对
 - [ ] `.env` / API key / 运行数据 / 缓存不入库（复查 `.gitignore`）。**2026-10-15 复查结果**：密钥侧干净（仅 `.env.example` 入库且全是注释占位；无 `.env`/key/pem/音频/db/`__pycache__`/`apps/web/dist` 被跟踪）。但发现两处**个人数据残留，公开前必须处理**：
-  1. `data/project_nodes/*.json`（17 个，68K）被跟踪且不在 `.gitignore`：内含本机绝对路径 `/Users/lxb/...` 与内部任务节点，属运行数据。最小修复 = 加 `.gitignore` + `git rm --cached`（保留本地文件），**需授权**。历史中同样存在，若要彻底清除需再跑一次 `filter-repo`。
+  1. `data/project_nodes/*.json`（17 个，68K）：**当前树已处理（2026-10-22，`b5bfa07`）** —— `.gitignore` 已含该目录，`git rm --cached` 已补齐，`git ls-files data/project_nodes` 归零，本地文件保留。**未做**：这些文件仍存在于 git 历史中（含本机绝对路径），彻底清除需再跑一次 `filter-repo`，高危、改写历史，待单独授权。
   2. ~~`services/ai-service/app/config.py` 把作者 iCloud vault 路径写成 `DEFAULT_OBSIDIAN_VAULT_PATH`~~ → **已修（2026-10-15）**：默认值改空串，新增 `obsidian_vault_dir()` 统一判空（`Path("")` 会退化成 cwd 且 `is_dir()` 恒真，原逻辑会把进程当前目录误当成用户的库并触发镜像/全文搜索），health/settings/memories 四处调用点改为共用该 helper，补回归测试 `test_unset_vault_path_is_never_treated_as_linked`。作者本机路径存于已 gitignore 的 `data/settings.local.json`，不受影响。
   3. 其余 `/Users/lxb` 出现在 `AGENTS.md`、`WORKBUDDY-WINDOWS-MIGRATION.md`、`scripts/launch-desktop-macos.sh`、`assets/icon/candidates/*.html`、8 个 docs 文件：非密钥，属观感/隐私噪声，公开前决定是否一并参数化（`$HOME`）或保留。
 - [x] CI 两个 workflow 跑通（2026-10-15，新历史 `0929f0f`）：cross-platform-regression macOS 干净环境 + Windows 双绿（修掉干净 runner 无 key 时 `test_health` 误断言 ok），security-scan success。release-desktop 见 E 段（x64 待 runner 调度）。
 - [ ] Release Notes / 截图 / 安装步骤就位
-- [ ] **待定：语音未配置时 health 顶层判 error（2026-10-15 全新实装发现）**。`health.py` 里语音供应商未配置 → 该诊断项 `error` → 顶层聚合 `error` → Web 端渲染**阻断式卡片**；但首次向导第 3 步写的是「语音可选」。后果：只配了 LLM 的用户每次启动都会看到一张红色阻断卡。二选一：把「语音未配置」降为 `degraded`（可关闭横幅，与"可选"一致），或把向导第 3 步改成必填。倾向前者，属产品口径决策，需拍板。
+- [x] **语音未配置不再判 error（2026-10-22 定案，`7d150f5`）**。采纳"语音降为 `degraded`（可关闭横幅，与向导第 3 步「语音可选」一致）"这一口径：`health.py` 语音项非就绪时由 `error` 改 `degraded`，`fix_hint` 标明语音为可选能力；`tests/test_health.py` 补回归断言（8 passed）。向导第 3 步保持可选，不改必填。
 - [ ] 全新环境走通安装 → 启动 → 核心闭环（语音 / 对话 / 执行）：macOS x64 侧本机可做（见 E 段「做法纠正」，DMG 已就绪）；Windows 侧已发任务卡给 WorkBuddy（见 E 段与 `docs/CROSS-PLATFORM-TESTING.md`）
 
 ### G. 发布与宣传（需授权推送）

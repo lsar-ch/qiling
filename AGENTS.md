@@ -43,7 +43,8 @@ Obsidian 记忆库：
 
 继续工作前优先阅读：
 
-1. `docs/HANDOVER-2026-10-01.md`（**最近一次交接：今天完成项、明天待办、环境坑位**）
+1. `docs/HANDOVER-2026-10-22.md`（**最近一次交接：10-01 至 10-22 进度补录、本轮完成项、待办、环境坑位**）
+   - 更早交接：`docs/HANDOVER-2026-10-01.md`（发布计划与执行器收口）
 2. `docs/V2-P1-PROGRESS-2026-09-18.md`（V2 P1 进度入口：状态/实现位置/坑位/下一步）
 3. `docs/HANDOVER-2026-09-17.md`（更早交接：真机待验收清单）
 4. `docs/PROJECT-ROADMAP.md` 与 `docs/P1-P2-TASK-CARDS.md`
@@ -73,7 +74,7 @@ Obsidian 记忆库：
 - 修改后用最低成本的权威信号验证，例如 `./scripts/check.sh`、类型检查、接口健康检查或页面状态
 - API key、音频样本、运行数据和缓存不入库
 - 代码审查与安全规则见 `CODE-REVIEW-RULES.md`
-- Obsidian 只放工程文档指针：新增 / 删除 / 重命名 `docs/*.md` 时，同一任务内更新 vault 的 `栖灵Desktop/06-工程文档索引.md`，禁止把 docs 正文复制进 vault（避免双份漂移）
+- Obsidian 只放工程文档指针：新增 / 删除 / 重命名 `docs/*.md` 时，同一任务内更新 vault 的 `栖灵Desktop/05-工程文档索引.md`（笔记标题显示为「06 · 工程文档索引」，实际文件名是 05-），禁止把 docs 正文复制进 vault（避免双份漂移）
 
 ## 常用命令
 
