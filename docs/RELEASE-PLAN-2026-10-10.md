@@ -150,7 +150,10 @@
 - [x] macOS v0.1 不买 Apple Developer 账号（2026-10-14 拍板）：ad-hoc 签名 + README/Release Notes 写右键打开 / xattr 绕过说明；技术社区先行，后续有非技术用户再补 Developer ID 与公证。Windows 同样不签名，接受 SmartScreen 首运警告。
 - [ ] M 系真机核对 `scripts/launch-desktop-macos.sh` PATH（`/opt/homebrew/bin` vs `/usr/local/bin`）→ 随 M 系实机延后 v0.1.x。已核实（2026-10-15）该脚本只在 docs 里被引用，打包链路（`build-macos.sh` / `lib.rs` sidecar 分流）不依赖它，**不影响安装用户**；它另含硬编码 `/Users/lxb/...`，属 F 段公开前清理项
 
-- [ ] **三平台产物需在 F 段第 1 项修复后全部重建**（2026-10-15 发现）：现有 x64 DMG（本机 12:35）、arm64 DMG 与 Windows EXE（CI run `38662701917`）都构建于 `config.py` 硬编码 vault 路径修复之前，PyInstaller 已把该字符串冻结进 sidecar。功能上对其他用户无害（该路径在其机器不存在），但发布物不应含作者个人路径 → 提交修复后重跑 `release-desktop` 三个 runner，并用新产物做实装验收。
+- [~] **三平台产物重建（2026-10-22 复核，原"全部重建"表述已部分作废）**：
+  - **x64 已完成**：`a62b237`（10-15 20:29 修 vault 路径）之后，本机 10-15 20:33 产出 DMG，冻结 sidecar `grep 'iCloud~md~obsidian'` 无命中，`/api/settings` 两个 vault 字段均空（E 段首装验收已验证）。原条目写的"本机 12:35"是重建前的旧包，作废。
+  - **arm64 + Windows 仍需重建**：CI run `38662701917` 构建早于修复，仍冻结了作者路径。
+  - **重建方式**：把修复及其后提交 push，再手动触发 `release-desktop`。matrix = macos-13 x64 / macos-14 arm64 / windows x64，一次重建三个，x64 也会一并更新到当前代码（10-22 的挂件抖动修复与语音口径改动在其中）。重建后用新产物做实装验收。
 
 ### F. 公开前最终核对
 - [ ] `.env` / API key / 运行数据 / 缓存不入库（复查 `.gitignore`）。**2026-10-15 复查结果**：密钥侧干净（仅 `.env.example` 入库且全是注释占位；无 `.env`/key/pem/音频/db/`__pycache__`/`apps/web/dist` 被跟踪）。但发现两处**个人数据残留，公开前必须处理**：
