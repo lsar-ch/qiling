@@ -163,7 +163,7 @@
   2. ~~`services/ai-service/app/config.py` 把作者 iCloud vault 路径写成 `DEFAULT_OBSIDIAN_VAULT_PATH`~~ → **已修（2026-10-15）**：默认值改空串，新增 `obsidian_vault_dir()` 统一判空（`Path("")` 会退化成 cwd 且 `is_dir()` 恒真，原逻辑会把进程当前目录误当成用户的库并触发镜像/全文搜索），health/settings/memories 四处调用点改为共用该 helper，补回归测试 `test_unset_vault_path_is_never_treated_as_linked`。作者本机路径存于已 gitignore 的 `data/settings.local.json`，不受影响。
   3. 其余 `/Users/lxb` 出现在 `AGENTS.md`、`WORKBUDDY-WINDOWS-MIGRATION.md`、`scripts/launch-desktop-macos.sh`、`assets/icon/candidates/*.html`、8 个 docs 文件：非密钥，属观感/隐私噪声，公开前决定是否一并参数化（`$HOME`）或保留。
 - [x] CI 两个 workflow 跑通（2026-10-15，新历史 `0929f0f`）：cross-platform-regression macOS 干净环境 + Windows 双绿（修掉干净 runner 无 key 时 `test_health` 误断言 ok），security-scan success。release-desktop 见 E 段（x64 待 runner 调度）。
-- [ ] Release Notes / 截图 / 安装步骤就位
+- [x] Release Notes / 截图 / 安装步骤就位（2026-10-22）：`docs/RELEASE-NOTES-v0.1.md` 可直接贴到 GitHub Release；截图 3 张在 `docs/assets/release/{main,widget,motion-lab}.png`；安装与未签名提示已覆盖 README「下载安装（v0.1）」与 Release Notes。
 - [x] **语音未配置不再判 error（2026-10-22 定案，`7d150f5`）**。采纳"语音降为 `degraded`（可关闭横幅，与向导第 3 步「语音可选」一致）"这一口径：`health.py` 语音项非就绪时由 `error` 改 `degraded`，`fix_hint` 标明语音为可选能力；`tests/test_health.py` 补回归断言（8 passed）。向导第 3 步保持可选，不改必填。
 - [ ] 全新环境走通安装 → 启动 → 核心闭环（语音 / 对话 / 执行）：macOS x64 侧本机可做（见 E 段「做法纠正」，DMG 已就绪）；Windows 侧已发任务卡给 WorkBuddy（见 E 段与 `docs/CROSS-PLATFORM-TESTING.md`）
 
