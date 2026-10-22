@@ -85,6 +85,20 @@ def test_health_overall_status_aggregates_diagnostics() -> None:
         assert body["status"] == "error"
 
 
+def test_voice_unconfigured_is_degraded_not_error() -> None:
+    """语音是可选能力：供应商未配置时只降级提示，不把整体状态判成阻断错误。"""
+    settings = load_settings()
+    settings.voice_enabled = False
+    settings.llm_provider = "openai"
+    settings.llm_api_key = "sk-test-not-a-real-key"
+    settings.llm_base_url = "https://example.invalid/v1"
+    with TestClient(create_app(settings)) as client:
+        diagnostics = client.get("/api/health").json()["diagnostics"]
+    voice = next(item for item in diagnostics if item["name"] == "voice")
+    assert voice["status"] == "degraded"
+    assert voice["fix_action"] == "open_settings"
+
+
 def test_health_overall_status_ok_when_all_diagnostics_ok() -> None:
     """轻量模式下 LLM 判 ok；若无 error/degraded 诊断项，整体为 ok。"""
     settings = load_settings()

@@ -147,9 +147,9 @@ def _diagnostics(
         })
     else:
         items.append({
-            "name": "voice", "label": "语音", "status": "error",
+            "name": "voice", "label": "语音", "status": "degraded",
             "detail": voice["degradation_reason"] or "语音不可用",
-            "fix_hint": "在设置页配置语音供应商与对应 API key",
+            "fix_hint": "语音为可选能力；需要时在设置页配置语音供应商与对应 API key",
             "fix_action": "open_settings",
         })
 
