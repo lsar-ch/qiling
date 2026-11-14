@@ -2,13 +2,12 @@
 
 这组文档用于先把项目目标、范围和技术路线说清楚，再进入实现。
 
-> 最新：2026-09-14 —— 产品方向为“角色化、本地优先、懂项目记忆的 AI 工作伙伴”；功能开发、macOS 人工验收与角色化表现均已完成，
-> V1 只剩 Windows 真机回归（WI-05 复验 + 18 项回归）。
-> 进度见 [项目路线图](./PROJECT-ROADMAP.md)、[Windows 迁移结论与遗留](./WINDOWS-MIGRATION-2026-09.md)、[Step 9 视觉打磨 Spec](./STEP9-UI-POLISH.md)、[Step 8 发布回归与降级验收](./STEP8-RELEASE-DEGRADATION.md) 与 [2026-09-13 交接单](./HANDOVER-2026-09-13.md)。
+> 最新：2026-10-26 —— v0.1.0 已发布并公开（2026-10-22），仓库 `github.com/lsar-ch/qiling`。
+> 当前专题交接见 [HANDOVER-2026-11-02-蓝猫动画阶段交接](./HANDOVER-2026-11-02-蓝猫动画阶段交接.md)；下一版本规划见 [V0.2-PLAN-2026-10-26](./V0.2-PLAN-2026-10-26.md)；发布与核对见 [RELEASE-PLAN-2026-10-10](./RELEASE-PLAN-2026-10-10.md)；上一份全局交接见 [HANDOVER-2026-10-22](./HANDOVER-2026-10-22.md)。
 
 - [需求说明](./PRD.md)
 - [技术方案](./TECHNICAL-PLAN.md)
-- [项目路线图](./PROJECT-ROADMAP.md)
+- [V0.2 规划（下一版本）](./V0.2-PLAN-2026-10-26.md)
 - [V1 范围说明](./V1-SCOPE.md)
 - [V1 核心数据结构与接口](./V1-INTERFACES.md)
 - [V1 实现结构与顺序](./V1-IMPLEMENTATION-PLAN.md)
@@ -35,6 +34,7 @@
 - [执行器目录](./EXECUTOR-CATALOG.md)
 - [Step 7 Phase 2 执行器真实运行 Spec](./STEP7-PHASE2-SPEC.md)
 - [任务分流规则](./TASK-ROUTING.md)
+- [Agent / Skill / MCP 扩容任务板（2026-11-12）](./AGENT-EXPANSION-TASK-BOARD-2026-11-12.md)
 
 ## 交接单
 

@@ -34,6 +34,7 @@ class LoadedSkill:
 
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)\Z", re.S)
+_EXECUTION_MODES = {"inline", "mcp", "acp"}
 
 
 def load_skill_markdown(path: Path, source: str) -> LoadedSkill:
@@ -72,6 +73,21 @@ def load_skill_markdown(path: Path, source: str) -> LoadedSkill:
             return [str(item).strip() for item in value if str(item).strip()]
         return []
 
+    execution = header.get("execution", {})
+    if execution is None:
+        execution = {}
+    if not isinstance(execution, dict):
+        raise SkillRegistryError(f"SKILL.md execution 必须是映射（{path}）")
+    execution_modes = as_str_list(execution.get("modes")) or ["inline"]
+    invalid_modes = sorted(set(execution_modes) - _EXECUTION_MODES)
+    if invalid_modes:
+        raise SkillRegistryError(
+            f"SKILL.md execution.modes 含未知模式：{', '.join(invalid_modes)}（{path}）"
+        )
+    metadata = header.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
     body = match.group(2).strip()
     scripts_dir = path.parent / "scripts"
     has_scripts = scripts_dir.is_dir() and any(scripts_dir.iterdir())
@@ -84,6 +100,15 @@ def load_skill_markdown(path: Path, source: str) -> LoadedSkill:
         triggers=as_str_list(header.get("triggers")),
         tools=as_str_list(header.get("tools")),
         has_scripts=has_scripts,
+        execution_modes=execution_modes,
+        requires=as_str_list(header.get("requires")),
+        supported_agents=as_str_list(header.get("supported_agents")),
+        license=str(header.get("license") or "").strip(),
+        source_url=str(header.get("source_url") or "").strip() or None,
+        version=(
+            str(header.get("version") or metadata.get("version") or "").strip()
+            or None
+        ),
     )
     return LoadedSkill(info=info, body=body, path=path.parent)
 
@@ -145,16 +170,44 @@ class SkillRegistry:
         data = loaded.info.model_dump()
         return SkillDetail(**data, body=loaded.body)
 
-    def select(self, message: str) -> LoadedSkill | None:
+    def select(self, message: str, *, mode: str | None = None) -> LoadedSkill | None:
         """按触发词在已启用技能中选择；多个命中取第一个。"""
         text = message.lower()
         for loaded in [*self._builtin.values(), *self._user.values()]:
-            if not loaded.info.enabled:
+            if not loaded.info.enabled or (
+                mode is not None and mode not in loaded.info.execution_modes
+            ):
                 continue
             triggers = [item.lower() for item in loaded.info.triggers if item.strip()]
             if any(item in text for item in triggers):
                 return loaded
         return None
+
+    def resolve(
+        self,
+        skill_id: str | None,
+        message: str,
+        *,
+        mode: str = "inline",
+        explicit: bool = False,
+    ) -> LoadedSkill | None:
+        """按显式 id 或触发词选择技能，并校验本轮执行模式。"""
+        loaded = self.get(skill_id) if skill_id else self.select(message, mode=mode)
+        if loaded is None:
+            if explicit and skill_id:
+                raise SkillRegistryError(f"技能不存在：{skill_id}")
+            return None
+        if not loaded.info.enabled:
+            if explicit:
+                raise SkillRegistryError(f"技能未启用：{loaded.info.id}")
+            return None
+        if mode not in loaded.info.execution_modes:
+            if explicit:
+                raise SkillRegistryError(
+                    f"技能 {loaded.info.id} 不支持执行模式：{mode}"
+                )
+            return None
+        return loaded
 
     def set_enabled(self, skill_id: str, enabled: bool) -> SkillInfo:
         """写入启停覆盖并就地更新；抛错表示技能不存在。"""

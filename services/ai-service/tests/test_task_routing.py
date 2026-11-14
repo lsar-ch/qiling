@@ -32,6 +32,17 @@ def prepare_home(tmp_path: Path, monkeypatch, permission_level: str = "confirm_r
     home = tmp_path / "home"
     monkeypatch.setenv("QILING_HOME", str(home))
     (home / "config" / "personas").mkdir(parents=True)
+    skill_dir = home / "skills" / "builtin" / "writing-assistant"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: writing-assistant\n"
+        "description: 写作助手\n"
+        "enabled: true\n"
+        "---\n"
+        "写作助手流程。\n",
+        encoding="utf-8",
+    )
     (home / "config").joinpath("settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
     (home / "config").joinpath("system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", home / "config" / "agents.yaml")
@@ -70,6 +81,25 @@ def make_client(
         yield client
 
 
+def test_explicit_skill_is_bound_to_task(tmp_path: Path, monkeypatch) -> None:
+    with make_client(tmp_path, monkeypatch) as client:
+        resp = client.post(
+            "/api/tasks",
+            json={"input": "请润色这段文字", "skill_id": "writing-assistant"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["task"]["skill_id"] == "writing-assistant"
+
+
+def test_unknown_skill_is_rejected(tmp_path: Path, monkeypatch) -> None:
+    with make_client(tmp_path, monkeypatch) as client:
+        resp = client.post(
+            "/api/tasks",
+            json={"input": "请处理这段文字", "skill_id": "missing-skill"},
+        )
+        assert resp.status_code == 400
+
+
 def test_answer_routes_to_answer(tmp_path: Path, monkeypatch) -> None:
     with make_client(tmp_path, monkeypatch) as client:
         resp = client.post("/api/tasks", json={"input": "解释一下任务分流是什么"})
@@ -81,6 +111,31 @@ def test_answer_routes_to_answer(tmp_path: Path, monkeypatch) -> None:
         task_id = body["task"]["task_id"]
         fetched = client.get(f"/api/tasks/{task_id}").json()
         assert fetched["task_id"] == task_id
+
+
+def test_inline_copywriting_routes_to_answer(tmp_path: Path, monkeypatch) -> None:
+    with make_client(tmp_path, monkeypatch) as client:
+        for text in (
+            "根据这段材料生成一段产品文案",
+            "根据以下材料写一段宣传文案",
+            "整理这段文字并生成文案",
+        ):
+            resp = client.post("/api/tasks", json={"input": text})
+            assert resp.status_code == 200
+            task = resp.json()["task"]
+            assert task["category"] == "answer", text
+            assert task["risk_level"] == "low", text
+
+        for text in (
+            "根据 README.md 生成一段产品文案",
+            "根据README.md生成一段产品文案",
+            "根据 server.log 生成一段产品文案",
+            "根据 /tmp/materials 生成一段产品文案",
+            "根据 docs/marketing 生成一段产品文案",
+        ):
+            resp = client.post("/api/tasks", json={"input": text})
+            assert resp.status_code == 200
+            assert resp.json()["task"]["category"] == "delegate_backend", text
 
 
 def test_task_without_run_returns_null_not_404(tmp_path: Path, monkeypatch) -> None:
@@ -182,6 +237,7 @@ def test_plain_command_routes_to_expected_executor(tmp_path: Path, monkeypatch) 
         cases = [
             ("帮我改一下 README 的错别字", "delegate_backend", None),
             ("查一下石家庄中考招生政策", "delegate_backend", "browser"),
+            ("搜索并整理 Python 文档摘要", "delegate_backend", "browser"),
             ("打开闲鱼主页", "delegate_backend", "browser"),
         ]
         for text, category, executor in cases:
@@ -195,11 +251,12 @@ def test_plain_command_routes_to_expected_executor(tmp_path: Path, monkeypatch) 
 
 def test_route_endpoint_and_task_listing(tmp_path: Path, monkeypatch) -> None:
     with make_client(tmp_path, monkeypatch) as client:
-        resp = client.post("/api/tasks/route", json={"input": "帮我改一下这个项目代码"})
+        resp = client.post("/api/tasks/route", json={"input": "帮我改一下这个项目代码", "project": "/tmp/project-a"})
         assert resp.status_code == 200
         body = resp.json()
         assert body["task"]["category"] == "delegate_backend"
         assert body["task"]["preferred_executor"] is None
+        assert body["task"]["project"] == "/tmp/project-a"
 
         items = client.get("/api/tasks").json()["items"]
         assert items and items[0]["task_id"] == body["task"]["task_id"]
@@ -312,6 +369,25 @@ def test_chat_answer_task_reaches_terminal_state(tmp_path: Path, monkeypatch) ->
         task = client.get("/api/tasks").json()["items"][0]
         assert task["category"] == "answer"
         assert task["status"] == "completed"
+
+
+def test_chat_copywriting_stays_inline_without_agent_run(tmp_path: Path, monkeypatch) -> None:
+    with make_client(tmp_path, monkeypatch, llm_provider=DummyProvider()) as client:
+        async def _unexpected_execute(*args, **kwargs):
+            raise AssertionError("inline 文案不应启动后台执行器")
+
+        monkeypatch.setattr(
+            client.app.state.agent_run_manager, "execute", _unexpected_execute
+        )
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "根据这段材料生成一段产品文案"},
+        )
+        assert resp.status_code == 200
+        task = client.get("/api/tasks").json()["items"][0]
+        assert task["category"] == "answer"
+        assert task["status"] == "completed"
+        assert "好" in resp.text
 
 
 def _write_task_file(tasks_dir: Path, task: Task, *, status: str, hours_old: float) -> None:

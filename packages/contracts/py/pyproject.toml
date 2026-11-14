@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qiling-contracts"
-version = "0.1.0"
+version = "0.2.0"
 description = "栖灵 shared contracts (single source of truth in Python)"
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2.5"]

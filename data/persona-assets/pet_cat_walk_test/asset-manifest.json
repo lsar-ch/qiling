@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "mode": "artwork",
+  "main": "/api/personas/pet_cat_walk_test/avatar",
+  "width": 1024,
+  "height": 1024,
+  "original_width": 1536,
+  "original_height": 1152,
+  "content_width": 928,
+  "content_height": 787,
+  "content_bbox": [
+    48,
+    189,
+    975,
+    975
+  ],
+  "canvas": {
+    "width": 1024,
+    "height": 1024,
+    "safe_margin": 48,
+    "baseline": 976
+  },
+  "content_type": "image/png",
+  "size": 2161716,
+  "output_size": 747256,
+  "background_removed": true,
+  "processing": "background-remove-trim-align-canvas"
+}

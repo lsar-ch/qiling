@@ -74,6 +74,11 @@ def import_source():
     if armature is None:
         raise RuntimeError("GLB 里没有骨架，无法做 humanoid 绑定")
 
+    # Mixamo 导出的骨骼名带 mixamorig: 前缀，去掉后才能匹配 humanoid 映射
+    for bone in armature.data.bones:
+        if bone.name.startswith("mixamorig:"):
+            bone.name = bone.name[len("mixamorig:"):]
+
     meshes = [o for o in bpy.data.objects
               if o.type == "MESH" and o.parent == armature]
     if not meshes:
@@ -169,8 +174,6 @@ def smooth_shading(body):
     for poly in body.data.polygons:
         poly.use_smooth = True
     mesh = body.data
-    if mesh.has_custom_normals:
-        mesh.request_custom_normals_clear()
     mesh.update()
     log("全网格平滑着色（不使用 Smooth by Angle 修改器）")
 

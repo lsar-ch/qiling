@@ -1,0 +1,349 @@
+{
+  "schemaVersion": 1,
+  "asset": "pet_cat_walk_test",
+  "motionSet": "cat_clean_v3",
+  "glb": {
+    "file": "model.glb",
+    "sizeBytes": 83221276,
+    "sha256": "f28ecbd8b36356abeba98eda3818a6cc3b5b708d5b4a89040173ad23de595a6c"
+  },
+  "skeleton": {
+    "id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+    "joints": 973,
+    "nodes": 982,
+    "meshes": 8
+  },
+  "clipCount": 33,
+  "clips": [
+    {
+      "clip": "crouch",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "crouch_once",
+      "loop": false,
+      "duration_s": 0.6667,
+      "samples": 17,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 坐姿基底 sit_idle@0 + crouch 姿态增量 + pose_ears_back 耳后压 + pose_arch 头颈抬头；IK 偏移层让 torso 下沉 0.045、前脚后撤 0.018（FK 骨在 IK 模式下被覆盖，必须补 IK 位移才看得见）；17f once，端点精确回 sit_idle@0",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "eat",
+      "loop": true,
+      "duration_s": 4.8333,
+      "samples": 117,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "head_look",
+      "loop": true,
+      "duration_s": 2.9583,
+      "samples": 72,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / v2 坐姿版：身体取 sit_idle@0 全量静态坐姿，头颈耳由 idle（原 A_rig_idle_look_around）张望周期做四元数增量叠加，新增 eye_common 眼球跟随；24fps 重采样、去 CYCLES/NOISE、首尾 C1 闭合",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "hiss",
+      "loop": true,
+      "duration_s": 2.1667,
+      "samples": 53,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "idle",
+      "loop": true,
+      "duration_s": 5.2917,
+      "samples": 128,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "idle_tail",
+      "loop": true,
+      "duration_s": 2.8333,
+      "samples": 69,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "jump_once",
+      "loop": false,
+      "duration_s": 0.7083,
+      "samples": 18,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 坐姿基底 sit_idle@0 + pounce(0..42) 头颈脊尾四元数增量（排除插件自带 torso 位移） + IK 偏移层：torso/hand_ik/foot_ik 沿 Z 做准备微沉→腾空 0.13→落地回 0；18f once，端点精确回 sit_idle@0",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "knead",
+      "loop": true,
+      "duration_s": 2.6667,
+      "samples": 65,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "lick_paw",
+      "loop": true,
+      "duration_s": 5.6667,
+      "samples": 137,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_alert",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_arch",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_bow",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_ears_back",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_jaw_open",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_neutral",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_paw_raise",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_sit_tall",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pose_sleep_curl",
+      "loop": true,
+      "duration_s": 0.0417,
+      "samples": 2,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "pounce",
+      "loop": true,
+      "duration_s": 1.75,
+      "samples": 43,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "run",
+      "loop": true,
+      "duration_s": 0.7917,
+      "samples": 20,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 由 walk 派生 bound 步态：R 侧相位环形平移使左右同相前后反相，叠加身体挤压舒展、头颈与尾巴 S 型随动、四脚腾空相",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "shake",
+      "loop": true,
+      "duration_s": 1.375,
+      "samples": 34,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "sit_down",
+      "loop": false,
+      "duration_s": 0.9583,
+      "samples": 24,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 程序化姿态插值（sit_idle 曲线模板 + 左右前脚错峰迈步）",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "sit_idle",
+      "loop": true,
+      "duration_s": 4.8,
+      "samples": 116,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 插件坐姿动作修订，521 曲线",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "sleep",
+      "loop": true,
+      "duration_s": 6.25,
+      "samples": 151,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "speak_sit",
+      "loop": true,
+      "duration_s": 1.9583,
+      "samples": 48,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 坐姿基底 sit_idle@0 + pose_alert 头颈增量（小幅双峰点头） + idle 耳部增量；48f 环形闭合、去 modifier；口型由 FacialRig 叠加，不写进 clip",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "stand_up",
+      "loop": false,
+      "duration_s": 1.2083,
+      "samples": 30,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / sit_down 整段严格倒放",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "stretch",
+      "loop": true,
+      "duration_s": 2.5,
+      "samples": 61,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "animal_animator 插件原始动作（规格化：去 F-Modifier + 30fps→24fps 重定时 + 循环首尾闭合与 C1 平滑）",
+      "license": "用户确认已获商用授权（2026-11-10）；原始插件动作不再分发"
+    },
+    {
+      "clip": "tap_paw_once",
+      "loop": false,
+      "duration_s": 0.5417,
+      "samples": 14,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 坐姿基底 sit_idle@0 + pose_paw_raise 左前爪姿态语义 + pose_alert 头颈跟随；IK 偏移层驱动 hand_ik.L 抬爪 0.075 / 前伸 0.022（插件 FK 抬爪在 IK 模式下不可见，必须补 IK 位移）；14f once，端点精确回 sit_idle@0",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "think_sit",
+      "loop": true,
+      "duration_s": 1.75,
+      "samples": 43,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 坐姿基底 sit_idle@0 + pose_arch 头颈脊尾增量（单峰低头） + idle 张望段头颈耳四元数增量（双峰轻转）；43f 环形闭合、去 modifier",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "walk",
+      "loop": true,
+      "duration_s": 1.125,
+      "samples": 28,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制 / 本地插件 animal_animator 参数库 + 28f C1 闭合修订",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "walk_start",
+      "loop": false,
+      "duration_s": 0.375,
+      "samples": 10,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制：由 walk 28f 环形 clip 派生，取全周期中立位 + 动态分量幅度包络（0→1），相位前进 6f 后末帧精确等于 walk@0；24fps / 10f / 0.375s",
+      "license": "自制，可自由分发"
+    },
+    {
+      "clip": "walk_stop",
+      "loop": false,
+      "duration_s": 0.375,
+      "samples": 10,
+      "root_motion": "in_place",
+      "skeleton_id": "sha256:bf826bf79174d0d7fa5d2dd3b4c6e9a7",
+      "source": "自制：由 walk 28f 环形 clip 派生，首帧精确等于 walk@0，动态分量幅度包络（1→0）收敛到步态中立位；24fps / 10f / 0.375s",
+      "license": "自制，可自由分发"
+    }
+  ]
+}

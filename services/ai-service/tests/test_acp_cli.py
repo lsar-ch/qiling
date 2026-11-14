@@ -7,8 +7,12 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
+import sys
+from pathlib import Path
 
 from app.agents.acp_cli import AcpCliAdapter
+from app.agents.base import AgentTaskRequest
 from app.agents.catalog import AgentCatalog, AgentCatalogEntry
 from app.agents.factory import build_agent_registry
 
@@ -93,3 +97,103 @@ def test_factory_registers_acp_cli_adapter():
     adapter = registry.get("demo")
     assert isinstance(adapter, AcpCliAdapter)
     assert adapter.executable is True
+
+
+def test_second_acp_agent_reuses_adapter_and_forwards_mcp_profile(monkeypatch):
+    """Claude-style ACP entries use the shared lifecycle without spawning a CLI."""
+    calls = []
+
+    class FakeClient:
+        def __init__(self, on_update):
+            self.on_update = on_update
+
+        async def request(self, method, params, *, timeout_s=None):
+            calls.append((method, params))
+            if method == "initialize":
+                return {"protocolVersion": 1}
+            if method == "session/new":
+                return {"sessionId": "session-claude"}
+            if method == "session/prompt":
+                await self.on_update(
+                    {"sessionUpdate": "agent_message_chunk", "content": "已完成"}
+                )
+                return {"stopReason": "end_turn"}
+            raise AssertionError(f"unexpected ACP method: {method}")
+
+        async def close(self):
+            return None
+
+    entry = _entry(
+        name="claude-code",
+        claude_code_command="claude-agent-acp",
+        api_key_env="ANTHROPIC_API_KEY",
+    )
+    adapter = AcpCliAdapter(catalog_entry=entry)
+
+    async def fake_spawn(resolved, *, cwd, logs_dir, on_update=None, on_permission=None):
+        assert resolved == ["claude-agent-acp"]
+        return FakeClient(on_update)
+
+    monkeypatch.setattr(adapter, "_resolve", lambda: ["claude-agent-acp"])
+    monkeypatch.setattr(adapter, "_spawn", fake_spawn)
+
+    updates = []
+
+    async def on_update(kind, payload):
+        updates.append((kind, payload))
+
+    result = asyncio.run(
+        adapter.run(
+            AgentTaskRequest(
+                task_id="task-claude",
+                prompt="只回复结果",
+                cwd="/tmp",
+                config={
+                    "mcp_servers": [
+                        {"name": "web", "command": "mcp-web", "args": []}
+                    ]
+                },
+            ),
+            on_update,
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.session_id == "session-claude"
+    assert result.message == "已完成"
+    new_call = next(params for method, params in calls if method == "session/new")
+    assert new_call["mcpServers"] == [
+        {"name": "web", "command": "mcp-web", "args": []}
+    ]
+    assert any(kind == "progress" for kind, _ in updates)
+
+
+def test_offline_acp_fixture_exercises_real_stdio_lifecycle():
+    fixture = Path(__file__).parent / "fixtures" / "fake_acp_server.py"
+    adapter = AcpCliAdapter(
+        catalog_entry=_entry(
+            acp_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fixture))}"
+        )
+    )
+    updates = []
+
+    async def on_update(kind, payload):
+        updates.append((kind, payload))
+
+    from app.agents.base import AgentTaskRequest
+
+    result = asyncio.run(
+        adapter.run(
+            AgentTaskRequest(
+                task_id="offline-acp",
+                prompt="只回复结果",
+                cwd=str(fixture.parent),
+            ),
+            on_update,
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.session_id == "offline-session"
+    assert result.message == "离线模拟结果"
+    assert any(kind == "progress" for kind, _ in updates)

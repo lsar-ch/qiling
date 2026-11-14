@@ -12,7 +12,7 @@ export const resources = {
       nav: {
         home: "主页",
         chat: "对话",
-        project: "项目",
+        project: "工作台",
         reminders: "提醒",
         character: "角色卡",
         memory: "记忆",
@@ -38,7 +38,7 @@ export const resources = {
       nav: {
         home: "Home",
         chat: "Chat",
-        project: "Projects",
+        project: "Workbench",
         reminders: "Reminders",
         character: "Character",
         memory: "Memory",

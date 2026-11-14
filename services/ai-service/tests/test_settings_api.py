@@ -58,6 +58,52 @@ activation:
         assert settings["voice"]["tts_voice"] == "Chinese (Mandarin)_Soft_Girl"
         assert settings["voice"]["auto_speak"] is True
 
+        workbench = {
+            "items": [
+                {
+                    "id": "docs",
+                    "kind": "link",
+                    "title": "文档",
+                    "group": "开发",
+                    "url": "https://example.com/docs",
+                    "visible": True,
+                    "order": 0,
+                },
+                {
+                    "id": "notes",
+                    "kind": "builtin",
+                    "title": "便签",
+                    "feature_id": "notes",
+                    "visible": False,
+                    "order": 1,
+                },
+            ]
+        }
+        updated_workbench = client.put("/api/settings", json={"workbench": workbench})
+        assert updated_workbench.status_code == 200
+        saved_workbench = updated_workbench.json()["workbench"]
+        assert saved_workbench["items"][0]["url"] == "https://example.com/docs"
+        assert client.get("/api/settings").json()["workbench"] == saved_workbench
+        invalid_workbench = client.put(
+            "/api/settings",
+            json={"workbench": {"items": [workbench["items"][0], workbench["items"][0]]}},
+        )
+        assert invalid_workbench.status_code == 422
+        for invalid_item in (
+            {"id": "broken-link", "kind": "link", "title": "缺少地址"},
+            {"id": "broken-frame", "kind": "iframe", "title": "非网页", "url": "file:///tmp/a.html"},
+            {"id": "broken-builtin", "kind": "builtin", "title": "缺少功能"},
+            {
+                "id": "mixed-target",
+                "kind": "link",
+                "title": "目标歧义",
+                "url": "https://example.com",
+                "feature_id": "notes",
+            },
+        ):
+            response = client.put("/api/settings", json={"workbench": {"items": [invalid_item]}})
+            assert response.status_code == 422
+
         updated = client.put("/api/settings", json={"voice_auto_speak": False}).json()
         assert updated["voice"]["auto_speak"] is False
         assert client.get("/api/voice/status").json()["auto_speak"] is False
@@ -89,6 +135,33 @@ activation:
 
 def test_existing_environment_is_not_leaked() -> None:
     assert "OPENAI_API_KEY" not in os.environ or os.environ["OPENAI_API_KEY"] != ""
+
+
+def test_persona_presentation_endpoint(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("QILING_HOME", str(tmp_path))
+    (tmp_path / "config" / "personas").mkdir(parents=True)
+    shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_path / "config" / "agents.yaml")
+    (tmp_path / "config" / "settings.yaml").write_text(
+        "app:\n  version: 0.1.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "personas" / "default.yaml").write_text(
+        "id: default\nname: 默认\navatar: ''\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "personas" / "pet.yaml").write_text(
+        "id: pet\nname: 宠物\nkind: cat\nglb: model.glb\n",
+        encoding="utf-8",
+    )
+
+    with TestClient(create_app(load_settings())) as client:
+        response = client.get("/api/personas/pet/presentation")
+
+        assert response.status_code == 200
+        assert response.json()["persona_id"] == "pet"
+        assert response.json()["asset"] == {"glb_path": "model.glb"}
+        assert client.get("/api/personas/missing/presentation").status_code == 404
+        assert client.get("/api/personas/bad.id/presentation").status_code == 404
 
 
 def test_persona_avatar_upload_and_validation(tmp_path: Path, monkeypatch) -> None:

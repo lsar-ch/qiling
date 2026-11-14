@@ -72,3 +72,42 @@ def test_presentation_vrm_motion_config_is_preserved(tmp_path: Path) -> None:
     )
     assert pres.vrm == {"loop_triggers": ["idle", "speaking"], "crossfade_ms": 240}
     assert pres.asset == {"vrm_path": "model.vrm"}
+
+
+def test_presentation_animal_motion_config_is_preserved(tmp_path: Path) -> None:
+    """GLB 动物模型与抽象动作清单必须一起下发，换角色时才可复用动作映射。"""
+    bridge = PresentationBridge(tmp_path)
+    animal = {
+        "model": "model.glb",
+        "motionSet": "cat_walk_v1",
+        "actions": {"idle": [{"clip": "sit_idle"}], "executing": [{"clip": "walk"}]},
+        "fallbacks": {"idle": ["walk"]},
+    }
+    pres = bridge._build_presentation(
+        "pet",
+        {
+            "id": "pet",
+            "name": "动物",
+            "kind": "cat",
+            "glb": "model.glb",
+            "presentation": {"style": "animal", "animal": animal},
+        },
+    )
+    assert pres.animal == animal
+    assert pres.asset == {"glb_path": "model.glb"}
+
+
+def test_build_reads_presentation_without_event_history(tmp_path: Path) -> None:
+    """挂件冷启动时事件可能已被历史窗口冲掉，必须能按角色卡直接重建。"""
+    (tmp_path / "pet.yaml").write_text(
+        "id: pet\nname: 宠物\nkind: cat\nglb: model.glb\n",
+        encoding="utf-8",
+    )
+    bridge = PresentationBridge(tmp_path)
+
+    presentation = bridge.build("pet")
+
+    assert presentation is not None
+    assert presentation.persona_id == "pet"
+    assert presentation.asset == {"glb_path": "model.glb"}
+    assert bridge.build("missing") is None

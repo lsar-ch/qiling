@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 CharacterStyle = Literal["2d_static", "2d_animated", "lip_sync", "live2d", "3d"]
-AvatarDriver = Literal["procedural_2d", "video_stream", "vrm_3d"]
+AvatarDriver = Literal["procedural_2d", "video_stream", "vrm_3d", "glb_animal_3d"]
 MotionFamily = Literal["human", "animal", "anime"]
 ArtStyle = Literal["realistic", "anime", "chibi", "pixel"]
 
@@ -23,6 +23,7 @@ class CharacterConfig(BaseModel):
     art_style: ArtStyle | None = None
     avatar_driver: AvatarDriver = "procedural_2d"
     avatar_asset: str = ""          # 静态图片路径或占位符
+    motion_set: str = ""
     animation_set: str = ""         # 动画集名称（用于 2d_animated）
     lip_sync_model: str | None = None  # 口型同步模型（未来）
     training_status: str = "none"   # none | pending | training | ready | failed

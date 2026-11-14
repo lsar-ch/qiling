@@ -14,11 +14,14 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 class RouteRequest(BaseModel):
     input: str = Field(min_length=1, max_length=8000)
     conversation_id: str | None = None
+    skill_id: str | None = None
+    project: str | None = Field(default=None, max_length=2000)
 
 
 class ExecuteRequest(BaseModel):
     executor: str | None = None
     mode: str = "read-only"
+    mcp_profile: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -45,10 +48,15 @@ async def execute_task(task_id: str, request: Request, body: ExecuteRequest) -> 
     if body.mode not in ("read-only", "agent", "agent-full-access"):
         raise HTTPException(status_code=422, detail="mode 不合法")
     try:
+        request.app.state.mcp_manager.validate_profile(body.mcp_profile)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
         run = await run_manager(request).execute(
             task,
             executor=body.executor,
             mode=body.mode,
+            mcp_profile=body.mcp_profile,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
@@ -75,10 +83,22 @@ def get_task(task_id: str, request: Request) -> dict:
 @router.post("/route")
 async def route_task(payload: RouteRequest, request: Request) -> dict:
     task = classify_task_input(payload.input, request.app.state.settings.permission_level)
+    try:
+        skill = request.app.state.skill_registry.resolve(
+            payload.skill_id,
+            payload.input,
+            mode="acp" if task.category in ("delegate_backend", "request_approval") else "inline",
+            explicit=payload.skill_id is not None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     task.conversation_id = payload.conversation_id
-    if payload.conversation_id:
+    if payload.project:
+        task.project = payload.project
+    elif payload.conversation_id:
         conversation = await request.app.state.conversation_store.get(payload.conversation_id)
         task.project = conversation.project if conversation else None
+    task.skill_id = skill.info.id if skill else None
     task = task_store(request).put(task)
     await request.app.state.event_hub.publish(
         EventEnvelope(

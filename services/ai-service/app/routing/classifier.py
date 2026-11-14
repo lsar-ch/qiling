@@ -73,6 +73,20 @@ _ANSWER_HINTS = (
     r"hey",
 )
 
+_INLINE_CONTENT_HINTS = (
+    r"文案",
+    r"宣传语",
+    r"广告语",
+    r"改写",
+    r"润色",
+    r"翻译",
+)
+
+_FILE_REFERENCE_HINT = re.compile(
+    r"(?<![A-Za-z0-9_])[^\s/\\]+\.[a-z0-9]{1,8}(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])(?:[~/]?[^\s/\\]+[/\\])+[^\s/\\]+",
+    re.I,
+)
+
 _PROJECT_QUERY_HINTS = (
     r"项目进度",
     r"项目节点",
@@ -328,6 +342,20 @@ def classify_task_input(text: str, permission_level: str = "confirm_risky") -> T
         risk_level = "medium"
         complexity = "medium"
         estimated_duration = "medium"
+        preferred_executor = None
+    elif (
+        not force_web
+        and _matches_any(normalized, _INLINE_CONTENT_HINTS)
+        and not _matches_any(
+            normalized,
+            (r"文件", r"文档", r"项目", r"代码", r"仓库", r"附件", r"批量"),
+        )
+        and not _FILE_REFERENCE_HINT.search(normalized)
+    ):
+        category = "answer"
+        risk_level = "low"
+        complexity = "simple"
+        estimated_duration = "short"
         preferred_executor = None
     elif (
         not force_web

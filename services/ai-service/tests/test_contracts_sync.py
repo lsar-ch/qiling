@@ -14,6 +14,7 @@ TS_DIR = REPO_ROOT / "packages" / "contracts" / "ts" / "src"
 # py 模型名 → TS 接口名（同名镜像）
 MIRROR_MAP: dict[str, tuple[str, str]] = {
     "AgentInfo": ("agent", "AgentInfo"),
+    "ExecutionProfile": ("extension", "ExecutionProfile"),
     "SkillInfo": ("extension", "SkillInfo"),
     "SkillDetail": ("extension", "SkillDetail"),
     "McpServerInfo": ("extension", "McpServerInfo"),
@@ -30,6 +31,10 @@ MIRROR_MAP: dict[str, tuple[str, str]] = {
     "RecordingSession": ("recording", "RecordingSession"),
     "VoiceParams": ("voice", "VoiceParams"),
     "VoiceSettings": ("voice", "VoiceSettings"),
+    "WorkbenchItem": ("workbench", "WorkbenchItem"),
+    "WorkbenchNote": ("workbench", "WorkbenchNote"),
+    "WorkbenchSettings": ("workbench", "WorkbenchSettings"),
+    "WorkbenchTodo": ("workbench", "WorkbenchTodo"),
     "ProjectNode": ("project", "ProjectNode"),
 }
 

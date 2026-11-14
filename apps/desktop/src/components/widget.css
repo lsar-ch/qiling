@@ -15,6 +15,41 @@ html, body, #root {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+.pointer-debug-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+}
+.pointer-debug-box {
+  position: absolute;
+  box-sizing: border-box;
+}
+.pointer-debug-box::before {
+  content: attr(data-label);
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 1px 4px;
+  color: #fff;
+  background: rgba(24, 30, 34, 0.86);
+  font: 10px/14px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  white-space: nowrap;
+}
+.pointer-debug-tolerance { border: 2px dashed #f04f55; }
+.pointer-debug-role { border: 2px solid #19a974; }
+.pointer-debug-role::before { top: 28px; }
+.pointer-debug-control { border: 2px solid #168aad; }
+.pointer-debug-status {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 6px;
+  color: #fff;
+  background: #8a4b08;
+  font: 11px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+
 /* ── 角色舞台：整块可拖动，后续动作/角色卡替换点 ──
    尺寸默认 400×400 兜底；有素材内容包围盒时由前端按实测结果内联覆盖，
    让点击/拖拽/右键区域紧贴角色本身，而不是一大块透明区域。 */
@@ -88,6 +123,10 @@ html, body, #root {
 .w-root[data-vrm="1"] .mascot { animation: none !important; }
 /* Phase 1: VRM 模式下禁用 2D 视线跟随（VrmStage 自有 lookAt） */
 .w-root[data-vrm="1"] .mascot-wrap { rotate: none; transition: none; }
+/* GLB 动物形象同理：2D 呼吸缩放和鼠标跟随旋转会叠加在 3D 动画上，
+   表现成身体周期性"晃动"（2026-11-05 实测），全部关闭 —— 动作只来自 GLB。 */
+.mascot[data-animal="1"] { animation: none !important; }
+.mascot-wrap[data-animal="1"] { rotate: none; transition: none; }
 .w-root[data-vrm="1"] .role-eyes { translate: none; transition: none; }
 .mascot-layers { position: absolute; inset: 0; }
 .mascot-layer {

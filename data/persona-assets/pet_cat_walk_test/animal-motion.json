@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "motionSet": "cat_clean_v3",
+  "idleCycle": [
+    "sit_idle",
+    "head_look",
+    "think_sit",
+    "speak_sit",
+    "pose_sit_tall",
+    "lick_paw",
+    "idle_tail",
+    "knead",
+    "sleep",
+    "pose_sleep_curl"
+  ],
+  "actions": {
+    "idle": [{ "clip": "sit_idle", "weight": 1, "loop": true }],
+    "listening": [{ "clip": "head_look", "weight": 1, "loop": true }],
+    "thinking": [{ "clip": "think_sit", "weight": 1, "loop": true }],
+    "speaking": [{ "clip": "speak_sit", "weight": 1, "loop": true }],
+    "executing": [{ "clip": "walk", "weight": 1, "loop": true }],
+    "awaiting_approval": [{ "clip": "pose_sit_tall", "weight": 1, "loop": true }],
+    "success": [{ "clip": "jump_once", "repeat": 1, "weight": 1 }],
+    "error": [{ "clip": "crouch_once", "repeat": 1, "weight": 1 }],
+    "click": [{ "clip": "tap_paw_once", "repeat": 1, "weight": 1 }],
+    "project": [{ "clip": "walk", "weight": 1, "loop": true }],
+    "hover": [{ "clip": "head_look", "repeat": 1, "weight": 1 }]
+  },
+  "fallbacks": {
+    "idle": ["sit_idle", "pose_sit_tall", "idle_tail", "idle", "pose_neutral"],
+    "listening": ["head_look", "pose_alert", "sit_idle", "idle"],
+    "thinking": ["think_sit", "pose_sit_tall", "sit_idle", "idle"],
+    "speaking": ["speak_sit", "pose_sit_tall", "sit_idle", "idle"],
+    "executing": ["walk", "run"],
+    "project": ["walk", "run"],
+    "awaiting_approval": ["pose_sit_tall", "sit_idle", "pose_neutral"],
+    "success": ["jump_once", "shake", "sit_idle", "idle"],
+    "error": ["crouch_once", "pose_ears_back", "sit_idle", "idle"],
+    "click": ["tap_paw_once", "lick_paw", "sit_idle", "idle"],
+    "hover": ["head_look", "pose_alert", "sit_idle", "idle"]
+  }
+}

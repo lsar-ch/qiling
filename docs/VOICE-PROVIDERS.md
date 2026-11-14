@@ -140,14 +140,42 @@
 配置入口（三处，优先级 环境变量 > config/settings.yaml > 代码默认）：
 
 - `config/settings.yaml` → `voice:` 段（供应商、模型、默认音色、参数）
-- `.env` / 环境变量：`DASHSCOPE_API_KEY`（V1 必需）；火山相关变量预留
-- 运行期可查看/调试：`GET /api/voice/status`
+- 模型档案：设置页「模型档案」里按类别（对话 / 多模态 / 语音识别 / 语音合成）点选供应商，
+  直接在档案里填 API Key / API 地址，保存即生效并写回运行配置
+- `.env` / 环境变量；运行期可查看/调试：`GET /api/voice/status`
+
+三条语音链路相互独立选供应商，可自由组合（例如识别用 Groq Whisper、合成用 Breeze）：
+
+| 链路 | 可选供应商 | 服务地址 | 密钥 | 环境变量 / 配置键 |
+|---|---|---|---|---|
+| STT 识别 | `dashscope`（paraformer） | 官方网关 | `DASHSCOPE_API_KEY` | `DASHSCOPE_API_KEY` |
+| STT 识别 | `openai_compatible`（Whisper 类，含 Groq） | 档案内 Base URL | 档案内 API Key | `VOICE_STT_BASE_URL` / `VOICE_STT_API_KEY` |
+| TTS 合成 | `minimax` | 官方网关 | `MINIMAX_API_KEY` | `MINIMAX_API_KEY` |
+| TTS 合成 | `dashscope`（cosyvoice） | 官方网关 | `DASHSCOPE_API_KEY` | `DASHSCOPE_API_KEY` |
+| TTS 合成 | `openai_compatible` | 档案内 Base URL | 档案内 API Key | `VOICE_TTS_BASE_URL` / `VOICE_TTS_API_KEY` |
+| TTS 合成 | `breeze`（Breeze TTS 2） | `https://api.breeze.blue/v1` | `BREEZE_API_KEY`（`brz_` 前缀） | `BREEZE_API_KEY` |
+
+`auto` 的回落顺序：STT = dashscope → openai_compatible；TTS = minimax → dashscope → openai_compatible → breeze。
+
+接入说明：
+
+- **火山豆包是预留占位**：解析器对 `volcengine` 明确返回 `disabled` 并提示改用其他供应商，不做静默成功；
+  `config/settings.yaml` 里遗留的 `voice.volcengine` 段是死配置，可删。
+- **Breeze**：鉴权走 `xi-api-key` 头（不是 `Authorization: Bearer`）；
+  合成 `POST /text-to-speech/{voice_id}`，音色 `GET /voices`（`origin=cloned` 归为克隆音色）；
+  `instruction` 映射为 `instructions`，带指令时 `voice_settings.guidance_scale=4`；
+  协议没有 `pitch` 字段（风格由 instructions 表达），该旋钮在 Breeze 上被忽略；
+  单次 `text` 上限 1000 字符，超长单句会 422，靠 `synthesize_stream` 按句拆分兜底；
+  权重许可限研究与非商业用途，商用需另行授权。
+- **OpenAI 兼容 STT**：`POST {base_url}/audio/transcriptions`，multipart 上传 `file` + `model`（+ 可选 `language`），
+  属于 OpenAI 官方规范，Groq Whisper 与各家 Whisper 网关通用；Content-Type 由 httpx 自动带 boundary，不能手写。
 
 降级规则：
 
-- `voice.provider` 配置为 dashscope 但缺少 `DASHSCOPE_API_KEY` → 状态 `disabled`，`/api/voice/status` 返回原因，前端给用户明确提示。
+- 选了某供应商但缺密钥/地址 → 状态 `disabled`，`/api/voice/status` 返回原因，前端给用户明确提示。
+- 配置了未知供应商名 → 直接 `disabled` 并给出「未知供应商」原因，不猜测、不回落到默认。
 - 云供应商调用失败 → 返回错误事件与原因，文字链路不受影响。
-- 测试环境使用 mock provider，不打真实网络。
+- 测试环境使用 mock provider，不打真实网络；模型档案的「测试连接」对语音类会真实合成一句 / 识别 1 秒，会消耗少量额度。
 
 ## 6. 接口速览（Step 4 新增）
 

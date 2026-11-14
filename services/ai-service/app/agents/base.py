@@ -48,6 +48,10 @@ class AgentTaskResult:
     message: str = ""
     session_id: str | None = None
     error: str | None = None
+    artifacts: list[str] = field(default_factory=list)
+    checks: list[str] = field(default_factory=list)
+    blockers: list[str] = field(default_factory=list)
+    next_steps: list[str] = field(default_factory=list)
 
 
 class AgentAdapter(ABC):

@@ -59,6 +59,7 @@ class Task(BaseModel):
     estimated_duration: Literal["short", "medium", "long"] = "short"
     required_approval: bool = False
     preferred_executor: str | None = None  # 如 codex / claude-code / deepseek-harness
+    skill_id: str | None = None
     status: TaskStatus = "queued"
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()

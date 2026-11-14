@@ -42,7 +42,7 @@ jobs:
         run: ./scripts/package/build-macos.sh ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: Qiling-0.1.0_macos_${{ matrix.artifact }}
+          name: Qiling-0.2.0_macos_${{ matrix.artifact }}
           path: apps/desktop/src-tauri/target/${{ matrix.arch }}-apple-darwin/release/bundle/dmg/*.dmg
 
   windows:
@@ -76,5 +76,5 @@ jobs:
         run: powershell -File scripts/package/build-windows.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: Qiling-0.1.0_windows_x64
+          name: Qiling-0.2.0_windows_x64
           path: apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe

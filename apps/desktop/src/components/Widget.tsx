@@ -47,6 +47,7 @@ import {
 } from "../widget/actions";
 import { attachMouseFollow, detachMouseFollow } from "../widget/mouseFollow";
 import { attachBeatDetect, detachBeatDetect } from "../widget/beatDetect";
+import { useAnimalMobility } from "../widget/useAnimalMobility";
 import {
   advanceDrive,
   clampWeight,
@@ -93,6 +94,7 @@ function getContextWeightMultiplier(
 
 // three 依赖较重（~600KB），仅 VRM persona 才动态加载
 const VrmStage = lazy(() => import("../widget/VrmStage"));
+const AnimalStage = lazy(() => import("../widget/AnimalStage"));
 
 import "./widget.css";
 
@@ -154,6 +156,13 @@ type InteractiveBox = {
   y: number;
   width: number;
   height: number;
+};
+
+type PointerDebugAreas = {
+  role: InteractiveBox | null;
+  controls: InteractiveBox[];
+  enabled: boolean;
+  suspended: boolean;
 };
 
 function normText(text: string): string {
@@ -288,6 +297,9 @@ export default function Widget() {
   const [emotionDecaying, setEmotionDecaying] = useState(false);
   const [action, setAction] = useState<ActionSelection | null>(null);
   const [motionFamily, setMotionFamily] = useState<MotionFamily>("human");
+  const [dragging, setDragging] = useState(false);
+  // 当前 GLB 动物 persona id；vrm/glb 路径在渲染段才定义。
+  const [glbPersonaId, setGlbPersonaId] = useState<string | null>(null);
   const [idleActionIntervalMs, setIdleActionIntervalMs] = useState(8000);
   const [transitionMs, setTransitionMs] = useState(TRANSITION_MS);
   const [projectName, setProjectName] = useState<string | null>(null);
@@ -297,6 +309,10 @@ export default function Widget() {
   const [layersPersonaId, setLayersPersonaId] = useState<string | null>(null);
   // 当前角色走 VRM：avatar 是 T-pose 占位图，不能用它当立绘显示
   const [vrmDriven, setVrmDriven] = useState(false);
+  // 当前角色走 GLB 动物 3D：avatar 是占位图，不能用它当立绘显示
+  const [glbDriven, setGlbDriven] = useState(false);
+  // GLB 动物一次性反馈动作（点击）：seq 递增触发重播
+  const [animalOneShot, setAnimalOneShot] = useState<{ trigger: ActionTrigger; seq: number } | null>(null);
   // VRM 一次性反馈动作（点击/悬停）：seq 递增触发重播，不参与状态机
   const [vrmOneShot, setVrmOneShot] = useState<{ trigger: ActionTrigger; seq: number } | null>(null);
   const oneShotSeqRef = useRef(0);
@@ -309,13 +325,18 @@ export default function Widget() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceEndpointStatus | null>(null);
+  const voiceEnabled = voiceStatus?.enabled === true;
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("off");
   const [personaName, setPersonaName] = useState("栖灵");
   const [speaking, setSpeaking] = useState(false);
   const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   const [alert, setAlert] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  // 动作检阅：右键菜单开启后，3D 角色按 GLB 内全部 clip 顺序逐个播放。
+  const [motionReview, setMotionReview] = useState(false);
+  const [reviewClip, setReviewClip] = useState<string | null>(null);
   const [assetMetrics, setAssetMetrics] = useState<PersonaAssetMetrics | null>(null);
+  const [pointerDebugAreas, setPointerDebugAreas] = useState<PointerDebugAreas | null>(null);
   const [preferences, setPreferences] = useState<WidgetPreferences>({
     x: null,
     y: null,
@@ -373,6 +394,8 @@ export default function Widget() {
   const draggingRef = useRef(false);
   const suppressClickUntilRef = useRef(0);
   const dragFallbackTimerRef = useRef<number | null>(null);
+  const glbDrivenRef = useRef(false);
+  const animalOneShotRef = useRef<((trigger: ActionTrigger) => void) | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const mascotRef = useRef<HTMLImageElement | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement | null>(null);
@@ -388,6 +411,13 @@ export default function Widget() {
   personaNameRef.current = personaName;
   activeRef.current = active;
   inputOpenRef.current = inputOpen;
+  glbDrivenRef.current = glbDriven;
+
+  const animalMobility = useAnimalMobility({
+    enabled: glbDriven,
+    taskActive: (busy || state === "executing") && !speaking && !inputOpen && !dragging,
+    dragging,
+  });
 
   const resizeToBubble = async (): Promise<void> => {
     const el = bubbleRef.current;
@@ -489,6 +519,16 @@ export default function Widget() {
     oneShotSeqRef.current += 1;
     setVrmOneShot({ trigger, seq: oneShotSeqRef.current });
   }, []);
+
+  /** GLB 动物一次性反馈动作：仅空闲、非播报时推给 3D。 */
+  const animalOneShotFeedback = useCallback((trigger: ActionTrigger): void => {
+    if (trigger !== "click" && trigger !== "hover") return;
+    if (speakingRef.current) return;
+    if (trigger === "click" && stateRef.current !== "idle") return;
+    oneShotSeqRef.current += 1;
+    setAnimalOneShot({ trigger, seq: oneShotSeqRef.current });
+  }, []);
+  animalOneShotRef.current = animalOneShotFeedback;
 
   // 分层资产：每个 persona 只加载一次，失败或缺失时回退单图
   const loadLayersFor = useCallback((personaId: string): void => {
@@ -1104,24 +1144,34 @@ export default function Widget() {
 
   useEffect(() => {
     let alive = true;
-    void fetchActivePersonaAsset()
-      .then((asset) => {
-        if (!alive) return;
-        setMascotArt(resolveMascotUrl(asset.avatar));
-        setVrmDriven(asset.vrm);
-        setPresentation((current) => current ? { ...current, style: asset.style, motion_family: asset.motion_family ?? asset.style } : current);
-        setMotionFamily(asset.motion_family ?? asset.style);
-        loadLayersFor(asset.personaId);
-        setAssetMetrics({
-          personaId: asset.personaId,
-          canvasWidth: asset.canvasWidth,
-          canvasHeight: asset.canvasHeight,
-          contentBbox: asset.contentBbox,
+    const loadActivePresentation = (): void => {
+      void fetchActivePersonaAsset()
+        .then((asset) => {
+          if (!alive) return;
+          setMascotArt(resolveMascotUrl(asset.avatar));
+          setVrmDriven(asset.vrm);
+          setGlbDriven(asset.glb);
+          setGlbPersonaId(asset.glb ? asset.personaId : null);
+          setPresentation(asset.presentation);
+          applyPresentation(asset.presentation);
+          setMotionOverrides(asset.presentation.actions);
+          setTransitionMs(Math.max(0, asset.presentation.animations.transition_ms ?? 250));
+          setIdleActionIntervalMs(
+            Math.max(2000, asset.presentation.animations.idle_action_interval_ms ?? 8000),
+          );
+          setMotionFamily(asset.motion_family ?? asset.style);
+          loadLayersFor(asset.personaId);
+          setAssetMetrics({
+            personaId: asset.personaId,
+            canvasWidth: asset.canvasWidth,
+            canvasHeight: asset.canvasHeight,
+            contentBbox: asset.contentBbox,
+          });
+        })
+        .catch(() => {
+          /* WebSocket 的 persona.presentation 仍会提供角色资产；下次 open 再重试 */
         });
-      })
-      .catch(() => {
-        /* WebSocket 的 persona.presentation 仍会提供角色资产 */
-      });
+    };
     const wsUrl = "ws://127.0.0.1:8736/api/events";
 
     const onMsg = (msg: WsMessage) => {
@@ -1203,6 +1253,10 @@ export default function Widget() {
           loadLayersFor(msg.presentation.persona_id);
           setMascotArt(resolveMascotUrl(msg.presentation.asset?.avatar_url));
           setVrmDriven(Boolean(msg.presentation.asset?.vrm_path));
+          const glbPath = msg.presentation.asset?.glb_path;
+          const glbDriven = Boolean(glbPath);
+          setGlbDriven(glbDriven);
+          setGlbPersonaId(glbDriven ? msg.presentation.persona_id : null);
         }
         return;
       }
@@ -1286,6 +1340,7 @@ export default function Widget() {
         setPersistentHint("服务未连接");
       } else {
         setPersistentHint("");
+        loadActivePresentation();
       }
     });
     return () => {
@@ -1461,8 +1516,11 @@ export default function Widget() {
       }
       draggingRef.current = false;
       dragStartRef.current = null;
+      setDragging(false);
       suppressClickUntilRef.current = Date.now() + WIDGET_CLICK_SUPPRESS_MS;
       setPreferences(event.payload);
+      // 被放下：GLB 动物播一次 walk 单循环当落地反应，播完自动回 idle。
+      if (glbDrivenRef.current) animalOneShotRef.current?.("click");
     })
       .then((stop) => {
         if (disposed) stop();
@@ -1490,6 +1548,7 @@ export default function Widget() {
 
       draggingRef.current = true;
       dragStartRef.current = null;
+      setDragging(true);
       setCtxMenu(null);
       playTrigger("hover");
       void invoke("start_widget_drag")
@@ -1499,6 +1558,7 @@ export default function Widget() {
             suppressClickUntilRef.current = Date.now() + WIDGET_CLICK_SUPPRESS_MS;
             void invoke("finish_widget_drag").catch(() => {
               draggingRef.current = false;
+              setDragging(false);
               void invoke("cancel_widget_drag").catch(() => {
                 /* 非 Tauri 环境忽略 */
               });
@@ -1507,6 +1567,7 @@ export default function Widget() {
         })
         .catch(() => {
           draggingRef.current = false;
+          setDragging(false);
           void invoke("cancel_widget_drag").catch(() => {
             /* 非 Tauri 环境忽略 */
           });
@@ -1517,6 +1578,7 @@ export default function Widget() {
         suppressClickUntilRef.current = Date.now() + WIDGET_CLICK_SUPPRESS_MS;
         void invoke("finish_widget_drag").catch(() => {
           draggingRef.current = false;
+          setDragging(false);
         });
         return;
       }
@@ -1785,8 +1847,34 @@ export default function Widget() {
         stage.style.transform = "none";
       }
     }
-    void invoke("set_widget_interactive_area", { area: interactiveArea(box) }).catch(() => {
-      /* 同上 */
+    const controls: InteractiveBox[] = [];
+    const bubbleRect = bubbleRef.current?.getBoundingClientRect();
+    if (bubbleRef.current?.dataset.visible === "1" && bubbleRect) {
+      controls.push({ x: bubbleRect.left, y: bubbleRect.top, width: bubbleRect.width, height: bubbleRect.height });
+    }
+    const voice = stage?.querySelector<HTMLElement>(".voice-chip")?.getBoundingClientRect();
+    if (voice) {
+      controls.push({ x: voice.left, y: voice.top, width: voice.width, height: voice.height });
+    }
+    if (import.meta.env.DEV) {
+      setPointerDebugAreas({
+        role: box,
+        controls,
+        enabled: glbDriven && box !== null,
+        suspended: inputOpen || ctxMenu !== null,
+      });
+    }
+    // macOS + GLB 动物才启用；输入条/菜单显示时整窗可点，避免漏算动态控件。
+    void invoke("set_widget_interactive_area", {
+      area: interactiveArea(box),
+      animalAreas: {
+        enabled: glbDriven && box !== null,
+        suspend: inputOpen || ctxMenu !== null,
+        role: box,
+        controls,
+      },
+    }).catch(() => {
+      /* 非 Tauri 环境或后端不支持时忽略 */
     });
   };
   syncOverlayRef.current = () => syncWidgetOverlayGeometry(true);
@@ -1804,7 +1892,7 @@ export default function Widget() {
   useLayoutEffect(() => {
     syncWidgetOverlayGeometry(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetMetrics, mascotArt, preferences.scale, preferences.autoHide, preferences.hiddenEdge, bubble, inputOpen]);
+  }, [assetMetrics, mascotArt, preferences.scale, preferences.autoHide, preferences.hiddenEdge, bubble, inputOpen, voiceEnabled, glbDriven]);
 
   // 右键菜单展开时把菜单本身并入可交互区域。
   useLayoutEffect(() => {
@@ -1885,7 +1973,6 @@ export default function Widget() {
     if (x !== ctxMenu.x || y !== ctxMenu.y) setCtxMenu({ x, y });
   }, [ctxMenu]);
 
-  const voiceEnabled = voiceStatus?.enabled === true;
   // 注意：胶囊整体受下方 `{voiceEnabled && …}` 门禁保护，语音总开关关闭时**不渲染**。
   // 因此这里的分支无需再判 voiceEnabled（原「无 / 语音未配置」是不可达死代码，已移除）。
   // 若要改成「总开关关闭时显示『无』」，需要同时放宽 :1951 的渲染门禁。
@@ -1906,10 +1993,13 @@ export default function Widget() {
 
   const vrmPath = presentation?.asset?.vrm_path;
   const vrmPersonaId = presentation?.persona_id;
+  const glbPath = presentation?.asset?.glb_path;
   // 动作以「真实播放状态」为准：音频还在放就是 speaking，音频一停立刻回落。
   // 只看服务端 state 会踩两个坑：/api/voice/synthesize 只发 conversation.response
   // 不发结束事件（状态卡在 speaking）；chat 侧的 completed 又早于音频播完。
   const activeTrigger = speaking ? "speaking" : triggerFor(state, emotion);
+  const animalStageTrigger =
+    animalMobility.gait || animalMobility.phase !== "home" ? "idle" : activeTrigger;
   const activeSpriteSheet =
     spritesheets.find((sheet) => sheet.state_name === activeTrigger) ??
     spritesheets.find((sheet) => sheet.state_name === state) ??
@@ -2002,6 +2092,8 @@ export default function Widget() {
           }
           // VRM：空闲时点击给一次性反馈动作（动画播完自动回当前状态）
           vrmOneShotFeedback("click");
+          // GLB 动物：同样给一次性反馈动作
+          animalOneShotFeedback("click");
           activateStage();
           setCtxMenu(null);
         }}
@@ -2033,7 +2125,7 @@ export default function Widget() {
         </div>
         <div
           className="widget-context"
-          data-visible={projectName || ERROR_STATES.has(state) ? "1" : "0"}
+          data-visible={(projectName && state !== "idle") || ERROR_STATES.has(state) ? "1" : "0"}
           aria-hidden="true"
         >
           {projectName && <span className="widget-context-project">{projectName}</span>}
@@ -2041,7 +2133,48 @@ export default function Widget() {
             <span className="widget-context-state">{STATE_LABEL[state] ?? state}</span>
           )}
         </div>
-        {vrmPath && vrmPersonaId ? (
+        {motionReview && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute", top: 4, left: 8, zIndex: 30,
+              padding: "2px 8px", borderRadius: 8,
+              background: "rgba(18,20,24,.78)", color: "#fff",
+              fontSize: 11, lineHeight: "16px", pointerEvents: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            动作检阅 · {reviewClip ?? "准备中…"}
+          </div>
+        )}
+        {glbPath && glbPersonaId ? (
+          <div className="mascot mascot-wrap" data-animal="1">
+            <img
+              className="mascot-base"
+              ref={mascotRef}
+              src={mascotArt}
+              alt={`栖灵 ${bubble || (connected ? "状态正常" : "服务未连接")}`}
+              draggable={false}
+              data-hidden="1"
+            />
+            <Suspense fallback={null}>
+              <AnimalStage
+                personaId={glbPersonaId}
+                glbPath={glbPath}
+                trigger={animalStageTrigger}
+                presentation={presentation}
+                oneShot={animalOneShot}
+                onContentBox={handleVrmContentBox}
+                gait={animalMobility.gait}
+                facing={animalMobility.facing}
+                mobilityPhase={animalMobility.phase}
+                review={motionReview}
+                onReviewClip={setReviewClip}
+                assetVersion="v6-s4-20261109"
+              />
+            </Suspense>
+          </div>
+        ) : vrmPath && vrmPersonaId ? (
           <div className="mascot mascot-wrap" data-vrm="1">
             <img
               className="mascot-base"
@@ -2195,6 +2328,16 @@ export default function Widget() {
           >
             {preferences.autoHide ? "✓ 靠近边缘自动隐藏" : "靠近边缘自动隐藏"}
           </button>
+          <button
+            className="ctx-toggle"
+            onClick={() => {
+              setMotionReview((on) => !on);
+              setReviewClip(null);
+              setCtxMenu(null);
+            }}
+          >
+            {motionReview ? "✓ 动作检阅（逐个播放全部动作）" : "动作检阅（逐个播放全部动作）"}
+          </button>
           <div className="ctx-range">
             <label htmlFor="widget-scale">
               <span>角色大小</span>
@@ -2219,6 +2362,43 @@ export default function Widget() {
           >
             退出栖灵
           </button>
+        </div>
+      )}
+      {import.meta.env.DEV && pointerDebugAreas?.enabled && (
+        <div className="pointer-debug-layer" aria-hidden="true">
+          {pointerDebugAreas.role && (
+            <>
+              <div
+                className="pointer-debug-box pointer-debug-tolerance"
+                data-label="角色 + 4px 容差"
+                style={{
+                  left: pointerDebugAreas.role.x - 4,
+                  top: pointerDebugAreas.role.y - 4,
+                  width: pointerDebugAreas.role.width + 8,
+                  height: pointerDebugAreas.role.height + 8,
+                }}
+              />
+              <div
+                className="pointer-debug-box pointer-debug-role"
+                data-label="角色矩形"
+                style={{
+                  left: pointerDebugAreas.role.x,
+                  top: pointerDebugAreas.role.y,
+                  width: pointerDebugAreas.role.width,
+                  height: pointerDebugAreas.role.height,
+                }}
+              />
+            </>
+          )}
+          {pointerDebugAreas.controls.map((control, index) => (
+            <div
+              className="pointer-debug-box pointer-debug-control"
+              data-label={`控件 ${index + 1}`}
+              key={`${control.x}:${control.y}:${control.width}:${control.height}`}
+              style={{ left: control.x, top: control.y, width: control.width, height: control.height }}
+            />
+          ))}
+          {pointerDebugAreas.suspended && <div className="pointer-debug-status">精细命中暂停：整窗可点</div>}
         </div>
       )}
     </div>

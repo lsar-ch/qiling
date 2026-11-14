@@ -192,7 +192,7 @@ class CodexAdapter(AgentAdapter):
                         "terminal": False,
                         "auth": {"terminal": False},
                     },
-                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.2.0"},
                 },
                 timeout_s=30.0,
             )
@@ -325,13 +325,13 @@ class CodexAdapter(AgentAdapter):
                         "terminal": False,
                         "auth": {"terminal": False},
                     },
-                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.2.0"},
                 },
                 timeout_s=30.0,
             )
             created = await client.request(
                 "session/new",
-                {"cwd": request.cwd, "mcpServers": []},
+                {"cwd": request.cwd, "mcpServers": request.config.get("mcp_servers") or []},
                 timeout_s=60.0,
             )
             session_id = created.get("sessionId") if isinstance(created, dict) else None

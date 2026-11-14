@@ -16,6 +16,7 @@ async def session_info(request: Request) -> dict:
     return {
         "session_id": request.app.state.session_id,
         "service_url": settings.service_url,
+        "project_root": str(settings.repo_root),
         "ws_url": ws_url,
         "auth_required": False,  # Step 1 仅本机；后续加会话令牌
         "capabilities": {

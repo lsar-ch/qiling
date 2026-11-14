@@ -1991,7 +1991,10 @@ function SettingsPage() {
     }
   };
 
-  const voiceCfg = settings.voice.dashscope_configured || settings.voice.minimax_configured;
+  const voiceCfg =
+    settings.voice.dashscope_configured ||
+    settings.voice.minimax_configured ||
+    settings.voice.breeze_configured;
   const liteMode = settings.performance_mode === "lite";
 
   const saveSystem = (): void => {
@@ -2825,7 +2828,7 @@ export default function App() {
                 : page === "memory"
                 ? "用户画像、偏好、项目进度与长期事实的分层管理；配置本地仓库后自动归档。"
                 : page === "project"
-                ? "项目统一工作区：集中查看项目概览、对话、节点、任务和产物。"
+                ? "以项目为中心组织进度、对话、任务、便签与工作入口。"
                 : page === "reminders"
                 ? "管理备忘录与任务提醒；到点后由挂件气泡 + 语音主动提醒。"
                 : page === "kb"
@@ -2945,7 +2948,7 @@ export default function App() {
 
         {page === "memory" && <MemoryPage />}
 
-        {page === "project" && <ProjectNodesPage onOpenChat={() => setPage("chat")} />}
+        {page === "project" && <ProjectNodesPage defaultProject={session?.project_root} onOpenChat={() => setPage("chat")} />}
 
         {page === "reminders" && <RemindersPage />}
 

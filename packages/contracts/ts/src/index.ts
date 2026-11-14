@@ -5,6 +5,9 @@
 
 export type { AgentInfo, AgentIntegrationStatus } from "./agent";
 export type {
+  ExecutionMode,
+  ExecutionPermission,
+  ExecutionProfile,
   ExtensionSource,
   McpServerInfo,
   McpServerStatus,
@@ -40,7 +43,16 @@ export type {
 } from "./memory";
 export type { ChatAttachment, ChatMode, ConversationMessage, MessageRole } from "./conversation";
 export type { VoiceProvider, VoiceParams, VoiceSettings } from "./voice";
-export type { ArtStyle, AvatarDriver, CharacterConfig, CharacterStyle, MotionFamily } from "./character";
+export type {
+  AnimalActionName,
+  AnimalMotionAction,
+  AnimalMotionConfig,
+  ArtStyle,
+  AvatarDriver,
+  CharacterConfig,
+  CharacterStyle,
+  MotionFamily,
+} from "./character";
 export { DEFAULT_ACTIONS } from "./motions";
 export type { ActionSpec, ActionTrigger, FxKind, MotionTable } from "./motions";
 export type { RecordingFormat, RecordingMode, RecordingSession } from "./recording";
@@ -55,3 +67,4 @@ export type {
   ReminderRepeat,
   ReminderStatus,
 } from "./reminder";
+export type { WorkbenchItem, WorkbenchNote, WorkbenchSettings, WorkbenchTodo } from "./workbench";

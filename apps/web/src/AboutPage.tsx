@@ -166,7 +166,7 @@ export default function AboutPage() {
           项目文档见{" "}
           <span className="font-mono text-ink break-all">docs/README.md</span>、
           <span className="font-mono text-ink break-all">
-            docs/PROJECT-ROADMAP.md
+            docs/V0.2-PLAN-2026-10-26.md
           </span>
           、
           <span className="font-mono text-ink break-all">
@@ -177,7 +177,7 @@ export default function AboutPage() {
         <p className={BODY_CLS}>
           更新日志详见{" "}
           <span className="font-mono text-ink break-all">
-            docs/PROJECT-ROADMAP.md
+            docs/V0.2-PLAN-2026-10-26.md
           </span>{" "}
           与提交记录。
         </p>

@@ -20,7 +20,7 @@ class McpStdioError(RuntimeError):
 
 PROTOCOL_VERSION = "2024-11-05"
 CLIENT_NAME = "qiling-mcp-client"
-CLIENT_VERSION = "0.1.0"
+CLIENT_VERSION = "0.2.0"
 
 
 @dataclass

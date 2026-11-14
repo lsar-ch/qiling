@@ -1,0 +1,115 @@
+栖灵 · 可选人物卡试验资产 / Meshy female persona bundle
+生成日期：2026-11-13
+
+【授权状态：未核验，禁止分发】
+源网格与贴图来自 Meshy AI（图生 3D + 自动绑定）。免费档为 CC BY 4.0，
+不满足栖灵「内置资产只接受自制 / CC0 / 付费完全所有权」的入包铁律
+（参见 2026-10-25 Mixamo 授权事故后的选型决定）。
+
+【本机试运行状态：2026-11-13 已装入主工程，仅本机可见】
+  按用户要求执行 install.sh --local-preview，把 expression 版装成
+  data/persona-assets/meshy_female/model.vrm，并放置可选角色卡
+  config/personas/meshy_female.yaml，供实机运行验证。
+  这【不】等于转正式卡：授权状态、VRM meta 四项、角色卡的
+  experimental / license_status 一律保持未核验，未做任何放宽。
+
+本包仅用于本机试验：
+  - VRM meta 已收紧：allowRedistribution=false、creditNotation=required、
+    modification=allowModification（不允许修改后再分发）、commercialUsage=personalProfit。
+  - 发行包双重排除（scripts/package/stage_home.py）：
+      ① 模型本体不在 PERSONA_IDS = ("default","persona_2","qiling") 白名单内；
+      ② 角色卡 yaml 被新增的 UNLICENSED_PERSONA_FILES 从 config/ 整目录复制中剔除，
+         避免发行包出现「点开没有模型的空卡」。
+    → 本机运行可见，任何构建脚本都不会把本卡打进发行包。
+  - 转为正式卡之前必须：取得 Meshy Pro 完全所有权凭证 → 存档到项目
+    01-方向与决策/ 目录 → 复核并放宽 meta → 把卡加入 PERSONA_IDS 并移出排除集合
+    → 重跑 verify_vrm.py 与 check_vrm.mjs。
+
+【三个 VRM 版本，别选错】
+  model.expression.vrm ← 推荐 / 最终版：造型未改，面部表情由贴图图集真正驱动
+                          （眼/嘴独立材质 + 17 条 textureTransformBinds）
+  model.gatepass.vrm   ← 表情改造前：闸门全绿但眨眼/情绪几乎不可见，留作对照
+  model.vrm            ← 原样导出：结构闸门 1 项误判 FAIL（见下），留作对照
+  gatepass 与 model.vrm 的所有节点世界矩阵完全一致（最大误差 2.8e-08），
+  蒙皮/表情/动作零差异。expression 版与 gatepass 版的几何/UV/骨架/蒙皮/
+  18 组 morph/原贴图逐字节一致（见 unchanged_report.json），只新增脸部材质与图集。
+  install.sh 会把 expression 版安装成目标目录的 model.vrm。
+
+【结构闸门误判与处理】
+  verify_vrm.py 初版报「左右肩臂同侧 (left x=-3.19 / right x=-8.51)」。
+  根因：vrm_validator._node_world_x() 只累加 translation.x、忽略 rotation，
+  源骨架 Spine 局部 x=-5.7675cm 把左右臂一起推到负侧；
+  真实 rest 下 leftUpperArm 世界 x=+0.133m / rightUpperArm=-0.133m，完全正常。
+  gate_fix.py 用等价 TRS 重分解插入一个中性锚点消除误判，不改任何世界矩阵。
+  更根本的修法是把 _node_world_x() 升级为完整 TRS 合成（主工程未改）。
+
+【表情实现方式（2026-11-13 傍晚完成）】
+  源模型五官画在贴图上、几何无独立眼睑/嘴唇，几何形变闭不上画出来的眼睛。
+  已改用 VRM 1.0 textureTransformBinds：UV→3D G-buffer 按 3D 坐标解析绘制
+  眼线/嘴型 → 眼图集与嘴图集各 4×4 tile → 两个独立脸部材质按权重切 UV。
+  中性态 tile 即原图，默认外观逐像素不变；眨眼与口型可同时驱动而互不干扰。
+  详见工作区方案文档 §九。
+
+【已知技术限制（源模型固有）】
+  - 24 骨 / humanoid 映射 22 根，无手指骨 / 无眼球骨 / 无 springBone；
+    VRMA 手指动作会被忽略。
+  - 源模型 UV 极碎，个别口型（aa）边缘轻微不规则、嘴角有极淡原唇残影，
+    全尺寸特写可见，150px 桌宠尺寸不可见；眉毛未随情绪变化（保留原眉）。
+  - 3 个 PBR 材质（非 MToon）；0 springBone，头发与围巾无物理摆动。
+  - 文件 21.38 MB（21,380,792 B），超项目 12 MB 建议值（WARN，不影响加载）。
+  - rest 是 A-pose（上臂约 69° 下垂），非 VRM 1.0 规范的 T-pose。
+  - 暗黑都市风（黑裙 / 正红围巾 / 高跟）与官方人设不同调，
+    150px 桌宠尺寸下辨识度需人工复核。
+  - FBX 自带的 32 帧 walking_man 不在 11 个 trigger 内，未纳入本包。
+
+【已验证（expression 版）】
+  - scripts/vrm/verify_vrm.py：全绿（仅 21.38MB > 12MB 建议值 WARN）
+  - apps/desktop/scripts/check_vrm.mjs：PASS，18 preset、3 材质、30,869 面、bbox 1.640m
+  - check_expr_drive.mjs：15 PASS / 0 FAIL —— 14 个 preset 各自切到正确图集格，
+    blink + aa 同时激活不串图，原 morph target 仍生效
+  - verify_unchanged.py：造型零改动逐字节核验全部 OK（几何/UV/蒙皮/morph/
+    骨架/原材质/原贴图/VRM meta 全一致）
+  - Blender Cycles 真实渲染 16 张：导入最终 VRM 后逐表情切 tile，
+    眨眼/笑眼/垂眼/张口/微笑/惊讶/单眼眨/眼嘴叠加均肉眼可辨，
+    全身无白斑、破面、材质接缝
+  - three-vrm-animation 实测 female 动作库 5/5 段可驱动（A-pose 不需转 T-pose）
+  - 与用户提供的 A-pose 原画并排目检：造型与蒙皮一致，无穿模/破面/飞件
+
+【挂件适配：A-pose rest 与 PBR 材质的两个坑（2026-11-13 晚，已修）】
+  实机运行发现 idle 时左右手臂交叉（左手到右边、右手到左边）且整体过暗。
+  根因一：本模型 rest 是 A-pose（上臂离竖直 21.4°），而 female 动作库与挂件
+          程序化待机都按 T-pose（90°）编写，差 68.6°，叠加后手臂越过垂直线
+          到身体对侧。骨骼左右映射本身正确（与官方 qiling 对照确认）。
+  根因二：3 个材质均为纯 PBR，而挂件灯光按官方 MToon 卡调校；PBR 无环境贴图
+          时镜面项几乎无贡献，黑裙与深发糊成剪影。
+  修法（只改挂件前端，模型零字节改动）：
+    · VrmStage 加载后测 rest 上臂夹角，<45° 判定为 A-pose 卡；
+    · A-pose 卡过滤动作中的手臂轨道，手臂停在自身 rest 的自然下垂位，
+      程序化垂臂量由 ±1.25 降为 ±0.04 微摆；
+    · 非 MToon 卡补 RoomEnvironment 环境贴图 + environmentIntensity 1.0 +
+      LinearToneMapping 曝光 1.12。官方 MToon 卡不受影响。
+  已否决的方案：把 rest 直接抬成 T-pose。数值上正确，但源模型宽袖按 A-pose
+  蒙皮，抬起后袖下布料被拉成翼状（expr_work/tpose_check_idle.png 为证），
+  属破坏造型，故放弃。
+  已知取舍：该卡因此没有手臂摆动/说话手势；躯干/头/腿/眨眼/口型正常。
+  网页端动作实验室 VrmPreview 仍是旧逻辑，那里仍会交叉（本轮未改）。
+
+【安装 / 运行】
+  本机试运行（当前状态，已执行）：
+      bash install.sh --local-preview
+    需要 stage_home.py 中的 UNLICENSED_PERSONA_FILES 排除仍在；脚本会自检，
+    若排除被移除或本卡被加进 PERSONA_IDS，会拒绝安装。
+  转正式卡（授权核验通过后）：
+      bash install.sh
+    交互式确认 YES 后安装同样的文件，但仍需手动完成 meta / 白名单 / 排除集合的转正。
+
+  切换角色（2026-11-13 已完成）：active_persona_id 改为 meshy_female；
+  因当时服务已在 127.0.0.1:8736 运行，额外调
+  PUT /api/settings {"active_persona_id":"meshy_female"} 让进程内存同步生效，
+  无需重启即可刷新挂件看到新人物；其它设置键已复核完好。
+  角色卡 avatar 字段已补成 /api/personas/meshy_female/avatar，角色页可出占位图。
+  安装前的 active_persona_id 为 pet_cat_walk_test，回退改回该值即可。
+
+  卸载（本机试运行结束后，按需）：删除
+    data/persona-assets/meshy_female/ 与 config/personas/meshy_female.yaml
+  两个路径，并还原 active_persona_id；工作区原始资产不受影响。

@@ -38,6 +38,7 @@ export interface Task {
   estimated_duration: "short" | "medium" | "long";
   required_approval: boolean;
   preferred_executor: string | null;
+  skill_id: string | null;
   status: TaskStatus;
   created_at: string;
   updated_at: string;

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
+from qiling_contracts.workbench import WorkbenchSettings
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8736
@@ -55,9 +57,9 @@ def _read_version(repo: Path) -> str:
     try:
         cfg = yaml.safe_load((repo / "config" / "settings.yaml").read_text(encoding="utf-8"))
         version = (cfg or {}).get("app", {}).get("version")
-        return str(version) if version else "0.1.0"
+        return str(version) if version else "0.2.0"
     except Exception:
-        return "0.1.0"
+        return "0.2.0"
 
 
 @dataclass
@@ -65,7 +67,7 @@ class Settings:
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     repo_root: Path = field(default_factory=repo_root)
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     # ── LLM（Step 3）──────────────────────────
     llm_provider: str = "auto"          # auto | openai | echo
     llm_base_url: str | None = None     # OpenAI 兼容地址（可含 /v1）
@@ -78,10 +80,12 @@ class Settings:
     # ── 语音（Step 4，云 API，见 docs/VOICE-PROVIDERS.md）────────
     voice_enabled: bool = True
     voice_auto_speak: bool = True
-    stt_provider: str = "auto"          # auto | dashscope | volcengine | disabled
+    stt_provider: str = "auto"          # auto | dashscope | openai_compatible | disabled
     stt_model: str = "paraformer-realtime-v2"
     stt_sample_rate: int = 16000
     stt_language: str = "zh"
+    stt_base_url: str = ""        # OpenAI 兼容语音识别的服务地址
+    stt_api_key: str = ""         # OpenAI 兼容语音识别的密钥
     tts_provider: str = "auto"
     tts_base_url: str = ""       # OpenAI 兼容语音合成的服务地址
     tts_api_key: str = ""        # OpenAI 兼容语音合成的密钥
@@ -115,6 +119,8 @@ class Settings:
     obsidian_default_path: str = DEFAULT_OBSIDIAN_VAULT_PATH
     dashscope_api_key: str | None = None
     minimax_api_key: str | None = None
+    breeze_api_key: str | None = None
+    workbench: WorkbenchSettings = field(default_factory=WorkbenchSettings)
     # ── 语音激活（常开/静默/唤醒，见 docs/VOICE-ACTIVATION.md）──
     activation_enabled: bool = True
     activation_default_state: str = "listening"   # listening | sleeping
@@ -264,6 +270,10 @@ def load_settings() -> Settings:
         pass
     settings = Settings(repo_root=root, version=_read_version(root))
     overrides = _load_local_overrides(root)
+    try:
+        settings.workbench = WorkbenchSettings.model_validate(overrides.get("workbench", {}))
+    except ValidationError:
+        settings.workbench = WorkbenchSettings()
     legacy_llm = overrides.get("llm")
     if not isinstance(legacy_llm, dict):
         legacy_llm = {}
@@ -401,6 +411,14 @@ def load_settings() -> Settings:
     settings.stt_language = os.environ.get(
         "VOICE_STT_LANGUAGE", str(_nested(voice_cfg, ("stt", "language"), "zh"))
     ).strip() or "zh"
+    settings.stt_base_url = os.environ.get(
+        "VOICE_STT_BASE_URL", str(_nested(voice_cfg, ("stt", "base_url"), ""))
+    ).strip()
+    settings.stt_api_key = _nonempty(
+        overrides.get("stt_api_key")
+        or os.environ.get("VOICE_STT_API_KEY")
+        or _nested(voice_cfg, ("stt", "api_key"), "")
+    ) or ""
     settings.tts_provider = os.environ.get(
         "VOICE_TTS_PROVIDER",
         str(
@@ -417,6 +435,12 @@ def load_settings() -> Settings:
         "VOICE_TTS_VOICE",
         str(persona_voice.get("voice", _nested(voice_cfg, ("tts", "voice"), settings.tts_voice))),
     ).strip()
+    settings.tts_base_url = os.environ.get(
+        "VOICE_TTS_BASE_URL", str(_nested(voice_cfg, ("tts", "base_url"), ""))
+    ).strip()
+    settings.tts_api_key = _nonempty(
+        overrides.get("tts_api_key") or os.environ.get("VOICE_TTS_API_KEY") or ""
+    ) or ""
     settings.tts_format = os.environ.get(
         "VOICE_TTS_FORMAT", str(_nested(voice_cfg, ("tts", "format"), "wav"))
     ).strip().lower() or "wav"
@@ -462,6 +486,9 @@ def load_settings() -> Settings:
         overrides.get("minimax_api_key")
         or os.environ.get("MINIMAX_API_KEY")
         or minimax_cfg.get("api_key")
+    )
+    settings.breeze_api_key = _nonempty(
+        overrides.get("breeze_api_key") or os.environ.get("BREEZE_API_KEY") or ""
     )
     act_cfg = _nested(voice_cfg, ("activation",), {}) or {}
     settings.activation_enabled = _as_bool(
@@ -607,31 +634,47 @@ def resolve_stt_provider(settings: Settings) -> tuple[str, str | None]:
         if settings.dashscope_api_key:
             return "dashscope", None
         return "disabled", "未配置 DASHSCOPE_API_KEY，语音识别不可用"
+    if provider == "openai_compatible":
+        if settings.stt_base_url:
+            return "openai_compatible", None
+        return "disabled", "未配置语音识别服务地址（Base URL），语音识别不可用"
     if provider == "volcengine":
-        if settings.volc_app_id and settings.volc_token:
-            return "volcengine", None
-        return "disabled", "未配置 VOLC_APP_ID / VOLC_ACCESS_TOKEN"
+        return "disabled", "火山豆包语音识别适配器待接入，请用 dashscope 或 openai_compatible"
+    if provider not in ("auto", ""):
+        return "disabled", f"未知 STT 供应商：{provider}"
+    # auto：先 DashScope，再 OpenAI 兼容自建服务
     if settings.dashscope_api_key:
         return "dashscope", None
-    if settings.volc_app_id and settings.volc_token:
-        return "volcengine", None
-    return "disabled", "未配置任何云语音供应商（DASHSCOPE_API_KEY 等）"
+    if settings.stt_base_url:
+        return "openai_compatible", None
+    return "disabled", "未配置任何云语音供应商（DASHSCOPE_API_KEY / VOICE_STT_BASE_URL）"
 
 
 def resolve_tts_provider(settings: Settings) -> tuple[str, str | None]:
-    """TTS 供应商解析：minimax（主声）| dashscope | disabled；火山待 Step 8。
+    """TTS 供应商解析：minimax（主声）| dashscope | openai_compatible | breeze | disabled。
 
-    TTS 与 STT 相互独立：STT 固定走 dashscope，TTS 主声走 minimax（auto 优先 minimax）。
+    TTS 与 STT 相互独立，各自 auto 优先云主声、再退回自建服务。
     """
     requested = settings.tts_provider.strip().lower()
     if not settings.voice_enabled or requested == "disabled":
         return "disabled", "语音已关闭或未启用"
-    if requested not in ("auto", "dashscope", "minimax", "volcengine", "openai_compatible"):
+    if requested not in (
+        "auto",
+        "dashscope",
+        "minimax",
+        "volcengine",
+        "openai_compatible",
+        "breeze",
+    ):
         return "disabled", f"未知 TTS 供应商：{requested}"
     if requested == "openai_compatible":
         if settings.tts_base_url:
             return "openai_compatible", None
         return "disabled", "未配置语音合成服务地址（Base URL），语音合成不可用"
+    if requested == "breeze":
+        if settings.breeze_api_key:
+            return "breeze", None
+        return "disabled", "未配置 BREEZE_API_KEY，语音合成不可用"
     if requested == "volcengine":
         return "disabled", "火山豆包语音适配器待接入（Step 8），请用 minimax 或 dashscope"
     if requested == "dashscope":
@@ -642,11 +685,13 @@ def resolve_tts_provider(settings: Settings) -> tuple[str, str | None]:
         if settings.minimax_api_key:
             return "minimax", None
         return "disabled", "未配置 MINIMAX_API_KEY，语音合成不可用"
-    # auto：优先 MiniMax 主声，其次 DashScope，最后 OpenAI 兼容自建服务
+    # auto：优先 MiniMax 主声，其次 DashScope，再 OpenAI 兼容自建 / Breeze
     if settings.minimax_api_key:
         return "minimax", None
     if settings.dashscope_api_key:
         return "dashscope", None
     if settings.tts_base_url:
         return "openai_compatible", None
-    return "disabled", "未配置任何 TTS 云供应商（MINIMAX_API_KEY / DASHSCOPE_API_KEY）"
+    if settings.breeze_api_key:
+        return "breeze", None
+    return "disabled", "未配置任何 TTS 云供应商（MINIMAX_API_KEY / DASHSCOPE_API_KEY / BREEZE_API_KEY）"

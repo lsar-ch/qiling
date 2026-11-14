@@ -6,11 +6,12 @@ import asyncio
 import json
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from app.mcp.manager import McpManager
+from app.mcp.manager import McpManager, McpManagerError
 
 
 FAKE_SERVER = """\
@@ -93,3 +94,37 @@ def test_disabled_not_in_specs(manager: McpManager) -> None:
             await manager.list_tools("fake")
 
     asyncio.run(run())
+
+
+def test_read_only_profile_rejects_direct_write_server_call(manager: McpManager) -> None:
+    manager._profiles = {"research": ["fake"]}
+    manager._servers["fake"].access = "write"
+
+    async def run() -> None:
+        with pytest.raises(McpManagerError, match="不允许调用"):
+            await manager.call_tool(
+                "fake", "echo", {"text": "should not run"}, profile_id="research"
+            )
+
+    asyncio.run(run())
+    assert manager.list_servers()[0].status == "not_started"
+
+
+def test_profile_survives_server_config_persistence(manager: McpManager) -> None:
+    manager._profiles = {"research": ["fake"]}
+    manager._persist()
+    reloaded = McpManager(manager._config_path)
+    assert reloaded._profiles == {"research": ["fake"]}
+
+
+def test_acp_servers_only_exposes_enabled_read_profile_servers(manager: McpManager) -> None:
+    manager._profiles = {"research": ["fake", "write-only", "missing"]}
+    manager._servers["fake"].env = {"TOKEN": "secret"}
+    manager._servers["write-only"] = replace(
+        manager._servers["fake"], id="write-only", access="write"
+    )
+
+    servers = manager.acp_servers("research")
+
+    assert [item["name"] for item in servers] == ["fake"]
+    assert servers[0]["env"] == [{"name": "TOKEN", "value": "secret"}]

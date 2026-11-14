@@ -19,6 +19,7 @@ import type {
   TaskStatus,
 } from "@qiling/contracts";
 import type { Reminder, ReminderKind, ReminderRepeat, ReminderStatus } from "@qiling/contracts";
+import type { WorkbenchItem, WorkbenchNote, WorkbenchSettings, WorkbenchTodo } from "@qiling/contracts";
 
 export interface HealthResponse {
   status: string;
@@ -70,6 +71,7 @@ export interface DiagnosticItem {
 export interface SessionResponse {
   session_id: string;
   service_url: string;
+  project_root: string;
   ws_url: string;
   auth_required: boolean;
   capabilities: {
@@ -182,6 +184,117 @@ export async function deleteReminder(reminderId: string): Promise<void> {
   if (!resp.ok) throw new Error(await readDetail(resp));
 }
 
+export type WorkbenchNotePayload = Pick<WorkbenchNote, "title" | "content"> & { project_path?: string | null };
+export type WorkbenchTodoPayload = Pick<WorkbenchTodo, "title" | "description"> & { project_path?: string | null };
+
+export async function fetchWorkbenchItems(): Promise<WorkbenchItem[]> {
+  return (await fetchJson<{ items: WorkbenchItem[] }>("/api/workbench/items")).items;
+}
+
+export async function fetchWorkbenchItem(id: string): Promise<WorkbenchItem> {
+  return (await fetchJson<{ item: WorkbenchItem }>(`/api/workbench/items/${encodeURIComponent(id)}`)).item;
+}
+
+export async function createWorkbenchItem(item: WorkbenchItem): Promise<WorkbenchItem> {
+  const resp = await fetch("/api/workbench/items", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(item),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return ((await resp.json()) as { item: WorkbenchItem }).item;
+}
+
+export async function updateWorkbenchItem(
+  id: string,
+  changes: Partial<Omit<WorkbenchItem, "id">>,
+): Promise<WorkbenchItem> {
+  const resp = await fetch(`/api/workbench/items/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return ((await resp.json()) as { item: WorkbenchItem }).item;
+}
+
+export async function deleteWorkbenchItem(id: string): Promise<void> {
+  const resp = await fetch(`/api/workbench/items/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+}
+
+export async function fetchWorkbenchNotes(limit = 100): Promise<WorkbenchNote[]> {
+  return (await fetchJson<{ items: WorkbenchNote[] }>(`/api/workbench/notes?limit=${limit}`)).items;
+}
+
+export async function fetchWorkbenchNote(id: string): Promise<WorkbenchNote> {
+  return (await fetchJson<{ note: WorkbenchNote }>(`/api/workbench/notes/${encodeURIComponent(id)}`)).note;
+}
+
+export async function createWorkbenchNote(payload: WorkbenchNotePayload): Promise<WorkbenchNote> {
+  const resp = await fetch("/api/workbench/notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return ((await resp.json()) as { note: WorkbenchNote }).note;
+}
+
+export async function updateWorkbenchNote(
+  id: string,
+  changes: Partial<WorkbenchNotePayload>,
+): Promise<WorkbenchNote> {
+  const resp = await fetch(`/api/workbench/notes/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return ((await resp.json()) as { note: WorkbenchNote }).note;
+}
+
+export async function deleteWorkbenchNote(id: string): Promise<void> {
+  const resp = await fetch(`/api/workbench/notes/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+}
+
+export async function fetchWorkbenchTodos(limit = 100): Promise<WorkbenchTodo[]> {
+  return (await fetchJson<{ items: WorkbenchTodo[] }>(`/api/workbench/todos?limit=${limit}`)).items;
+}
+
+export async function fetchWorkbenchTodo(id: string): Promise<WorkbenchTodo> {
+  return (await fetchJson<{ todo: WorkbenchTodo }>(`/api/workbench/todos/${encodeURIComponent(id)}`)).todo;
+}
+
+export async function createWorkbenchTodo(payload: WorkbenchTodoPayload): Promise<WorkbenchTodo> {
+  const resp = await fetch("/api/workbench/todos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return ((await resp.json()) as { todo: WorkbenchTodo }).todo;
+}
+
+export async function updateWorkbenchTodo(
+  id: string,
+  changes: Partial<WorkbenchTodoPayload> & { status?: WorkbenchTodo["status"] },
+): Promise<WorkbenchTodo> {
+  const resp = await fetch(`/api/workbench/todos/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return ((await resp.json()) as { todo: WorkbenchTodo }).todo;
+}
+
+export async function deleteWorkbenchTodo(id: string): Promise<void> {
+  const resp = await fetch(`/api/workbench/todos/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+}
+
 async function fetchJson<T>(path: string, timeoutMs = 5000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -200,6 +313,81 @@ export async function fetchHealth(): Promise<HealthResponse> {
 
 export async function fetchAgents(): Promise<{ items: AgentInfo[]; default_executor: string }> {
   return fetchJson<{ items: AgentInfo[]; default_executor: string }>("/api/agents");
+}
+
+export interface AgentCatalogItem {
+  name: string;
+  label: string;
+  adapter: string;
+  enabled: boolean;
+  commands: string[];
+  protocol: string | null;
+  capabilities: string[];
+  source_url: string | null;
+  tags: string[];
+  detail: string;
+  api_key_configured: boolean;
+}
+
+export async function fetchAgentDirectory(): Promise<{
+  items: Array<AgentCatalogItem & { status: AgentInfo | null }>;
+  default_executor: string;
+}> {
+  const [catalog, detected] = await Promise.all([
+    fetchJson<{ items: AgentCatalogItem[]; default_executor: string }>("/api/agents/config"),
+    fetchAgents(),
+  ]);
+  const statuses = new Map(detected.items.map((item) => [item.name, item]));
+  return {
+    default_executor: catalog.default_executor,
+    items: catalog.items.map((item) => ({ ...item, status: statuses.get(item.name) ?? null })),
+  };
+}
+
+export type WorkflowStepPayload = {
+  executor: string;
+  prompt: string;
+  mode?: AgentRunMode;
+  mcp_profile?: string | null;
+  skill_id?: string | null;
+};
+
+export type WorkflowStep = WorkflowStepPayload & {
+  task_id?: string;
+  run_id?: string;
+  status?: AgentRunStatus;
+  result?: string | null;
+};
+
+export interface AgentWorkflow {
+  workflow_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  current_step: number;
+  steps: WorkflowStep[];
+  conversation_id?: string | null;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createAgentWorkflow(payload: {
+  steps: [WorkflowStepPayload, WorkflowStepPayload];
+  conversation_id?: string | null;
+}): Promise<AgentWorkflow> {
+  const resp = await fetch("/api/workflows", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await readDetail(resp));
+  return ((await resp.json()) as { workflow: AgentWorkflow }).workflow;
+}
+
+export async function fetchAgentWorkflow(workflowId: string): Promise<AgentWorkflow> {
+  const data = await fetchJson<{ workflow: AgentWorkflow }>(
+    `/api/workflows/${encodeURIComponent(workflowId)}`,
+  );
+  return data.workflow;
 }
 
 export async function fetchSkills(): Promise<SkillInfo[]> {
@@ -611,6 +799,7 @@ export interface AppSettings {
   active_persona_id: string;
   ui: { language: string; theme: string };
   permission_level: string;
+  workbench: WorkbenchSettings;
   performance_mode: "quality" | "balanced" | "lite";
   memory: {
     mode: string;
@@ -644,6 +833,7 @@ export interface AppSettings {
     auto_barge_in: boolean;
     dashscope_configured: boolean;
     minimax_configured: boolean;
+    breeze_configured: boolean;
   };
 }
 
@@ -674,7 +864,11 @@ export async function fetchSetupStatus(): Promise<SetupStatus> {
 
 export async function fetchPersonas(): Promise<PersonaCard[]> {
   const data = await fetchJson<{ items: PersonaCard[] }>("/api/personas");
-  return data.items;
+  return data.items.map((persona) => ({
+    ...persona,
+    personality: Array.isArray(persona.personality) ? persona.personality : [],
+    avatar: typeof persona.avatar === "string" ? persona.avatar : "",
+  }));
 }
 
 export async function createPersona(persona: PersonaCard): Promise<PersonaCard> {
@@ -1051,6 +1245,10 @@ export interface AgentRun {
   progress: string;
   result: string | null;
   error: string | null;
+  artifacts: string[];
+  checks: string[];
+  blockers: string[];
+  next_steps: string[];
   created_at: string;
   updated_at: string;
   finished_at: string | null;
@@ -1111,11 +1309,11 @@ export async function fetchTasks(limit = 50): Promise<Task[]> {
   return data.items;
 }
 
-export async function routeTask(input: string, conversationId?: string | null): Promise<TaskRouteResponse> {
+export async function routeTask(input: string, conversationId?: string | null, project?: string | null): Promise<TaskRouteResponse> {
   const resp = await fetch("/api/tasks/route", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ input, conversation_id: conversationId ?? null }),
+    body: JSON.stringify({ input, conversation_id: conversationId ?? null, project: project ?? null }),
   });
   if (!resp.ok) throw new Error(await readDetail(resp));
   return (await resp.json()) as TaskRouteResponse;

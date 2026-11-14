@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LoaderCircle, Play } from "lucide-react";
 
 import {
   addMcpServer,
+  createAgentWorkflow,
   deleteMcpServer,
   deleteSkill,
   fetchMcpServers,
+  fetchAgentDirectory,
+  fetchAgentWorkflow,
   fetchMcpTools,
   fetchOfficeTools,
   fetchSkill,
@@ -16,8 +20,11 @@ import {
   toggleSkill,
   uploadSkillZip,
   type McpServerPayload,
+  type AgentCatalogItem,
+  type AgentWorkflow,
 } from "./api";
 import type {
+  AgentInfo,
   McpServerInfo,
   OfficeToolInfo,
   SkillDetail,
@@ -27,7 +34,7 @@ import type {
 const CARD_CLS =
   "rounded-lg border border-line bg-surface shadow-card p-4 flex flex-col gap-2.5 min-w-0";
 
-type Tab = "skills" | "mcp" | "tools";
+type Tab = "agents" | "skills" | "mcp" | "tools";
 
 function SourceTag({ source }: { source: SkillInfo["source"] }) {
   return (
@@ -104,7 +111,17 @@ function SkillDrawer({
               含脚本
             </span>
           )}
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-tertiary text-muted">
+            {skill.execution_modes.join(" / ")}
+          </span>
+          {skill.version && <span className="text-[10px] text-muted">v{skill.version}</span>}
         </div>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs mb-4">
+          <dt className="text-muted">许可证</dt><dd className="text-ink">{skill.license || "未声明"}</dd>
+          <dt className="text-muted">需要能力</dt><dd className="text-ink">{skill.requires.join(", ") || "无"}</dd>
+          <dt className="text-muted">兼容 Agent</dt><dd className="text-ink">{skill.supported_agents.join(", ") || "未限定"}</dd>
+          {skill.source_url && <><dt className="text-muted">来源</dt><dd><a className="text-brand break-all" href={skill.source_url} target="_blank" rel="noreferrer">{skill.source_url}</a></dd></>}
+        </dl>
         {error && (
           <div className="text-sm text-bad bg-bad-50 rounded-lg px-3 py-2">{error}</div>
         )}
@@ -522,6 +539,8 @@ function McpPanel() {
                   : server.url}
               </p>
               <div className="flex items-center gap-2 text-[10px] text-muted">
+                <span>{server.source === "builtin" ? "内置" : "用户"}</span>
+                <span>·</span>
                 <span>{server.transport}</span>
                 <span>·</span>
                 <span>{server.access === "read" ? "只读" : "读写"}</span>
@@ -620,6 +639,163 @@ function McpPanel() {
   );
 }
 
+function AgentDirectoryPanel() {
+  const [items, setItems] = useState<Array<AgentCatalogItem & { status: AgentInfo | null }> | null>(null);
+  const [defaultExecutor, setDefaultExecutor] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchAgentDirectory()
+      .then((data) => {
+        setItems(data.items);
+        setDefaultExecutor(data.default_executor);
+      })
+      .catch((item: unknown) => setError(item instanceof Error ? item.message : "加载失败"));
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {error && <div className="rounded-lg bg-bad-50 text-bad px-4 py-3 text-sm">{error}</div>}
+      {!items && !error && <p className="text-sm text-muted">加载中…</p>}
+      {items && (
+        <div className="rounded-lg border border-line bg-surface-tertiary px-3 py-2 text-xs text-muted leading-relaxed">
+          <p>目录中的 Agent 可按需部署；默认执行器：{defaultExecutor || "未设置"}</p>
+          <p className="mt-1">部署清单：<code className="text-ink">docs/COMMUNITY-TOOLS-DEPLOY-2026-11-12.md</code>。栖灵不会自动下载或执行外部安装脚本。</p>
+        </div>
+      )}
+      {items && <WorkflowPanel agents={items} />}
+      {items && <div className="divide-y divide-line border-y border-line">
+        {items.map((item) => {
+          const status = item.status;
+          const statusLabel = !status ? "未探测" : status.integration_status === "ready" ? "就绪" : status.integration_status === "not_installed" ? "未安装" : status.integration_status === "auth_required" ? "需登录" : status.integration_status === "pending" ? "待接入" : "异常";
+          return <article key={item.name} className="py-4 grid grid-cols-1 lg:grid-cols-[minmax(12rem,1fr)_2fr_auto] gap-3 items-start">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-semibold text-ink">{item.label}</h3>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${status?.available ? "bg-ok-50 text-ok" : "bg-surface-tertiary text-muted"}`}>{statusLabel}</span>
+                {item.name === defaultExecutor && <span className="text-[10px] text-brand">默认</span>}
+              </div>
+              <p className="text-xs text-muted mt-1">{item.name} · {item.protocol || item.adapter}</p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-ink leading-relaxed">{item.detail || "暂无说明"}</p>
+              <p className="text-[11px] text-muted mt-1 break-words">能力：{item.capabilities.join(" · ") || "未声明"}</p>
+              <p className="text-[11px] text-muted mt-1 break-words">部署命令：{item.commands.join(" / ") || "按来源说明部署"}{item.api_key_configured ? " · 凭据已配置" : ""}</p>
+              {item.source_url && <a className="text-[11px] text-brand break-all" href={item.source_url} target="_blank" rel="noreferrer">项目与部署来源</a>}
+              {status?.detail && status.integration_status !== "ready" && <p className="text-[11px] text-bad mt-1">{status.detail}</p>}
+            </div>
+            <span className="text-[10px] text-muted">{item.enabled ? "目录已启用" : "按需启用"}</span>
+          </article>;
+        })}
+      </div>}
+      <p className="text-[11px] text-muted">部署、登录与启停在「我的智能体」中管理；完整清单包含凭据、安全和许可证检查项。</p>
+    </div>
+  );
+}
+
+function WorkflowPanel({
+  agents,
+}: {
+  agents: Array<AgentCatalogItem & { status: AgentInfo | null }>;
+}) {
+  const available = agents.filter((item) => item.status?.available && item.status.integration_status === "ready");
+  const [implementer, setImplementer] = useState(available[0]?.name ?? "");
+  const [reviewer, setReviewer] = useState(available[1]?.name ?? available[0]?.name ?? "");
+  const [implementationPrompt, setImplementationPrompt] = useState("实现当前任务，并在结果中列出改动和验证方式。");
+  const [reviewPrompt, setReviewPrompt] = useState("审查上一阶段结果，指出阻塞问题并给出是否通过的结论。");
+  const [workflow, setWorkflow] = useState<AgentWorkflow | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!implementer && available[0]) setImplementer(available[0].name);
+    if (!reviewer && available[1]?.name) setReviewer(available[1].name);
+  }, [available, implementer, reviewer]);
+
+  useEffect(() => {
+    if (!workflow || !["queued", "running"].includes(workflow.status)) return;
+    const timer = window.setInterval(() => {
+      fetchAgentWorkflow(workflow.workflow_id)
+        .then(setWorkflow)
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [workflow]);
+
+  const submit = async () => {
+    if (!implementer || !reviewer) {
+      setError("至少需要一个已就绪的 Agent；也可以让同一个 Agent 依次实现和审查。没有真实 Agent 时可先使用离线测试接口。");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const created = await createAgentWorkflow({
+        steps: [
+          { executor: implementer, prompt: implementationPrompt, mode: "agent" },
+          { executor: reviewer, prompt: reviewPrompt, mode: "read-only" },
+        ],
+      });
+      setWorkflow(created);
+    } catch (item: unknown) {
+      setError(item instanceof Error ? item.message : "工作流启动失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const statusText = workflow?.status === "completed" ? "已完成" : workflow?.status === "failed" ? "失败" : workflow ? "执行中" : "未启动";
+  return (
+    <section className="rounded-lg border border-line bg-surface-secondary p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-ink">实现 → 审查</h2>
+          <p className="mt-1 text-xs text-muted">两步串行运行；审查 Agent 只会在实现完成后启动。</p>
+        </div>
+        {workflow && <span className="text-[10px] text-muted">{statusText}</span>}
+      </div>
+      {available.length > 0 ? (
+        <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <label className="text-xs text-muted">
+            实现 Agent
+            <select className="mt-1 w-full rounded-lg border border-line bg-surface px-2.5 py-2 text-sm text-ink" value={implementer} onChange={(event) => setImplementer(event.target.value)}>
+              {available.map((item) => <option key={item.name} value={item.name}>{item.label}</option>)}
+            </select>
+            <textarea className="mt-2 min-h-20 w-full rounded-lg border border-line bg-surface px-2.5 py-2 text-xs text-ink" value={implementationPrompt} onChange={(event) => setImplementationPrompt(event.target.value)} />
+          </label>
+          <label className="text-xs text-muted">
+            审查 Agent
+            <select className="mt-1 w-full rounded-lg border border-line bg-surface px-2.5 py-2 text-sm text-ink" value={reviewer} onChange={(event) => setReviewer(event.target.value)}>
+              {available.map((item) => <option key={item.name} value={item.name}>{item.label}</option>)}
+            </select>
+            <textarea className="mt-2 min-h-20 w-full rounded-lg border border-line bg-surface px-2.5 py-2 text-xs text-ink" value={reviewPrompt} onChange={(event) => setReviewPrompt(event.target.value)} />
+          </label>
+        </div>
+      ) : (
+        <div className="mt-3 rounded-lg border border-dashed border-line px-3 py-4 text-xs text-muted">
+          当前没有已就绪的外部 Agent。请先在「我的智能体」中完成安装和登录；离线 ACP 模拟器仅用于自动化测试，不会在此页面执行。
+        </div>
+      )}
+      {error && <p className="mt-3 rounded-lg bg-bad-50 px-3 py-2 text-xs text-bad">{error}</p>}
+      {workflow?.error && <p className="mt-3 rounded-lg bg-bad-50 px-3 py-2 text-xs text-bad">{workflow.error}</p>}
+      {workflow && (
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+          {workflow.steps.map((step, index) => (
+            <div key={`${step.executor}-${index}`} className="rounded-lg border border-line bg-surface px-3 py-2 text-xs">
+              <div className="flex items-center justify-between gap-2"><span className="font-medium text-ink">{index === 0 ? "实现" : "审查"} · {step.executor}</span><span className="text-muted">{step.status || (workflow.current_step === index ? "执行中" : "等待")}</span></div>
+              {step.result && <p className="mt-1 text-muted line-clamp-3">{step.result}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+      <button className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm text-onbrand disabled:opacity-60" type="button" disabled={busy || available.length === 0} onClick={submit}>
+        {busy ? <LoaderCircle size={15} className="animate-spin" aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}
+        {busy ? "启动中…" : "运行工作流"}
+      </button>
+    </section>
+  );
+}
+
 export default function ExtensionsPage() {
   const [tab, setTab] = useState<Tab>("skills");
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
@@ -671,6 +847,7 @@ export default function ExtensionsPage() {
         <div className="flex items-center gap-2 border-b border-line">
           {(
             [
+              { key: "agents", label: "Agent 执行器" },
               { key: "skills", label: "智能技能" },
               { key: "mcp", label: "MCP 服务器" },
               { key: "tools", label: "办公工具" },
@@ -698,6 +875,8 @@ export default function ExtensionsPage() {
           </button>
         )}
       </div>
+
+      {tab === "agents" && <AgentDirectoryPanel />}
 
       {tab === "skills" && (
         <>
@@ -730,6 +909,9 @@ export default function ExtensionsPage() {
                         {skill.description}
                       </p>
                     </button>
+                    <p className="text-[10px] text-muted">
+                      {skill.execution_modes.join(" / ")} · {skill.license || "许可证未声明"}{skill.version ? ` · v${skill.version}` : ""}
+                    </p>
                     <div className="flex items-center justify-between gap-2 mt-auto pt-1">
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input

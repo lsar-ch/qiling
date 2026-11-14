@@ -16,6 +16,9 @@ from .events import (
     new_event_id,
 )
 from .extension import (
+    ExecutionMode,
+    ExecutionPermission,
+    ExecutionProfile,
     ExtensionSource,
     McpServerInfo,
     McpServerStatus,
@@ -55,6 +58,7 @@ from .task import (
 )
 from .voice import VoiceParams, VoiceSettings
 from .widget import PersonaPresentation, PersonaStyle, WidgetState, WidgetStatusReport
+from .workbench import WorkbenchItem, WorkbenchNote, WorkbenchSettings, WorkbenchTodo
 
 __all__ = [
     "AgentInfo",
@@ -76,6 +80,9 @@ __all__ = [
     "EventSource",
     "EventType",
     "ExtensionSource",
+    "ExecutionMode",
+    "ExecutionPermission",
+    "ExecutionProfile",
     "KNOWN_EVENT_TYPES",
     "MemoryBlock",
     "MemoryDoc",
@@ -114,6 +121,10 @@ __all__ = [
     "PersonaStyle",
     "WidgetState",
     "WidgetStatusReport",
+    "WorkbenchItem",
+    "WorkbenchNote",
+    "WorkbenchSettings",
+    "WorkbenchTodo",
     "create_task_id",
     "create_project_node_id",
     "create_reminder_id",

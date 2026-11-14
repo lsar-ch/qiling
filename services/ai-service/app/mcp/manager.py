@@ -55,6 +55,7 @@ class McpManager:
     def __init__(self, config_path: Path) -> None:
         self._config_path = config_path
         self._servers: dict[str, ServerConfig] = self._load()
+        self._profiles = self._load_profiles()
         self._runtime: dict[str, _Runtime] = {}
         self._tool_cache: dict[str, list[McpTool]] = {}
         self._error_detail: dict[str, str] = {}
@@ -92,9 +93,55 @@ class McpManager:
             )
         return out
 
+    def _load_profiles(self) -> dict[str, list[str]]:
+        if not self._config_path.is_file():
+            return {}
+        data = yaml.safe_load(self._config_path.read_text(encoding="utf-8")) or {}
+        raw_profiles = data.get("profiles") if isinstance(data, dict) else None
+        if raw_profiles is None:
+            return {}
+        if not isinstance(raw_profiles, dict):
+            raise McpManagerError("MCP profiles 必须是对象")
+        profiles: dict[str, list[str]] = {}
+        for profile_id, value in raw_profiles.items():
+            servers = value.get("servers") if isinstance(value, dict) else None
+            if not isinstance(servers, list) or not all(
+                isinstance(server_id, str) and server_id.strip()
+                for server_id in servers
+            ):
+                raise McpManagerError(f"MCP profile {profile_id} 必须包含 servers 列表")
+            profiles[str(profile_id)] = [server_id.strip() for server_id in servers]
+        return profiles
+
     def reload(self) -> None:
         """重新读配置；已运行且仍存在的连接不动。"""
         self._servers = self._load()
+        self._profiles = self._load_profiles()
+
+    def validate_profile(self, profile_id: str | None) -> None:
+        if profile_id is not None and profile_id not in self._profiles:
+            raise McpManagerError(f"MCP profile 不存在：{profile_id}")
+
+    def acp_servers(self, profile_id: str | None = None) -> list[dict[str, Any]]:
+        """把只读 profile 映射为 ACP session/new 的 mcpServers。"""
+        self.validate_profile(profile_id)
+        if profile_id is None:
+            return []
+        servers: list[dict[str, Any]] = []
+        for server_id in self._profiles[profile_id]:
+            cfg = self._servers.get(server_id)
+            if cfg is None or not cfg.enabled or cfg.access != "read":
+                continue
+            if cfg.transport == "streamablehttp" and cfg.url:
+                servers.append({"type": "http", "name": cfg.id, "url": cfg.url, "headers": []})
+            elif cfg.transport == "stdio" and cfg.command:
+                servers.append({
+                    "name": cfg.id,
+                    "command": cfg.command,
+                    "args": cfg.args or [],
+                    "env": [{"name": key, "value": value} for key, value in (cfg.env or {}).items()],
+                })
+        return servers
 
     def add_or_update_server(self, payload: dict[str, Any]) -> None:
         """新增或更新用户服务器并持久化；内置服务器不可改。"""
@@ -193,7 +240,14 @@ class McpManager:
             else:
                 entry["url"] = cfg.url
             servers.append(entry)
-        payload = {"version": 1, "servers": servers}
+        payload = {
+            "version": 1,
+            "profiles": {
+                profile_id: {"servers": server_ids}
+                for profile_id, server_ids in self._profiles.items()
+            },
+            "servers": servers,
+        }
         self._config_path.parent.mkdir(parents=True, exist_ok=True)
         self._config_path.write_text(
             yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
@@ -237,13 +291,23 @@ class McpManager:
         runtime = await self._ensure_runtime(server_id)
         return runtime.tools
 
-    async def prepare_tool_specs(self) -> list[tuple[str, McpTool]]:
+    async def prepare_tool_specs(
+        self, profile_id: str | None = None
+    ) -> list[tuple[str, McpTool]]:
         """汇总已启用服务器的工具；有缓存用缓存（不拉起进程），
         无缓存才懒启动拉取，失败进入冷却且不抛出，避免拖垮对话主链路。"""
+        self.validate_profile(profile_id)
+        allowed_servers = (
+            set(self._profiles[profile_id]) if profile_id is not None else None
+        )
         out: list[tuple[str, McpTool]] = []
         now = time.monotonic()
         for server_id, cfg in self._servers.items():
-            if not cfg.enabled:
+            if (
+                not cfg.enabled
+                or (allowed_servers is not None and server_id not in allowed_servers)
+                or (profile_id is not None and cfg.access != "read")
+            ):
                 continue
             cached = self._tool_cache.get(server_id)
             if cached is not None:
@@ -277,7 +341,14 @@ class McpManager:
         server_id: str,
         tool_name: str,
         arguments: dict[str, Any],
+        *,
+        profile_id: str | None = None,
     ) -> str:
+        self.validate_profile(profile_id)
+        if profile_id is not None:
+            cfg = self._servers.get(server_id)
+            if server_id not in self._profiles[profile_id] or cfg is None or cfg.access != "read":
+                raise McpManagerError(f"MCP profile {profile_id} 不允许调用服务器：{server_id}")
         runtime = await self._ensure_runtime(server_id)
         runtime.last_used = time.monotonic()
         try:

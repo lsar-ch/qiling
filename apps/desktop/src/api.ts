@@ -75,6 +75,26 @@ export interface VrmMotionConfig {
   actions?: Record<string, VrmClipRef | VrmClipRef[]>;
 }
 
+export interface AnimalMotionAction {
+  clip: string;
+  repeat?: number;
+  timeScale?: number;
+  weight?: number;
+  cooldownMs?: number;
+  loop?: boolean;
+}
+
+export interface AnimalMotionConfig {
+  model: string;
+  motionSet: string;
+  loopTriggers?: string[];
+  blendMs?: number;
+  walkSwitchMs?: number;
+  runSwitchMs?: number;
+  fallbacks?: Record<string, string[]>;
+  actions: Record<string, AnimalMotionAction[]>;
+}
+
 export interface PersonaPresentation {
   persona_id: string;
   persona_name: string;
@@ -99,12 +119,15 @@ export interface PersonaPresentation {
   };
   actions?: MotionOverrides;
   vrm?: VrmMotionConfig | null;
+  animal?: AnimalMotionConfig | null;
   asset?: {
     avatar_url?: string;
     width?: number;
     height?: number;
     /** VRM 模型相对 persona 资产目录的路径；存在时挂件走 3D 渲染 */
     vrm_path?: string;
+    /** GLB 动物模型相对 persona 资产目录的路径；存在时挂件走动物 3D 渲染 */
+    glb_path?: string;
   } | null;
 }
 
@@ -164,37 +187,41 @@ export async function fetchActivePersonaAsset(): Promise<{
   avatar: string;
   style: MotionFamily;
   motion_family?: MotionFamily;
+  presentation: PersonaPresentation;
   /** 角色卡是否走 VRM 3D；为真时 avatar 只是导入用的 T-pose 占位图，不能当立绘显示 */
   vrm: boolean;
+  /** 角色卡是否走 GLB 动物 3D；为真时 avatar 是占位图，不能当立绘显示 */
+  glb: boolean;
 } & PersonaAssetMetrics> {
-  const settingsResp = await fetch(`${SERVICE_BASE}/api/settings`);
-  if (!settingsResp.ok) throw new Error(await readDetail(settingsResp));
-  const settings = await settingsResp.json() as { active_persona_id: string };
-  const personasResp = await fetch(`${SERVICE_BASE}/api/personas`);
-  if (!personasResp.ok) throw new Error(await readDetail(personasResp));
-  const personas = await personasResp.json() as {
-    items: Array<{
-      id: string;
-      avatar?: string;
-      kind?: string;
-      motion_family?: string;
-      vrm?: string | null;
-    }>;
+  const load = async () => {
+    const settingsResp = await fetch(`${SERVICE_BASE}/api/settings`);
+    if (!settingsResp.ok) throw new Error(await readDetail(settingsResp));
+    const settings = await settingsResp.json() as { active_persona_id: string };
+    const presentationResp = await fetch(
+      `${SERVICE_BASE}/api/personas/${encodeURIComponent(settings.active_persona_id)}/presentation`,
+    );
+    if (!presentationResp.ok) throw new Error(await readDetail(presentationResp));
+    const presentation = await presentationResp.json() as PersonaPresentation;
+    return {
+      avatar: presentation.asset?.avatar_url ?? "",
+      style: presentation.style,
+      motion_family: presentation.motion_family,
+      presentation,
+      vrm: Boolean(presentation.asset?.vrm_path),
+      glb: Boolean(presentation.asset?.glb_path),
+      ...(await fetchPersonaAssetMetrics(settings.active_persona_id)),
+    };
   };
-  const persona = personas.items.find((item) => item.id === settings.active_persona_id);
-  const animalKinds = new Set(["cat", "dog", "bird", "rabbit", "animal"]);
-  const rawMotion = persona?.motion_family;
-  const motionFamily =
-    rawMotion === "human" || rawMotion === "animal" || rawMotion === "anime"
-      ? rawMotion
-      : undefined;
-  return {
-    avatar: persona?.avatar ?? "",
-    style: animalKinds.has(persona?.kind?.toLowerCase() ?? "") ? "animal" : "human",
-    motion_family: motionFamily,
-    vrm: Boolean(persona?.vrm),
-    ...(await fetchPersonaAssetMetrics(settings.active_persona_id)),
-  };
+
+  // presentation 是挂件 3D 形象的冷启动必需数据；短退避兜住服务刚连上时的瞬时 404/网络抖动。
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await load();
+    } catch (error) {
+      if (attempt >= 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
 }
 
 export function personaAssetUrl(personaId: string, file: string): string {

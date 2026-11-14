@@ -35,11 +35,19 @@ class FakeReadyAdapter(AgentAdapter):
         result_message: str = "fake result",
         error: str | None = None,
         raise_error: str | None = None,
+        artifacts: list[str] | None = None,
+        checks: list[str] | None = None,
+        blockers: list[str] | None = None,
+        next_steps: list[str] | None = None,
     ) -> None:
         self.result_status = result_status
         self.result_message = result_message
         self.error = error
         self.raise_error = raise_error
+        self.artifacts = artifacts or []
+        self.checks = checks or []
+        self.blockers = blockers or []
+        self.next_steps = next_steps or []
         self.request: AgentTaskRequest | None = None
         self.cancelled_at: str | None = None
         self.approved_at: str | None = None
@@ -70,6 +78,10 @@ class FakeReadyAdapter(AgentAdapter):
             message=self.result_message,
             error=self.error,
             session_id="sess_fake",
+            artifacts=self.artifacts,
+            checks=self.checks,
+            blockers=self.blockers,
+            next_steps=self.next_steps,
         )
 
     async def cancel(self, task_id: str, session_id: str | None = None) -> None:
@@ -328,6 +340,226 @@ def test_chat_task_reports_back_into_conversation(tmp_path, monkeypatch) -> None
         notes = [item["content"] for item in conv["messages"] if item["role"] == "tool"]
         assert any("已交给" in text and adapter.name in text for text in notes)
         assert any(text.startswith("✓ 任务完成") and "fake result" in text for text in notes)
+
+
+def test_acp_run_persists_skill_metadata_and_injects_guidance(tmp_path, monkeypatch) -> None:
+    prepare_home(tmp_path, monkeypatch)
+    skill_dir = tmp_path / "qiling-home" / "data" / "skills" / "acp-demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: acp-demo\n"
+        "description: ACP demo\n"
+        "execution:\n"
+        "  modes: [acp]\n"
+        "---\n"
+        "执行时先列出修改计划，再报告验证结果。\n",
+        encoding="utf-8",
+    )
+    app = create_app(load_settings())
+    adapter = FakeReadyAdapter()
+    app.state.agent_registry.register(adapter)
+    with TestClient(app) as client:
+        routed = client.post(
+            "/api/tasks/route",
+            json={"input": "请重构这个项目的模块", "skill_id": "acp-demo"},
+        )
+        assert routed.status_code == 200
+        task = routed.json()["task"]
+        assert task["skill_id"] == "acp-demo"
+        adapter.adapter_id = "codex"
+        client.app.state.mcp_manager._profiles["research"] = []
+        app.state.agent_registry.default_executor = adapter.name
+        response = client.post(
+            f"/api/tasks/{task['task_id']}/execute",
+            json={"executor": adapter.name, "mode": "read-only", "mcp_profile": "research"},
+        )
+        assert response.status_code == 200
+        run = _wait_for(client, task["task_id"], ("completed",))
+        assert run["agent_id"] == adapter.name
+        assert run["skill_id"] == "acp-demo"
+        assert run["execution_mode"] == "acp"
+        assert run["mcp_profile"] == "research"
+        assert run["workspace"]
+        assert Path(run["workspace"]).is_dir()
+        assert adapter.request is not None
+        assert "执行时先列出修改计划" in adapter.request.prompt
+
+
+def test_two_step_workflow_runs_review_only_after_implementation(tmp_path, monkeypatch) -> None:
+    implementer = FakeReadyAdapter(result_message="实现结果")
+    implementer.name = "implementer"
+    implementer.adapter_id = "implementer"
+    implementer.display_name = "Implementer"
+    reviewer = FakeReadyAdapter(result_message="审查通过")
+    reviewer.name = "reviewer"
+    reviewer.adapter_id = "reviewer"
+    reviewer.display_name = "Reviewer"
+    with make_client(tmp_path, monkeypatch, implementer) as client:
+        client.app.state.agent_registry.register(reviewer)
+        response = client.post(
+            "/api/workflows",
+            json={
+                "steps": [
+                    {"executor": "implementer", "prompt": "实现功能"},
+                    {"executor": "reviewer", "prompt": "审查实现"},
+                ]
+            },
+        )
+        assert response.status_code == 200
+        workflow_id = response.json()["workflow"]["workflow_id"]
+        workflow = None
+        for _ in range(100):
+            workflow = client.get(f"/api/workflows/{workflow_id}").json()["workflow"]
+            if workflow["status"] == "completed":
+                break
+            time.sleep(0.05)
+        assert workflow["status"] == "completed"
+        assert [step["status"] for step in workflow["steps"]] == ["completed", "completed"]
+        assert reviewer.request is not None
+        assert "实现结果" in reviewer.request.prompt
+
+
+def test_project_task_runs_in_its_selected_workspace(tmp_path, monkeypatch) -> None:
+    adapter = FakeReadyAdapter()
+    project = tmp_path / "project"
+    project.mkdir()
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        routed = client.post(
+            "/api/tasks/route",
+            json={"input": "帮我检查这个项目的代码结构", "project": str(project)},
+        )
+        assert routed.status_code == 200
+        task_id = routed.json()["task"]["task_id"]
+        assert client.post(
+            f"/api/tasks/{task_id}/execute",
+            json={"executor": adapter.name, "mode": "read-only"},
+        ).status_code == 200
+        _wait_for(client, task_id, ("completed",))
+        assert adapter.request is not None
+        assert adapter.request.cwd == str(project.resolve())
+
+
+def test_workflow_reports_running_while_first_step_is_active(tmp_path, monkeypatch) -> None:
+    implementer = BlockingAgentAdapter(block_on_start=True)
+    reviewer = FakeReadyAdapter()
+    reviewer.name = "reviewer"
+    reviewer.adapter_id = "reviewer"
+    reviewer.display_name = "Reviewer"
+    with make_client(tmp_path, monkeypatch, implementer) as client:
+        client.app.state.agent_registry.register(reviewer)
+        response = client.post(
+            "/api/workflows",
+            json={
+                "steps": [
+                    {"executor": implementer.name, "prompt": "实现功能"},
+                    {"executor": reviewer.name, "prompt": "审查实现"},
+                ]
+            },
+        )
+        assert response.status_code == 200
+        workflow_id = response.json()["workflow"]["workflow_id"]
+        workflow = None
+        for _ in range(100):
+            workflow = client.get(f"/api/workflows/{workflow_id}").json()["workflow"]
+            if workflow["status"] == "running" and workflow["steps"][0].get("run_id"):
+                break
+            time.sleep(0.05)
+        assert workflow is not None
+        assert workflow["status"] == "running"
+        run_id = workflow["steps"][0]["run_id"]
+        assert client.post(f"/api/agent-runs/{run_id}/cancel").status_code == 200
+
+
+def test_workflow_store_reconciles_interrupted_and_completed_workflows(tmp_path, monkeypatch) -> None:
+    prepare_home(tmp_path, monkeypatch)
+    data_dir = tmp_path / "qiling-home" / "data"
+    workflow_dir = data_dir / "workflows"
+    run_dir = data_dir / "agent_runs"
+    workflow_dir.mkdir()
+    run_dir.mkdir()
+
+    interrupted = {
+        "workflow_id": "workflow_interrupted",
+        "status": "queued",
+        "current_step": 0,
+        "steps": [
+            {"executor": "codex", "prompt": "step one", "run_id": "run_interrupted"},
+            {"executor": "codex", "prompt": "step two"},
+        ],
+    }
+    completed = {
+        "workflow_id": "workflow_completed",
+        "status": "queued",
+        "current_step": 1,
+        "steps": [
+            {"executor": "codex", "prompt": "step one", "status": "completed", "result": "one"},
+            {"executor": "codex", "prompt": "step two", "run_id": "run_completed"},
+        ],
+    }
+    for item in (interrupted, completed):
+        (workflow_dir / f"{item['workflow_id']}.json").write_text(
+            json.dumps(item), encoding="utf-8"
+        )
+    for run_id, task_id, status, result in (
+        ("run_interrupted", "task_interrupted", "running", None),
+        ("run_completed", "task_completed", "completed", "two"),
+    ):
+        (run_dir / f"{run_id}.json").write_text(
+            json.dumps({
+                "run_id": run_id,
+                "task_id": task_id,
+                "executor": "codex",
+                "status": status,
+                "result": result,
+            }),
+            encoding="utf-8",
+        )
+
+    app = create_app(load_settings())
+    with TestClient(app) as client:
+        assert client.app.state.workflow_store.get("workflow_interrupted")["status"] == "failed"
+        assert client.app.state.workflow_store.get("workflow_completed")["status"] == "completed"
+        interrupted_response = client.get("/api/workflows/workflow_interrupted")
+        completed_response = client.get("/api/workflows/workflow_completed")
+
+    interrupted_workflow = interrupted_response.json()["workflow"]
+    completed_workflow = completed_response.json()["workflow"]
+    assert interrupted_workflow["status"] == "failed"
+    assert interrupted_workflow["steps"][0]["status"] == "failed"
+    assert "服务重启" in interrupted_workflow["error"]
+    assert completed_workflow["status"] == "completed"
+    assert completed_workflow["steps"][1]["result"] == "two"
+
+
+def test_structured_acceptance_result_is_persisted_and_reported(tmp_path, monkeypatch) -> None:
+    adapter = FakeReadyAdapter(
+        artifacts=["dist/report.docx"],
+        checks=["文件已生成", "格式检查通过"],
+        blockers=["未做人工审阅"],
+        next_steps=["请打开文档确认页眉"],
+    )
+    with make_client(tmp_path, monkeypatch, adapter) as client:
+        client.app.state.agent_registry.default_executor = adapter.name
+        response = client.post(
+            "/api/chat/stream",
+            json={"message": "帮我整理项目报告并输出 Word"},
+        )
+        done = next(
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and '"done"' in line
+        )
+        run = _wait_for(client, done["task_id"], ("completed",))
+
+        assert run["artifacts"] == ["dist/report.docx"]
+        assert run["checks"] == ["文件已生成", "格式检查通过"]
+        assert run["blockers"] == ["未做人工审阅"]
+        assert run["next_steps"] == ["请打开文档确认页眉"]
+        messages = client.get(f"/api/conversations/{done['conversation_id']}").json()["messages"]
+        tool_text = [item["content"] for item in messages if item["role"] == "tool"]
+        assert any("验收：" in text and "下一步：" in text for text in tool_text)
 
 
 def test_word_task_uses_agent_mode_and_reports_new_artifact(tmp_path, monkeypatch) -> None:
@@ -1017,10 +1249,8 @@ def test_unlinked_node_is_untouched_by_task_finish(tmp_path, monkeypatch) -> Non
         assert client.app.state.project_node_store.get(other.node_id).status == "planned"
 
 
-def test_restart_marks_interrupted_runs_failed(tmp_path) -> None:
-    """T4：重启后磁盘上遗留的 queued/running run 必然没有进程在跑，启动即判失败。
-
-    判据是「进程存活」而不是「跑了多久」，所以正常跑着的长任务不受影响。
+def test_restart_marks_interrupted_runs_and_approvals_failed(tmp_path) -> None:
+    """重启后遗留的未终态 run 和授权请求均收口，避免孤儿任务继续执行。
     """
     from app.agents.runtime import AgentRun, AgentRunManager, AgentRunStore
     from app.core.bus import EventHub
@@ -1031,11 +1261,15 @@ def test_restart_marks_interrupted_runs_failed(tmp_path) -> None:
     interrupted = Task(input="重启前还在跑的任务")
     tasks.put(interrupted)
     runs.put(AgentRun(task_id=interrupted.task_id, executor="fake", status="running"))
+    awaiting = Task(input="重启前等待授权的任务", status="awaiting_approval")
+    tasks.put(awaiting)
+    approval_run = AgentRun(task_id=awaiting.task_id, executor="fake", status="awaiting_approval")
+    runs.put(approval_run)
     finished = Task(input="重启前就完成了的任务")
     tasks.put(finished)
     runs.put(AgentRun(task_id=finished.task_id, executor="fake", status="completed"))
 
-    AgentRunManager(
+    manager = AgentRunManager(
         registry=None,  # type: ignore[arg-type]
         store=runs,
         task_store=tasks,
@@ -1048,6 +1282,15 @@ def test_restart_marks_interrupted_runs_failed(tmp_path) -> None:
     assert killed is not None and killed.status == "failed"
     assert "服务重启" in (killed.error or "")
     assert tasks.get(interrupted.task_id).status == "failed"
+    rejected = runs.get(approval_run.run_id)
+    assert rejected is not None and rejected.status == "failed"
+    assert tasks.get(awaiting.task_id).status == "failed"
+    try:
+        asyncio.run(manager.approve_run(approval_run.run_id, "approved"))
+    except ValueError as exc:
+        assert "不在等待授权" in str(exc)
+    else:
+        raise AssertionError("重启收口的授权 run 不应仍可批准")
     kept = runs.latest_for_task(finished.task_id)
     assert kept is not None and kept.status == "completed"
 

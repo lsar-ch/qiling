@@ -37,16 +37,20 @@ const CATEGORY_META: Record<
   },
   stt: {
     title: "语音识别模型",
-    hint: "用于麦克风录音转文字。当前支持阿里云百炼 DashScope / Paraformer 系列。",
-    providers: [{ value: "dashscope", label: "阿里云百炼 DashScope" }],
+    hint: "用于麦克风录音转文字。支持阿里云百炼 DashScope / Paraformer 系列，以及任何 OpenAI 兼容 / 自建的 Whisper 服务。",
+    providers: [
+      { value: "dashscope", label: "阿里云百炼 DashScope" },
+      { value: "openai_compatible", label: "OpenAI 兼容 / 自建服务" },
+    ],
   },
   tts: {
     title: "语音合成模型",
-    hint: "用于把助手回复转换成语音。支持 MiniMax、DashScope CosyVoice，以及任何 OpenAI 兼容 / 自建的语音服务。配置保存后即可拉取该供应商的音色列表。",
+    hint: "用于把助手回复转换成语音。支持 MiniMax、DashScope CosyVoice、Breeze TTS 2，以及任何 OpenAI 兼容 / 自建的语音服务。配置保存后即可拉取该供应商的音色列表。",
     providers: [
       { value: "minimax", label: "MiniMax" },
       { value: "dashscope", label: "阿里云百炼 DashScope" },
       { value: "openai_compatible", label: "OpenAI 兼容 / 自建服务" },
+      { value: "breeze", label: "Breeze TTS 2" },
     ],
   },
 };
@@ -335,7 +339,7 @@ export default function ModelProfilesSection({ onChanged }: { onChanged?: () => 
                 ))}
               </select>
             </label>
-            {draft.category === "text" || draft.category === "multimodal" || draft.provider === "openai_compatible" ? (
+            {draft.category === "text" || draft.category === "multimodal" || draft.provider === "openai_compatible" || draft.provider === "breeze" ? (
               <label className="flex flex-col gap-1.5 text-xs text-muted sm:col-span-2">
                 API 地址
                 <input className={inputCls} value={draft.baseUrl} onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} placeholder="https://.../v1" />

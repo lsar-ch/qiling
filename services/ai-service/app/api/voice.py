@@ -218,11 +218,12 @@ async def list_tts_voices(request: Request, profile_id: str | None = None) -> di
 
 
 _PREVIEW_TEXT = "你好，我是你的桌面助理，很高兴见到你。"
-_KEY_REQUIRED = {"minimax", "dashscope"}
+_KEY_REQUIRED = {"minimax", "dashscope", "breeze"}
 _SETTINGS_KEYS = {
     "minimax": lambda settings: settings.minimax_api_key or "",
     "dashscope": lambda settings: settings.dashscope_api_key or "",
     "openai_compatible": lambda settings: settings.tts_api_key or "",
+    "breeze": lambda settings: settings.breeze_api_key or "",
 }
 
 

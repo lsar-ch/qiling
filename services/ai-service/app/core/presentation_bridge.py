@@ -63,8 +63,10 @@ class PresentationBridge:
         fx = {**_DEFAULT_FX, **pres.get("fx", {})}
         actions = pres.get("actions")
         vrm_motion_config = pres.get("vrm")
+        animal_motion_config = pres.get("animal")
         avatar = str(raw.get("avatar") or "")
         vrm_path = str(raw.get("vrm") or "")  # VRM 模型相对 persona 资产目录的路径
+        glb_path = str(raw.get("glb") or "")  # GLB 动物模型相对 persona 资产目录的路径
         style = pres.get("style")
         if style not in {"human", "animal", "anime"}:
             style = raw.get("motion_family")
@@ -82,6 +84,8 @@ class PresentationBridge:
             asset["avatar_url"] = avatar
         if vrm_path:
             asset["vrm_path"] = vrm_path
+        if glb_path:
+            asset["glb_path"] = glb_path
 
         return PersonaPresentation(
             persona_id=persona_id,
@@ -94,16 +98,23 @@ class PresentationBridge:
             fx=fx,
             actions=actions if isinstance(actions, dict) else None,
             vrm=vrm_motion_config if isinstance(vrm_motion_config, dict) else None,
+            animal=animal_motion_config if isinstance(animal_motion_config, dict) else None,
             asset=asset or None,
         )
 
-    async def broadcast(self, persona_id: str, hub) -> None:
-        """读取角色卡配置并通过 EventHub 广播 persona.presentation 事件。"""
+    def build(self, persona_id: str) -> PersonaPresentation | None:
+        """按需读取角色呈现，供前端冷启动不依赖事件历史。"""
         raw = self._read_persona(persona_id)
         if raw is None:
+            return None
+        return self._build_presentation(persona_id, raw)
+
+    async def broadcast(self, persona_id: str, hub) -> None:
+        """读取角色卡配置并通过 EventHub 广播 persona.presentation 事件。"""
+        presentation = self.build(persona_id)
+        if presentation is None:
             return
 
-        presentation = self._build_presentation(persona_id, raw)
         envelope = EventEnvelope(
             event_type="persona.presentation",  # type: ignore[arg-type]
             source="system",

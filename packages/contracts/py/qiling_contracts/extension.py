@@ -11,6 +11,21 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ExtensionSource = Literal["builtin", "user"]
+ExecutionMode = Literal["inline", "mcp", "acp"]
+ExecutionPermission = Literal["read-only", "confirm", "full"]
+
+
+class ExecutionProfile(BaseModel):
+    """一次任务的执行组合；只描述选择，不授予额外权限。"""
+
+    mode: ExecutionMode = "inline"
+    agent_id: str | None = None
+    skill_ids: list[str] = Field(default_factory=list)
+    mcp_profile: str | None = None
+    permission: ExecutionPermission = "read-only"
+    workspace: str | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 class SkillInfo(BaseModel):
@@ -24,6 +39,12 @@ class SkillInfo(BaseModel):
     triggers: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
     has_scripts: bool = False
+    execution_modes: list[ExecutionMode] = Field(default_factory=lambda: ["inline"])
+    requires: list[str] = Field(default_factory=list)
+    supported_agents: list[str] = Field(default_factory=list)
+    license: str = ""
+    source_url: str | None = None
+    version: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -39,6 +60,12 @@ class SkillDetail(BaseModel):
     triggers: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
     has_scripts: bool = False
+    execution_modes: list[ExecutionMode] = Field(default_factory=lambda: ["inline"])
+    requires: list[str] = Field(default_factory=list)
+    supported_agents: list[str] = Field(default_factory=list)
+    license: str = ""
+    source_url: str | None = None
+    version: str | None = None
     body: str = ""
 
     model_config = {"extra": "forbid"}

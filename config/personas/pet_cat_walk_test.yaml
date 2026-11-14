@@ -1,0 +1,121 @@
+id: pet_cat_walk_test
+name: 蓝猫·栖灵正式版
+kind: cat
+description: 焊接网格 + bone heat 重蒙皮的蓝猫，33 条规范化动作 clip（2026-11-12 v5 定稿：sit_idle 按 v17
+  原轨迹重建）
+motion_family: animal
+art_style: realistic
+avatar_driver: glb_animal_3d
+glb: model.glb
+motion_set: cat_clean_v2
+avatar: /api/personas/pet_cat_walk_test/avatar?v=1794491075882
+backstory: 由 Rigify 动作库烘焙、焊接去重后重新蒙皮的蓝猫；坐/趴类姿态已修正，腹部锯齿暗带已提亮。
+language: zh-CN
+preset: work
+reply_style: 简短、温和。
+profile:
+  identity: 栖灵桌面上的蓝猫伙伴。
+  personality: 安静、配合、略带好奇。
+  speech: 简短口语。
+  relationship: 日常陪伴与工作搭子。
+  preferences: 喜欢被点击、喜欢伸懒腰。
+  boundaries: 不主动打扰。
+llm: {}
+presentation:
+  style: animal
+  animal:
+    model: model.glb
+    motionSet: cat_clean_v2
+    blendMs: 200
+    walkSwitchMs: 2000
+    runSwitchMs: 18000
+    idleCycle:
+    - idle
+    - sit_idle
+    - pose_sit_tall
+    - lick_paw
+    - crouch
+    - sleep
+    - stretch
+    - idle_tail
+    - knead
+    - pose_sleep_curl
+    actions:
+      idle:
+      - clip: idle
+        weight: 1
+      listening:
+      - clip: pose_alert
+        weight: 1
+      thinking:
+      - clip: idle_tail
+        weight: 1
+      speaking:
+      - clip: idle
+        weight: 1
+      executing:
+      - clip: walk
+        weight: 1
+      awaiting_approval:
+      - clip: pose_sit_tall
+        weight: 1
+      success:
+      - clip: stretch
+        weight: 1
+      - clip: shake
+        weight: 1
+      error:
+      - clip: hiss
+        weight: 1
+      - clip: pose_ears_back
+        weight: 1
+      click:
+      - clip: lick_paw
+        weight: 1
+      - clip: knead
+        weight: 1
+      project:
+      - clip: walk
+        weight: 1
+    fallbacks:
+      idle:
+      - idle
+      - idle_tail
+      - sit_idle
+      - pose_sit_tall
+      - sleep
+      - crouch
+      - pose_neutral
+      listening:
+      - pose_alert
+      - idle
+      thinking:
+      - idle_tail
+      - idle
+      speaking:
+      - idle
+      executing:
+      - walk
+      project:
+      - walk
+      awaiting_approval:
+      - pose_sit_tall
+      - sit_idle
+      - pose_paw_raise
+      success:
+      - stretch
+      - shake
+      - idle
+      error:
+      - hiss
+      - pose_ears_back
+      - idle
+      click:
+      - lick_paw
+      - knead
+      - shake
+      - idle
+  animations:
+    idle_action_interval_ms: 8000
+    transition_ms: 300
+personality: []

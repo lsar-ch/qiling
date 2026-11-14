@@ -468,7 +468,7 @@ class WorkBuddyAdapter(AgentAdapter):
                         "fs": {"readTextFile": False, "writeTextFile": False},
                         "terminal": False,
                     },
-                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.2.0"},
                 },
                 timeout_s=20.0,
             )
@@ -530,7 +530,7 @@ class WorkBuddyAdapter(AgentAdapter):
                         "fs": {"readTextFile": False, "writeTextFile": False},
                         "terminal": False,
                     },
-                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.2.0"},
                 },
                 timeout_s=20.0,
             )
@@ -712,14 +712,14 @@ class WorkBuddyAdapter(AgentAdapter):
                         "fs": {"readTextFile": False, "writeTextFile": False},
                         "terminal": False,
                     },
-                    "clientInfo": {"name": "栖灵", "version": "0.1.0"},
+                    "clientInfo": {"name": "栖灵", "version": "0.2.0"},
                 },
                 timeout_s=30.0,
             )
             try:
                 created = await client.request(
                     "session/new",
-                    {"cwd": request.cwd, "mcpServers": []},
+                    {"cwd": request.cwd, "mcpServers": request.config.get("mcp_servers") or []},
                     timeout_s=60.0,
                 )
             except AcpRequestError as exc:

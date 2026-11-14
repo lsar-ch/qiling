@@ -1,5 +1,5 @@
 // 挂件状态契约 —— 镜像自 qiling_contracts/widget.py。
-import type { ArtStyle, MotionFamily } from "./character";
+import type { ArtStyle, AnimalMotionConfig, MotionFamily } from "./character";
 
 export type PersonaStyle = MotionFamily;
 
@@ -74,5 +74,6 @@ export interface PersonaPresentation {
   fx: Record<string, boolean>;
   actions?: MotionOverrides;
   vrm?: VrmMotionConfig | null;
+  animal?: AnimalMotionConfig | null;
   asset: Record<string, unknown> | null;
 }

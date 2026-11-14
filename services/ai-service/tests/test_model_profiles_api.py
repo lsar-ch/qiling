@@ -333,3 +333,49 @@ def test_provider_model_list_endpoint(tmp_path: Path, monkeypatch) -> None:
 
         # profile_id 不存在 -> 404
         assert client.get("/api/model-profiles/models", params={"profile_id": "nope"}).status_code == 404
+
+
+def test_voice_profiles_accept_openai_compatible_stt_and_breeze_tts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Groq Whisper（STT）与 Breeze（TTS）预设此前被后端白名单拒绝，保存即 422。"""
+    _prepare_home(tmp_path, monkeypatch)
+
+    with TestClient(create_app(load_settings())) as client:
+        groq = client.post(
+            "/api/model-profiles",
+            json={
+                "id": "stt_groq",
+                "name": "Groq Whisper",
+                "category": "stt",
+                "provider": "openai_compatible",
+                "base_url": "https://api.groq.com/openai/v1",
+                "model": "whisper-large-v3-turbo",
+                "api_key": "gsk_secret",
+                "enabled": True,
+                "is_default": True,
+            },
+        )
+        assert groq.status_code == 200, groq.text
+
+        breeze = client.post(
+            "/api/model-profiles",
+            json={
+                "id": "tts_breeze",
+                "name": "Breeze TTS 2",
+                "category": "tts",
+                "provider": "breeze",
+                "model": "breeze-tts-2",
+                "api_key": "brz_secret",
+                "enabled": True,
+                "is_default": True,
+            },
+        )
+        assert breeze.status_code == 200, breeze.text
+
+        voice = client.get("/api/settings").json()["voice"]
+        assert voice["stt_provider"] == "openai_compatible"
+        assert voice["stt_model"] == "whisper-large-v3-turbo"
+        assert voice["tts_provider"] == "breeze"
+        assert voice["tts_model"] == "breeze-tts-2"
+        assert voice["breeze_configured"] is True

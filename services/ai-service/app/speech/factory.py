@@ -6,13 +6,42 @@ from app.config import Settings, resolve_stt_provider, resolve_tts_provider
 from app.speech.base import (
     DisabledRecognizer,
     DisabledSynthesizer,
+    SpeechRecognizer,
     SpeechStack,
 )
 from app.speech.base import SpeechSynthesizer
+from app.speech.breeze import BreezeSynthesizer
 from app.speech.dashscope import DashScopeRecognizer, DashScopeSynthesizer
 from app.speech.minimax import MiniMaxSynthesizer
+from app.speech.openai_stt import OpenAICompatibleRecognizer
 from app.speech.openai_tts import OpenAICompatibleSynthesizer
 from qiling_contracts.voice import VoiceParams
+
+
+def build_stt_recognizer(
+    provider: str,
+    *,
+    api_key: str = "",
+    base_url: str = "",
+    model: str = "",
+    sample_rate: int = 16000,
+    reason: str | None = None,
+) -> SpeechRecognizer:
+    """按供应商构造识别器；未知/未配置时返回 disabled。"""
+    if provider == "dashscope":
+        return DashScopeRecognizer(
+            api_key=api_key,
+            model=model or "paraformer-realtime-v2",
+            sample_rate=sample_rate,
+        )
+    if provider == "openai_compatible":
+        return OpenAICompatibleRecognizer(
+            base_url=base_url,
+            api_key=api_key,
+            model=model or "whisper-large-v3-turbo",
+            sample_rate=sample_rate,
+        )
+    return DisabledRecognizer(reason or "语音识别不可用")
 
 
 def build_tts_synthesizer(
@@ -60,6 +89,16 @@ def build_tts_synthesizer(
             sample_rate=sample_rate,
             defaults=defaults,
         )
+    if provider == "breeze":
+        return BreezeSynthesizer(
+            api_key=api_key,
+            base_url=base_url or "https://api.breeze.blue/v1",
+            model=model or "breeze-tts-2",
+            voice=voice,
+            fmt=fmt,
+            sample_rate=sample_rate,
+            defaults=defaults,
+        )
     return DisabledSynthesizer(reason or "语音合成不可用")
 
 
@@ -68,13 +107,19 @@ def build_speech_stack(settings: Settings) -> SpeechStack:
     tts_provider, tts_reason = resolve_tts_provider(settings)
 
     if stt_provider == "dashscope":
-        recognizer = DashScopeRecognizer(
-            api_key=settings.dashscope_api_key or "",
-            model=settings.stt_model,
-            sample_rate=settings.stt_sample_rate,
-        )
+        stt_key, stt_base_url = settings.dashscope_api_key or "", ""
+    elif stt_provider == "openai_compatible":
+        stt_key, stt_base_url = settings.stt_api_key, settings.stt_base_url
     else:
-        recognizer = DisabledRecognizer(stt_reason or "语音识别不可用")
+        stt_key, stt_base_url = "", ""
+    recognizer = build_stt_recognizer(
+        stt_provider,
+        api_key=stt_key,
+        base_url=stt_base_url,
+        model=settings.stt_model,
+        sample_rate=settings.stt_sample_rate,
+        reason=stt_reason,
+    )
 
     params = VoiceParams(
         speed=settings.voice_speed,
@@ -90,6 +135,8 @@ def build_speech_stack(settings: Settings) -> SpeechStack:
         api_key, base_url = settings.minimax_api_key or "", ""
     elif tts_provider == "openai_compatible":
         api_key, base_url = settings.tts_api_key, settings.tts_base_url
+    elif tts_provider == "breeze":
+        api_key, base_url = settings.breeze_api_key, settings.tts_base_url
     else:
         api_key, base_url = "", ""
 

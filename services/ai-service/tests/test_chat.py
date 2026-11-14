@@ -44,6 +44,17 @@ def make_client(provider: FakeProvider) -> TestClient:
     tmp_home.mkdir(parents=True, exist_ok=True)
     os.environ["QILING_HOME"] = str(tmp_home)
     (tmp_home / "config" / "personas").mkdir(parents=True, exist_ok=True)
+    skill_dir = tmp_home / "skills" / "builtin" / "writing-assistant"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: writing-assistant\n"
+        "description: 写作助手\n"
+        "enabled: true\n"
+        "---\n"
+        "# 写作助手流程\n\n保持原意并直接交付。\n",
+        encoding="utf-8",
+    )
     (tmp_home / "config" / "settings.yaml").write_text("app:\n  version: 0.1.0\n", encoding="utf-8")
     (tmp_home / "config" / "system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(PROJECT_ROOT / "config" / "agents.yaml", tmp_home / "config" / "agents.yaml")
@@ -71,6 +82,20 @@ activation: {}
             os.environ.pop("QILING_HOME", None)
         else:
             os.environ["QILING_HOME"] = previous
+
+
+def test_chat_explicit_skill_injects_inline_guidance() -> None:
+    provider = FakeProvider("好")
+    with make_client(provider) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "请润色这段文字", "skill_id": "writing-assistant"},
+        )
+        assert resp.status_code == 200
+        assert provider.last_messages is not None
+        system = provider.last_messages[0]["content"]
+        assert "本轮技能指引" in system
+        assert "写作助手流程" in system
 
 
 def parse_sse(text: str) -> list[dict]:

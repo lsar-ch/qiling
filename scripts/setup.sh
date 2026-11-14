@@ -52,7 +52,7 @@ print_fix_entry() {
   3) npm ci 失败：多为 package-lock.json 与 package.json 不同步，进入 apps/web 或 apps/desktop
      执行 npm install 后重新提交 lock，再重跑本脚本
   4) smoke test 失败：看 $SMOKE_LOG 末尾日志；端口被占用时用 SMOKE_PORT=8811 ./scripts/setup.sh 重跑
-  5) 文档：README.md、docs/HANDOVER-2026-09-13.md、docs/PROJECT-ROADMAP.md
+  5) 文档：README.md、docs/HANDOVER-2026-09-13.md、docs/V0.2-PLAN-2026-10-26.md
 EOF
 }
 

@@ -45,17 +45,28 @@ for line in sys.stdin:
 class FakeToolProvider:
     display_name = "fake-tool-provider"
 
-    def __init__(self) -> None:
+    def __init__(self, requested_tool: str = "mcp__fake__echo") -> None:
         self.calls = 0
+        self.requested_tool = requested_tool
+        self.offered_tools: list[str] = []
+        self.tool_results: list[str] = []
+        self.first_messages: list[dict] = []
 
     async def chat(self, messages, *, tools=None):
         self.calls += 1
+        self.tool_results = [
+            str(message["content"])
+            for message in messages
+            if message.get("role") == "tool"
+        ]
         if self.calls == 1:
+            self.first_messages = messages
+            self.offered_tools = [tool.name for tool in tools or []]
             return ChatResult(
                 text="",
                 tool_calls=[
                     ToolCallRequest(
-                        id="call_1", name="mcp__fake__echo", arguments={"text": "hi"}
+                        id="call_1", name=self.requested_tool, arguments={"text": "hi"}
                     )
                 ],
             )
@@ -65,10 +76,32 @@ class FakeToolProvider:
         yield "stream"
 
 
-def _make_app(tmp_path, monkeypatch, access: str):
+def _make_app(
+    tmp_path,
+    monkeypatch,
+    access: str,
+    *,
+    profile: bool = False,
+    provider: FakeToolProvider | None = None,
+):
     home = tmp_path / "qiling-home"
     monkeypatch.setenv("QILING_HOME", str(home))
     (home / "config").mkdir(parents=True)
+    if profile:
+        skill_dir = home / "data" / "skills" / "mcp-demo"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: mcp-demo\n"
+            "description: MCP 测试技能\n"
+            "execution:\n"
+            "  modes: [inline, mcp]\n"
+            "tools: [mcp__fake-write__echo]\n"
+            "enabled: true\n"
+            "---\n"
+            "MCP 技能指引标记。\n",
+            encoding="utf-8",
+        )
     (home / "config" / "system_prompt.md").write_text("你是 栖灵。", encoding="utf-8")
     shutil.copyfile(
         Path(__file__).resolve().parents[3] / "config" / "agents.yaml",
@@ -76,20 +109,32 @@ def _make_app(tmp_path, monkeypatch, access: str):
     )
     script = home / "fake_mcp.py"
     script.write_text(FAKE_SERVER, encoding="utf-8")
-    (home / "config" / "mcp-servers.yaml").write_text(
+    config = (
         "version: 1\n"
-        "servers:\n"
-        "  - id: fake\n"
-        "    source: user\n"
-        "    enabled: true\n"
-        "    transport: stdio\n"
-        f"    access: {access}\n"
-        f"    command: {sys.executable}\n"
-        f"    args: [{json.dumps(str(script))}]\n",
-        encoding="utf-8",
+        + ("profiles:\n  research:\n    servers: [fake, fake-write]\n" if profile else "")
+        + "servers:\n"
+        + "  - id: fake\n"
+        + "    source: user\n"
+        + "    enabled: true\n"
+        + "    transport: stdio\n"
+        + f"    access: {access}\n"
+        + f"    command: {sys.executable}\n"
+        + f"    args: [{json.dumps(str(script))}]\n"
+        + (
+            "  - id: fake-write\n"
+            "    source: user\n"
+            "    enabled: true\n"
+            "    transport: stdio\n"
+            "    access: write\n"
+            f"    command: {sys.executable}\n"
+            f"    args: [{json.dumps(str(script))}]\n"
+            if profile
+            else ""
+        )
     )
+    (home / "config" / "mcp-servers.yaml").write_text(config, encoding="utf-8")
     app = create_app(load_settings())
-    app.state.llm_provider = FakeToolProvider()
+    app.state.llm_provider = provider or FakeToolProvider()
     return app
 
 
@@ -131,6 +176,99 @@ def test_write_tool_requires_approval(tmp_path, monkeypatch) -> None:
             assert '"type": "done"' in resp.text
 
     asyncio.run(run())
+
+
+def test_read_only_profile_exposes_only_allowed_read_servers(tmp_path, monkeypatch) -> None:
+    provider = FakeToolProvider()
+    app = _make_app(tmp_path, monkeypatch, "read", profile=True, provider=provider)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "搜索资料", "mcp_profile": "research"},
+        )
+    assert resp.status_code == 200
+    assert provider.offered_tools == ["mcp__fake__echo"]
+    assert "fake" in app.state.mcp_manager._runtime
+    assert "fake-write" not in app.state.mcp_manager._runtime
+    tasks = list(app.state.task_store.values())
+    assert tasks and tasks[0].status == "completed"
+    assert "echo:hi" in provider.tool_results
+
+
+def test_mcp_profile_injects_compatible_skill_guidance(tmp_path, monkeypatch) -> None:
+    provider = FakeToolProvider()
+    app = _make_app(tmp_path, monkeypatch, "read", profile=True, provider=provider)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={
+                "message": "你好",
+                "skill_id": "mcp-demo",
+                "mcp_profile": "research",
+            },
+        )
+    assert resp.status_code == 200
+    assert provider.first_messages
+    assert "MCP 技能指引标记" in provider.first_messages[0]["content"]
+    assert provider.offered_tools == ["mcp__fake__echo"]
+
+
+def test_read_only_profile_rejects_unexposed_write_tool_call(tmp_path, monkeypatch) -> None:
+    provider = FakeToolProvider(requested_tool="mcp__fake-write__echo")
+    app = _make_app(tmp_path, monkeypatch, "read", profile=True, provider=provider)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "搜索资料", "mcp_profile": "research"},
+        )
+    assert resp.status_code == 200
+    assert provider.offered_tools == ["mcp__fake__echo"]
+    assert "fake-write" not in app.state.mcp_manager._runtime
+
+
+def test_unknown_mcp_profile_is_rejected(tmp_path, monkeypatch) -> None:
+    app = _make_app(tmp_path, monkeypatch, "read")
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "搜索资料", "mcp_profile": "missing"},
+        )
+    assert resp.status_code == 400
+
+
+def test_profile_does_not_complete_high_risk_browser_task(tmp_path, monkeypatch) -> None:
+    app = _make_app(tmp_path, monkeypatch, "read", profile=True)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/chat/stream",
+            json={"message": "删除网页内容", "mcp_profile": "research"},
+        )
+        assert resp.status_code == 200
+        tasks = client.get("/api/tasks").json()["items"]
+    assert tasks and tasks[0]["category"] == "request_approval"
+    assert tasks[0]["status"] == "awaiting_approval"
+
+
+def test_profile_handles_url_fetch_without_starting_agent(tmp_path, monkeypatch) -> None:
+    provider = FakeToolProvider()
+    app = _make_app(tmp_path, monkeypatch, "read", profile=True, provider=provider)
+
+    async def _unexpected_execute(*args, **kwargs):
+        raise AssertionError("MCP profile 网页读取不应启动 ACP")
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(
+            app.state.agent_run_manager, "execute", _unexpected_execute
+        )
+        resp = client.post(
+            "/api/chat/stream",
+            json={
+                "message": "总结一下这篇文章 https://example.com/a",
+                "mcp_profile": "research",
+            },
+        )
+    assert resp.status_code == 200
+    assert provider.offered_tools == ["mcp__fake__echo"]
 
 
 def test_tool_approval_endpoint(tmp_path, monkeypatch) -> None:

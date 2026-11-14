@@ -19,6 +19,7 @@ from PIL import UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
 from qiling_contracts.events import EventEnvelope
+from qiling_contracts.workbench import WorkbenchSettings
 
 from app.config import PerformanceMode, is_lite_mode, load_settings, obsidian_vault_dir
 from app.core.persona_asset import NormalizedAvatar, normalize_avatar_image, png_bytes
@@ -122,6 +123,7 @@ class SettingsUpdate(BaseModel):
     dashscope_api_key: str | None = None
     minimax_api_key: str | None = None
     setup_completed: bool | None = None
+    workbench: WorkbenchSettings | None = None
 
 
 def _settings_path(request: Request) -> Path:
@@ -249,6 +251,7 @@ def _public_settings(request: Request) -> dict[str, Any]:
         "performance_mode": settings.performance_mode,
         "ui": {"language": settings.ui_language, "theme": settings.ui_theme},
         "permission_level": settings.permission_level,
+        "workbench": settings.workbench.model_dump(mode="json"),
         "memory": {
             "mode": settings.memory_mode,
             "budget_chars": settings.memory_budget_chars,
@@ -282,6 +285,7 @@ def _public_settings(request: Request) -> dict[str, Any]:
             "auto_barge_in": settings.auto_barge_in,
             "dashscope_configured": bool(settings.dashscope_api_key),
             "minimax_configured": bool(settings.minimax_api_key),
+            "breeze_configured": bool(settings.breeze_api_key),
         },
     }
 
@@ -295,6 +299,12 @@ def get_settings(request: Request) -> dict[str, Any]:
 async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str, Any]:
     current = _read_overrides(request)
     data = payload.model_dump(exclude_unset=True)
+    if "workbench" in data:
+        current["workbench"] = (
+            payload.workbench.model_dump(mode="json")
+            if payload.workbench is not None
+            else WorkbenchSettings().model_dump(mode="json")
+        )
     switched_persona_id: str | None = None
     if "active_persona_id" in data:
         persona_path = _persona_dir(request) / f"{data['active_persona_id']}.yaml"
@@ -532,7 +542,8 @@ async def test_saved_model_profile(profile_id: str, request: Request) -> dict[st
     profile = find_model_profile(profiles, profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="模型档案不存在")
-    return await test_model_profile(profile, request.app.state.settings.llm_api_key)
+    settings = request.app.state.settings
+    return await test_model_profile(profile, settings, settings.llm_api_key)
 
 
 @router.get("/personas")
@@ -543,6 +554,17 @@ def list_personas(request: Request) -> dict[str, Any]:
         if persona:
             items.append(persona)
     return {"items": items}
+
+
+@router.get("/personas/{persona_id}/presentation")
+def get_persona_presentation(persona_id: str, request: Request) -> dict[str, Any]:
+    """按需读取完整角色呈现；事件历史只保留最近条数，不能作为冷启动数据源。"""
+    if not _PERSONA_ID.fullmatch(persona_id):
+        raise HTTPException(status_code=404, detail="角色卡不存在")
+    presentation = request.app.state.presentation_bridge.build(persona_id)
+    if presentation is None:
+        raise HTTPException(status_code=404, detail="角色卡不存在")
+    return presentation.model_dump(mode="json")
 
 
 @router.get("/personas/{persona_id}/avatar")

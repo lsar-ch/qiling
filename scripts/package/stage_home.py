@@ -16,7 +16,9 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-PERSONA_IDS = ("default", "persona_2", "qiling")
+# v0.2 冻结：运行时可选角色与资产必须成对随包分发。
+PERSONA_IDS = ("cat_vrm", "default", "meshy_female", "persona_2", "pet_cat_walk_test", "qiling")
+RUNTIME_ASSET_IGNORES = shutil.ignore_patterns("*.bak*", "*-preview.glb", "README*")
 
 
 def main(out: str) -> int:
@@ -45,7 +47,7 @@ def main(out: str) -> int:
     assets_dst.mkdir(parents=True, exist_ok=True)
     for persona_id in PERSONA_IDS:
         src = root / "data" / "persona-assets" / persona_id
-        shutil.copytree(src, assets_dst / persona_id, dirs_exist_ok=True)
+        shutil.copytree(src, assets_dst / persona_id, dirs_exist_ok=True, ignore=RUNTIME_ASSET_IGNORES)
     (dst / "data" / "run").mkdir(parents=True, exist_ok=True)
 
     # 动作库**随包分发**（方案 B，2026-10-21 决策）。理由：不含动作库时安装后只剩
@@ -74,7 +76,7 @@ def main(out: str) -> int:
     import yaml
 
     settings = yaml.safe_load((root / "config" / "settings.yaml").read_text(encoding="utf-8"))
-    version = (settings or {}).get("app", {}).get("version", "0.1.0")
+    version = (settings or {}).get("app", {}).get("version", "0.2.0")
     (dst / ".seed-version").write_text(str(version), encoding="utf-8")
     return 0
 

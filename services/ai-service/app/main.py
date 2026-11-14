@@ -20,13 +20,14 @@ from app.agents.factory import build_agent_registry
 from app.agents.catalog import load_agent_catalog, migrate_legacy_executor_secret
 from app.agents.secret_store import SecretStore, SecretStoreError
 from app.agents.runtime import AgentRunManager, AgentRunStore
-from app.api import agent_runs, agents, chat, events, extensions, health, memories, persona_tasks, project_nodes, recording, reminders, session, settings as settings_api, state, tasks, voice
+from app.api import agent_runs, agents, chat, events, extensions, health, memories, persona_tasks, project_nodes, recording, reminders, session, settings as settings_api, state, tasks, voice, workflows, workbench as workbench_api
 from app.chat.store import ConversationStore
 from app.memory import MemoryService
 from app.skills import SkillRegistry
 from app.mcp import McpManager
 from app.routing import TaskStore
 from app.project_nodes import ProjectNodeStore
+from app.workbench import new_workbench_stores
 from app.speech.base import SpeechStack
 from app.speech.factory import build_speech_stack
 from app.config import Settings, resolve_llm_provider
@@ -110,6 +111,8 @@ def create_app(
     async def lifespan(app: FastAPI):
         settings.memory_dir.mkdir(parents=True, exist_ok=True)
         (settings.data_dir / "run").mkdir(parents=True, exist_ok=True)
+        app.state.workflow_store = workflows.WorkflowStore(settings.data_dir)
+        app.state.workflow_store.recover_interrupted(app.state.agent_run_manager.store)
         # 启动时广播当前角色呈现
         if settings.active_persona_id:
             await presentation_bridge.broadcast(settings.active_persona_id, hub)
@@ -133,6 +136,8 @@ def create_app(
     app.state.task_store = TaskStore(settings.data_dir)
     app.state.project_node_store = ProjectNodeStore(settings.data_dir)
     app.state.reminder_store = ReminderStore(settings.data_dir)
+    note_store, todo_store = new_workbench_stores(settings.data_dir)
+    app.state.workbench_stores = {"notes": note_store, "todos": todo_store}
     app.state.reminder_engine = ReminderEngine(app.state.reminder_store, hub)
     app.state.wellness = WellnessEngine(
         hub,
@@ -149,6 +154,14 @@ def create_app(
     except SecretStoreError:
         pass
     app.state.agent_registry = build_agent_registry(app.state.agent_catalog, provider)
+    app.state.skill_registry = SkillRegistry(
+        builtin_dir=settings.repo_root / "skills" / "builtin",
+        user_dir=settings.data_dir / "skills",
+        state_path=settings.data_dir / "skills-state.json",
+    )
+    app.state.mcp_manager = McpManager(
+        settings.repo_root / "config" / "mcp-servers.yaml"
+    )
     app.state.agent_run_manager = AgentRunManager(
         registry=app.state.agent_registry,
         store=AgentRunStore(settings.data_dir),
@@ -158,14 +171,8 @@ def create_app(
         data_dir=settings.data_dir,
         conversations=app.state.conversation_store,
         project_nodes=app.state.project_node_store,
-    )
-    app.state.skill_registry = SkillRegistry(
-        builtin_dir=settings.repo_root / "skills" / "builtin",
-        user_dir=settings.data_dir / "skills",
-        state_path=settings.data_dir / "skills-state.json",
-    )
-    app.state.mcp_manager = McpManager(
-        settings.repo_root / "config" / "mcp-servers.yaml"
+        skill_registry=app.state.skill_registry,
+        mcp_manager=app.state.mcp_manager,
     )
     app.state.tool_approvals: dict = {}
     app.state.llm_provider = provider
@@ -181,6 +188,13 @@ def create_app(
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def prevent_html_cache(request, call_next):
+        response = await call_next(request)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     app.include_router(health.router)
     app.include_router(agents.router)
     app.include_router(agent_runs.router)
@@ -189,6 +203,7 @@ def create_app(
     app.include_router(state.router)
     app.include_router(chat.router)
     app.include_router(tasks.router)
+    app.include_router(workflows.router)
     app.include_router(voice.router)
     app.include_router(settings_api.router)
     app.include_router(extensions.router)
@@ -196,6 +211,7 @@ def create_app(
     app.include_router(persona_tasks.router)
     app.include_router(project_nodes.router)
     app.include_router(reminders.router)
+    app.include_router(workbench_api.router)
     app.include_router(recording.router)
 
     # 生产模式：主界面由 ai-service 托管（apps/web 构建产物）

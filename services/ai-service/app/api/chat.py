@@ -87,6 +87,8 @@ class ChatTurnRequest(BaseModel):
     modality: Literal["text", "voice"] = "text"
     mode: ChatMode = "auto"
     model_profile_id: str | None = None
+    mcp_profile: str | None = None
+    skill_id: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -277,10 +279,17 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             payload={"message": body.message},
         )
     )
-    selected_skill = request.app.state.skill_registry.select(body.message)
+    skill_mode = "mcp" if body.mcp_profile else "inline"
+    selected_skill = request.app.state.skill_registry.resolve(
+        body.skill_id,
+        body.message,
+        mode=skill_mode,
+        explicit=body.skill_id is not None,
+    )
     task = classify_task_input(body.message, settings.permission_level)
     task.conversation_id = conversation_id
     task.project = conversation.project
+    task.skill_id = selected_skill.info.id if selected_skill else None
     task = request.app.state.task_store.put(task)
     await hub.publish(
         EventEnvelope(
@@ -307,9 +316,15 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
     # 不该拉起真实 agent（这类任务仍会记进任务台，需要时手动运行）。
     auto_run = None
     auto_start_error = ""
+    mcp_profile_unavailable = False
+    mcp_profile_task = bool(
+        body.mcp_profile
+        and (task.work_kind == "browser" or re.search(r"https?://", body.message))
+    )
     if (
         task.category == "delegate_backend"
         and task.risk_level != "low"
+        and not mcp_profile_task
         and not _is_echo_of_reply(body.message, conversation)
     ):
         try:
@@ -397,7 +412,7 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
             )
             mcp_manager = request.app.state.mcp_manager
             await mcp_manager.reclaim_idle()
-            tool_pairs = await mcp_manager.prepare_tool_specs()
+            tool_pairs = await mcp_manager.prepare_tool_specs(body.mcp_profile)
             tool_lookup = {
                 f"mcp__{server_id}__{tool.name}": (server_id, tool.name)
                 for server_id, tool in tool_pairs
@@ -411,13 +426,18 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
                 )
                 for server_id, tool in tool_pairs
             ]
+            if body.mcp_profile and not tool_specs:
+                mcp_profile_unavailable = True
+                answer = "这个 MCP profile 当前没有可用的只读工具，请检查服务器启用状态和只读权限配置。"
+                yield _sse({"type": "delta", "content": answer})
             if not tool_specs:
-                # 无可用 MCP 工具：保持原流式路径不变
-                buffer: list[str] = []
-                async for chunk in provider.stream_chat(llm_messages):
-                    buffer.append(chunk)
-                    yield _sse({"type": "delta", "content": chunk})
-                answer = "".join(buffer)
+                if not body.mcp_profile:
+                    # 无可用 MCP 工具：保持原流式路径不变
+                    buffer: list[str] = []
+                    async for chunk in provider.stream_chat(llm_messages):
+                        buffer.append(chunk)
+                        yield _sse({"type": "delta", "content": chunk})
+                    answer = "".join(buffer)
             else:
                 answer = ""
                 extra_messages: list[dict] = []
@@ -496,7 +516,10 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
                             if not denied:
                                 try:
                                     tool_content = await mcp_manager.call_tool(
-                                        server_id, tool_name, call.arguments
+                                        server_id,
+                                        tool_name,
+                                        call.arguments,
+                                        profile_id=body.mcp_profile,
                                     )
                                 except Exception as exc:
                                     tool_content = f"工具执行失败：{exc}"
@@ -578,6 +601,17 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
         # 纯问答在本轮对话里就答完了，没有执行步骤；落终态避免 tasks/ 长期堆 queued。
         task.status = "completed"
         request.app.state.task_store.put(task)
+    elif (
+        task is not None
+        and task.category == "delegate_backend"
+        and mcp_profile_task
+    ):
+        task.status = (
+            "failed"
+            if mcp_profile_unavailable or answer.startswith("（模型调用失败")
+            else "completed"
+        )
+        request.app.state.task_store.put(task)
     await hub.publish(
         EventEnvelope(
             event_type="conversation.completed",
@@ -623,6 +657,19 @@ async def _run_turn(request: Request, body: ChatTurnRequest) -> AsyncIterator[st
 async def chat_stream(request: Request, body: ChatTurnRequest) -> StreamingResponse:
     if not body.message.strip():
         raise HTTPException(status_code=422, detail="消息不能为空")
+    try:
+        request.app.state.mcp_manager.validate_profile(body.mcp_profile)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        request.app.state.skill_registry.resolve(
+            body.skill_id,
+            body.message,
+            mode="mcp" if body.mcp_profile else "inline",
+            explicit=body.skill_id is not None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if body.project and resolve_project_dir(body.project) is None:
         raise HTTPException(status_code=400, detail=f"项目目录不存在或不是目录：{body.project}")
     return StreamingResponse(

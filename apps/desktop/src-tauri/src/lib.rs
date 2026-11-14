@@ -459,6 +459,7 @@ fn open_main_ui_window(
         .inner_size(1200.0, 800.0)
         .min_inner_size(900.0, 640.0)
         .center()
+        .devtools(cfg!(debug_assertions))
         .build()
         .map_err(|e| format!("创建主界面窗口失败: {e}"))?;
     let _ = window.show();
@@ -598,10 +599,15 @@ pub fn run() {
                     let _ = win.show();
                 }
             }
+            app.manage(widget::WidgetRuntimeState::new(app.handle().clone()));
+            // macOS：挂件必须常驻所有桌面 Space（CanJoinAllSpaces），否则切 Space
+            // 或其他应用全屏时挂件被留在原 Space，表现成“随机消失”。
+            if let Some(widget_window) = app.get_webview_window(widget::WIDGET_LABEL) {
+                let _ = widget_window.set_visible_on_all_workspaces(true);
+            }
             if let Err(err) = widget::restore_widget_position(app.handle()) {
                 eprintln!("Qiling widget positioning failed: {err}");
             }
-            app.manage(widget::WidgetRuntimeState::new(app.handle().clone()));
 
             // 系统托盘图标 + 右键菜单
             let open_item = MenuItem::with_id(app, "open", "打开主界面", true, None::<&str>)?;
@@ -665,12 +671,15 @@ pub fn run() {
             widget::set_widget_scale,
             widget::set_widget_visible_edges,
             widget::set_widget_interactive_area,
+            widget::set_widget_animal_pixel_hit,
             widget::set_widget_content_rect,
             widget::start_widget_drag,
             widget::cancel_widget_drag,
             widget::finish_widget_drag,
             widget::resize_widget_height,
             widget::system_idle_seconds,
+            widget::move_widget_to,
+            widget::list_desktop_work_areas,
             quit_app
         ])
         .on_window_event(|window, event| match event {

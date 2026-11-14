@@ -8,6 +8,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-vrm-animation";
 import { motionLibraryUrl, personaAssetUrl, type ExpressionEmotion, type VrmMotionConfig } from "../api";
@@ -15,6 +16,7 @@ import type { ActionTrigger } from "./actions";
 import { pickVrmClip } from "./vrmClips";
 import { lipSyncBus } from "./lipSync";
 import { onFollowUpdate, offFollowUpdate } from "./mouseFollow";
+import { isAPoseHumanoid, prepareVrmClip } from "./vrmMotion";
 
 /** 循环类 trigger 用 ping-pong 循环；其余为一次性动作，播完回 idle。 */
 const LOOP_TRIGGERS: ReadonlySet<ActionTrigger> = new Set([
@@ -120,7 +122,6 @@ export default function VrmStage({
     const fill = new THREE.DirectionalLight(0xffffff, 0.5);
     fill.position.set(-0.8, 1.6, -1);
     scene.add(fill);
-
     // 模型渲染范围测量（画布 CSS px）。取景/窗口尺寸变化后重算，
     // 让挂件舞台贴合 3D 角色实际占用的区域（模型加载前为 null，不测量）。
     let measureBox: (() => void) | null = null;
@@ -157,6 +158,37 @@ export default function VrmStage({
         if (mesh.isMesh) mesh.frustumCulled = false;
       });
       scene.add(vrm.scene);
+
+      /**
+       * 两处按模型本身特性做的自适应，避免为了兼容一张卡去改公共光照/姿势常量：
+       *
+       * 1) A-pose 卡：VRM 1.0 规范要求 rest 为 T-pose，但 Meshy 这类图生模型的 rest
+       *    是手臂下垂约 21° 的 A-pose。动作库与程序化待机都按 T-pose（水平 90°）设计，
+       *    直接叠加会「多转 69°」——手臂越过垂直线扫到身体另一侧，表现为左右手交叉。
+       *    正确修法是把 rest 抬成 T-pose，但源模型的宽袖是按 A-pose 蒙皮的，抬起后
+       *    袖下布料被拉成翼状（已渲染确认），等于破坏造型。故在动作加载时仅移除其
+       *    T-pose 首帧基准，保留后续每帧的相对手臂动作。
+       * 2) 纯 PBR 卡：现有三盏灯是按 MToon（卡通着色，几乎不吃光照角度）调的，
+       *    PBR 的黑裙/深色发在同样光下会糊成剪影，需要补一盏环境光并加强主光。
+       */
+      vrm.scene.updateMatrixWorld(true);
+      const aPoseCard = isAPoseHumanoid(vrm.humanoid);
+      let hasMToon = false;
+      vrm.scene.traverse((obj) => {
+        const mat = (obj as THREE.Mesh).material as { isMToonMaterial?: boolean } | undefined;
+        if (mat?.isMToonMaterial) hasMToon = true;
+      });
+      if (!hasMToon) {
+        // 纯 PBR 材质在只有直接光时，镜面项几乎没有贡献，黑裙/深色发会糊成剪影、
+        // 皮肤发灰。补一张中性室内环境贴图（PMREM 预过滤）是这类模型的正确打光方式，
+        // 再配一点曝光，肤色和布料的层次才接近离线渲染。MToon 卡不受影响。
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        scene.environmentIntensity = 1.0;
+        pmrem.dispose();
+        renderer.toneMapping = THREE.LinearToneMapping;
+        renderer.toneMappingExposure = 1.12;
+      }
 
       // 取景：humanoid 头/脚骨骼算身高，兜底 bbox（spike 验证过的参数）
       const box = new THREE.Box3().setFromObject(vrm.scene);
@@ -315,11 +347,15 @@ export default function VrmStage({
         const t = elapsedMs / 1000;
         const breathe = Math.sin(t * 1.5) * 0.5 + 0.5; // 0..1
         const armSway = Math.sin(t * 0.7) * 0.02;
+        // A-pose 卡的 rest 已经自然下垂，再套 ±1.25（T-pose 的垂臂量）会越过
+        // 垂直线到身体另一侧；只留极小的呼吸外张。
+        const armFold = aPoseCard ? -0.04 : 1.25;
+        const armPitch = aPoseCard ? 0.01 : 0.05;
         if (procBones.leftUpperArm) {
-          procBones.leftUpperArm.rotation.set(0.05 * blend, 0, (-1.25 + armSway) * blend);
+          procBones.leftUpperArm.rotation.set(armPitch * blend, 0, (-armFold + armSway) * blend);
         }
         if (procBones.rightUpperArm) {
-          procBones.rightUpperArm.rotation.set(0.05 * blend, 0, (1.25 - armSway) * blend);
+          procBones.rightUpperArm.rotation.set(armPitch * blend, 0, (armFold - armSway) * blend);
         }
         if (procBones.spine) procBones.spine.rotation.x = (-0.03 + breathe * 0.02) * blend;
         if (procBones.chest) procBones.chest.rotation.x = (-0.02 + breathe * 0.025) * blend;
@@ -352,7 +388,7 @@ export default function VrmStage({
             | Parameters<typeof createVRMAnimationClip>[0][]
             | undefined;
           if (!anims?.length) return null;
-          const clip = createVRMAnimationClip(anims[0], vrm);
+          const clip = prepareVrmClip(createVRMAnimationClip(anims[0], vrm), aPoseCard);
           clips.set(clipName, clip);
           return clip;
         } catch {

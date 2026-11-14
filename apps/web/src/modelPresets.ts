@@ -171,9 +171,9 @@ export const MODEL_PRESETS: ModelPreset[] = [
     vendor: "阿里云百炼",
     provider: "dashscope",
     baseUrl: "",
-    model: "cosyvoice-v3.5-plus",
+    model: "cosyvoice-v3-flash",
     keyPlaceholder: "sk-...",
-    note: "CosyVoice 声音复刻与合成",
+    note: "CosyVoice 声音复刻与合成；该模型的预置音色可自动拉取",
   },
   {
     id: "openai-tts",
@@ -185,5 +185,16 @@ export const MODEL_PRESETS: ModelPreset[] = [
     model: "tts-1",
     keyPlaceholder: "sk-...",
     note: "OpenAI 官方语音合成，需要海外网络",
+  },
+  {
+    id: "breeze-tts-2",
+    category: "tts",
+    label: "Breeze TTS 2",
+    vendor: "BreezeBlue",
+    provider: "breeze",
+    baseUrl: "https://api.breeze.blue/v1",
+    model: "breeze-tts-2",
+    keyPlaceholder: "brz_...",
+    note: "开源权重实时语音模型，支持中文自然语言指令控语气；克隆音色需在 BreezeBlue 侧创建",
   },
 ];

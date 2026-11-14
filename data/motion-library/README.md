@@ -34,7 +34,15 @@ presentation:
   不必先写进任何角色卡。
 - 朝向/骨骼：VRMA 只含 humanoid 骨旋转 + Hips 位移，按 VRM 1.0 标准骨名导出，
   运行时由 `createVRMAnimationClip` 重定向到具体模型。
-- 动物线不在这里：猫狗走 2D 动作表（`motion_family: animal`），没有 VRMA。
+- **动物线（2026-10-29 起走 VRM）**：猫的动作同样落在本目录，新增 `cat` 变体
+  （角色卡写 `vrm.library: cat`，白名单在 `settings.py:_MOTION_VARIANTS` 放行）。
+  - 猫绑 **VRM humanoid 骨**（前腿→手臂、后腿→腿），11 个 trigger 文件名与人物线一致。
+  - **尾巴 / 耳朵 / 眼皮不在 VRMA 的承载范围内**（`VRMC_vrm_animation` 只定义 humanoid
+    骨旋转、hips 位移、表情、lookAt）。这几处表现由 springBone + 运行时程序化交付，
+    **不要试图烘进 clip**，烘了也会在导出时被丢弃。
+  - **真四足骨架的猫模型不能进本目录**：过不了 52 骨校验，也播不了 VRMA。
+  - 来源只允许自制 / CC0 / 完全所有权输出；Mixamo 与 Fab、Unity 商店动物包禁止（再分发红线）。
+- 2026-10-30 之前本文写作"动物线走 2D 动作表、没有 VRMA"，该说法已随 VRM 路线作废。
 
 ## 校验
 
@@ -44,6 +52,18 @@ node scripts/vrm/check_vrma.mjs data/motion-library/*/*.vrma
 
 片段必须是同一份 52 骨规范集（VRM 1.0 全集去掉 `leftEye` / `rightEye` / `jaw`），
 名单在 `scripts/vrm/humanoid-bones.json`。少了或多了一根都判 FAIL。
+
+**同时强制 in-place**：`hips` 的水平净位移必须 ≤ 20mm，超出判 FAIL。桌面桌宠的移动由
+桌面坐标系驱动，片段自带水平位移会造成"双倍位移"；竖直起伏（呼吸、步态 bob）不拦。
+阈值可调、可显式豁免：
+
+```bash
+node scripts/vrm/check_vrma.mjs --verbose data/motion-library/female/hover.vrma
+node scripts/vrm/check_vrma.mjs --hips-tol=0.05 <file.vrma>      # 放宽到 50mm
+node scripts/vrm/check_vrma.mjs --allow-root-motion <file.vrma>  # 确认用于非移动场景
+```
+
+脚本还会拦 VRMA 规范违规通道：humanoid 骨上的 `scale`、非 `hips` 骨上的 `translation`。
 
 用 Blender 改过动作参数再导出的片段，导出后先归一化再入库：
 

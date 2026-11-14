@@ -1,15 +1,15 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize};
 
-const WIDGET_LABEL: &str = "widget";
+pub const WIDGET_LABEL: &str = "widget";
 const WIDGET_EDGE_MARGIN: i32 = 18;
 const WIDGET_EDGE_TRIGGER: i32 = 44;
 // ponytail: portable Tauri has no drag-release event, so quiet time approximates the end.
@@ -33,6 +33,29 @@ const WIDGET_POINTER_GRAB_MARGIN: f64 = 20.0;
 extern "C" {
     fn CGEventSourceButtonState(state_id: i32, button: u32) -> bool;
     fn CGEventSourceSecondsSinceLastEventType(state_id: i32, event_type: u32) -> f64;
+    fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+    fn CGEventGetLocation(event: *const std::ffi::c_void) -> CGPoint;
+    fn CFRelease(value: *const std::ffi::c_void);
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+struct CGPoint {
+    x: f64,
+    y: f64,
+}
+
+/// Quartz 返回全局逻辑像素坐标；窗口位置在 Retina 屏上需除以 scale_factor。
+#[cfg(target_os = "macos")]
+fn cursor_position() -> Option<CGPoint> {
+    let event = unsafe { CGEventCreate(std::ptr::null()) };
+    if event.is_null() {
+        return None;
+    }
+    let point = unsafe { CGEventGetLocation(event) };
+    unsafe { CFRelease(event.cast_const()) };
+    Some(point)
 }
 
 #[cfg(target_os = "macos")]
@@ -189,6 +212,93 @@ pub struct InteractiveArea {
     pub height: f64,
 }
 
+impl InteractiveArea {
+    fn contains(self, x: f64, y: f64, padding: f64) -> bool {
+        let right = self.x + self.width + padding;
+        let bottom = self.y + self.height + padding;
+        self.width > 0.0
+            && self.height > 0.0
+            && x >= self.x - padding
+            && x <= right
+            && y >= self.y - padding
+            && y <= bottom
+    }
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PointerInteractiveAreas {
+    enabled: bool,
+    suspend: bool,
+    role: Option<InteractiveArea>,
+    controls: Vec<InteractiveArea>,
+}
+
+#[cfg(target_os = "macos")]
+const ANIMAL_POINTER_PADDING: f64 = 4.0;
+#[cfg(target_os = "macos")]
+const POINTER_PIXEL_HIT_MAX_AGE: Duration = Duration::from_millis(120);
+#[cfg(target_os = "macos")]
+const POINTER_PIXEL_HIT_MAX_DRIFT: f64 = 2.0;
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PointerSampleRequest {
+    request_id: u64,
+    x: f64,
+    y: f64,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy)]
+struct PointerPixelHit {
+    request_id: u64,
+    x: f64,
+    y: f64,
+    opaque: bool,
+    sampled_at: Instant,
+}
+
+#[cfg(target_os = "macos")]
+fn should_ignore_animal_pointer(
+    areas: Option<PointerInteractiveAreas>,
+    cursor: Option<CGPoint>,
+    window_position: PhysicalPosition<i32>,
+    scale_factor: f64,
+    pixel_hit: Option<PointerPixelHit>,
+    now: Instant,
+) -> bool {
+    let (Some(areas), Some(cursor)) = (areas, cursor) else {
+        return false;
+    };
+    if !areas.enabled || areas.suspend || scale_factor <= 0.0 {
+        return false;
+    }
+    let x = cursor.x - window_position.x as f64 / scale_factor;
+    let y = cursor.y - window_position.y as f64 / scale_factor;
+    if areas.controls.iter().any(|rect| rect.contains(x, y, 0.0)) {
+        return false;
+    }
+    let Some(role) = areas.role else {
+        return false;
+    };
+    if !role.contains(x, y, ANIMAL_POINTER_PADDING) {
+        return true;
+    }
+    let Some(hit) = pixel_hit else {
+        return false;
+    };
+    let fresh = now
+        .checked_duration_since(hit.sampled_at)
+        .is_some_and(|age| age <= POINTER_PIXEL_HIT_MAX_AGE);
+    let same_point = hit.request_id > 0
+        && (hit.x - x).abs() <= POINTER_PIXEL_HIT_MAX_DRIFT
+        && (hit.y - y).abs() <= POINTER_PIXEL_HIT_MAX_DRIFT;
+    fresh && same_point && !hit.opaque
+}
+
 /// 前端按素材内容包围盒实测的“角色内容矩形”，窗口逻辑坐标（CSS px）。
 /// 贴边吸附的触发与落点都以它为基准：角色视觉贴边即吸附，
 /// 吸附后只保留 `handle` 逻辑像素的“抓手”露在屏幕内。
@@ -245,13 +355,86 @@ impl WidgetPreferences {
     }
 }
 
+/// 串行化动物移动 / settle / retry，并用 generation 阻止旧 settle 覆盖新移动。
+/// 硬约束：持有 `write_lock` 的线程不得等待主事件循环（锁内窗口 API 调用必然等），
+/// 因此所有可能进锁的 Tauri 命令必须是 async，让锁等待发生在 Tokio 线程，
+/// 主线程保持可响应 —— 否则后台持锁线程与主线程同步进锁的命令互等成永久死锁。
+struct PositionMoveGate {
+    move_generation: AtomicU64,
+    write_lock: Mutex<()>,
+}
+
+impl PositionMoveGate {
+    fn new() -> Self {
+        Self {
+            move_generation: AtomicU64::new(0),
+            write_lock: Mutex::new(()),
+        }
+    }
+
+    fn generation(&self) -> u64 {
+        self.move_generation.load(Ordering::SeqCst)
+    }
+
+    fn animal_move<T>(
+        &self,
+        write: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let _guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let result = write()?;
+        self.move_generation.fetch_add(1, Ordering::SeqCst);
+        Ok(result)
+    }
+
+    fn write_if_generation_current(
+        &self,
+        expected_generation: u64,
+        write: impl FnOnce() -> Result<(), String>,
+    ) -> Result<bool, String> {
+        let _guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if self.generation() != expected_generation {
+            return Ok(false);
+        }
+        write()?;
+        Ok(true)
+    }
+
+    fn place_if_generation_current(
+        &self,
+        expected_generation: u64,
+        write: impl FnOnce() -> Result<(), String>,
+    ) -> Result<Option<u64>, String> {
+        let _guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if self.generation() != expected_generation {
+            return Ok(None);
+        }
+        write()?;
+        let placed_generation = self.move_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(Some(placed_generation))
+    }
+}
+
 pub struct WidgetRuntimeState {
     move_tx: Sender<()>,
     dragging: Arc<AtomicBool>,
     /// 前端实测的角色内容矩形（全平台都需要：贴边吸附以它为基准）。
     content: Mutex<Option<ContentGeometry>>,
+    position_moves: PositionMoveGate,
     #[cfg(target_os = "windows")]
     interactive: Arc<Mutex<Option<InteractiveArea>>>,
+    #[cfg(target_os = "macos")]
+    pointer_areas: Arc<Mutex<Option<PointerInteractiveAreas>>>,
+    #[cfg(target_os = "macos")]
+    pointer_pixel_hit: Arc<Mutex<Option<PointerPixelHit>>>,
 }
 
 impl WidgetRuntimeState {
@@ -268,14 +451,34 @@ impl WidgetRuntimeState {
             thread::spawn(move || pointer_pass_through_worker(app));
             Arc::new(Mutex::new(None))
         };
+        #[cfg(target_os = "macos")]
+        let (pointer_areas, pointer_pixel_hit) = {
+            let areas = Arc::new(Mutex::new(None));
+            let worker_areas = Arc::clone(&areas);
+            let pointer_pixel_hit = Arc::new(Mutex::new(None));
+            let worker_pixel_hit = Arc::clone(&pointer_pixel_hit);
+            thread::spawn(move || {
+                animal_pointer_pass_through_worker(app, worker_areas, worker_pixel_hit)
+            });
+            (areas, pointer_pixel_hit)
+        };
 
         Self {
             move_tx,
             dragging,
             content: Mutex::new(None),
+            position_moves: PositionMoveGate::new(),
             #[cfg(target_os = "windows")]
             interactive,
+            #[cfg(target_os = "macos")]
+            pointer_areas,
+            #[cfg(target_os = "macos")]
+            pointer_pixel_hit,
         }
+    }
+
+    pub fn animal_move_generation(&self) -> u64 {
+        self.position_moves.generation()
     }
 
     pub fn set_content_geometry(&self, geometry: Option<ContentGeometry>) {
@@ -549,8 +752,13 @@ pub fn get_widget_preferences(app: AppHandle) -> Result<WidgetPreferences, Strin
     Ok(load_preferences(&app))
 }
 
+/// 异步命令：settle/贴边会进位置锁并等待主事件循环应答窗口 API，
+/// 主线程绝不能同步进锁，否则与持锁的后台线程互等成永久死锁。
 #[tauri::command]
-pub fn set_widget_auto_hide(app: AppHandle, auto_hide: bool) -> Result<WidgetPreferences, String> {
+pub async fn set_widget_auto_hide(
+    app: AppHandle,
+    auto_hide: bool,
+) -> Result<WidgetPreferences, String> {
     let mut preferences = load_preferences(&app);
     preferences.auto_hide = auto_hide;
     if !auto_hide {
@@ -568,20 +776,20 @@ pub fn set_widget_scale(app: AppHandle, scale: f64) -> Result<WidgetPreferences,
     Ok(preferences)
 }
 
+/// 异步命令：理由同 set_widget_auto_hide，主线程不进位置锁。
 #[tauri::command]
-pub fn set_widget_visible_edges(
+pub async fn set_widget_visible_edges(
     app: AppHandle,
     edges: VisibleEdges,
 ) -> Result<WidgetPreferences, String> {
     let mut preferences = load_preferences(&app);
     preferences.visible_edges = edges.sanitized();
-    // 立刻按新的保留量重新收边，否则要等下一次拖动才生效。
-    let mode = if preferences.auto_hide {
-        PositionMode::Preserve
-    } else {
-        PositionMode::ClampInside
-    };
-    settle_current_widget_position(&app, mode, &mut preferences)?;
+    // 只在自动隐藏开启时立刻按新保留量重新收边；关闭时绝不能动窗口位置 ——
+    // 前端每 2s 随动作重测内容矩形并回传本命令，若此时 settle 会按「动画中的
+    // 内容矩形」重新夹取窗口位置，静置的挂件就会随机瞬移甚至被推出屏幕。
+    if preferences.auto_hide {
+        settle_current_widget_position(&app, PositionMode::Preserve, &mut preferences)?;
+    }
     save_preferences(&app, &preferences)?;
     Ok(preferences)
 }
@@ -615,6 +823,7 @@ fn content_geometry(app: &AppHandle) -> Option<ContentGeometry> {
 pub fn set_widget_interactive_area(
     app: AppHandle,
     area: Option<InteractiveArea>,
+    animal_areas: Option<PointerInteractiveAreas>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -625,8 +834,62 @@ pub fn set_widget_interactive_area(
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, area);
+        let _ = area;
     }
+    #[cfg(target_os = "macos")]
+    {
+        let state = app
+            .try_state::<WidgetRuntimeState>()
+            .ok_or_else(|| "挂件运行状态不可用".to_string())?;
+        if let Ok(mut guard) = state.pointer_areas.lock() {
+            *guard = animal_areas;
+        };
+        if let Ok(mut guard) = state.pointer_pixel_hit.lock() {
+            *guard = None;
+        };
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = animal_areas;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_widget_animal_pixel_hit(
+    app: AppHandle,
+    request_id: u64,
+    x: f64,
+    y: f64,
+    opaque: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        if !x.is_finite() || !y.is_finite() {
+            return Err("像素命中坐标无效".to_string());
+        }
+        let state = app
+            .try_state::<WidgetRuntimeState>()
+            .ok_or_else(|| "挂件运行状态不可用".to_string())?;
+        let mut guard = state
+            .pointer_pixel_hit
+            .lock()
+            .map_err(|_| "像素命中状态不可用".to_string())?;
+        if guard
+            .as_ref()
+            .map_or(true, |current| request_id > current.request_id)
+        {
+            *guard = Some(PointerPixelHit {
+                request_id,
+                x,
+                y,
+                opaque,
+                sampled_at: Instant::now(),
+            });
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, request_id, x, y, opaque);
     Ok(())
 }
 
@@ -652,8 +915,9 @@ pub fn cancel_widget_drag(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 异步命令：settle_and_emit 会进位置锁，主线程不进锁（理由同 set_widget_auto_hide）。
 #[tauri::command]
-pub fn finish_widget_drag(app: AppHandle) -> Result<(), String> {
+pub async fn finish_widget_drag(app: AppHandle) -> Result<(), String> {
     let state = app
         .try_state::<WidgetRuntimeState>()
         .ok_or_else(|| "挂件运行状态不可用".to_string())?;
@@ -671,44 +935,108 @@ pub fn system_idle_seconds() -> f64 {
     system_idle_seconds_impl()
 }
 
+/// 动物移动系统：绕过 settle/贴边逻辑，把挂件窗口挪到绝对桌面坐标。
+/// 供片 2 自由走动与片 3 抓起放下调用；不影响挂件原有定位。
+/// 异步命令：animal_move 持锁期间调用窗口 API，主线程不进锁（理由同 set_widget_auto_hide）。
 #[tauri::command]
-pub fn resize_widget_height(app: AppHandle, height: u32) -> Result<(), String> {
+pub async fn move_widget_to(app: AppHandle, x: i32, y: i32) -> Result<(), String> {
+    let state = app
+        .try_state::<WidgetRuntimeState>()
+        .ok_or_else(|| "挂件运行状态不可用".to_string())?;
     let window = widget_window(&app)?;
-    let old_size = window
-        .inner_size()
-        .map_err(|error| format!("读取挂件尺寸失败: {error}"))?;
-    let old_position = window
-        .outer_position()
-        .map_err(|error| format!("读取挂件位置失败: {error}"))?;
-    let scale_factor = window
-        .scale_factor()
-        .map_err(|error| format!("读取显示器缩放失败: {error}"))?;
-    let logical_width = old_size.width as f64 / scale_factor;
+    state.position_moves.animal_move(|| {
+        let size = window
+            .outer_size()
+            .map_err(|error| format!("读取挂件尺寸失败: {error}"))?;
+        let monitors = window
+            .available_monitors()
+            .map_err(|error| format!("读取显示器列表失败: {error}"))?;
+        let target = WidgetPosition { x, y };
+        if !monitors
+            .iter()
+            .any(|monitor| target_fits_work_area(target, size, work_area(monitor)))
+        {
+            return Err("动物移动目标超出工作区".to_string());
+        }
+        window
+            .set_position(PhysicalPosition::new(x, y))
+            .map_err(|error| format!("移动挂件窗口失败: {error}"))
+    })
+}
 
-    window
-        .set_size(LogicalSize::new(logical_width, height as f64))
-        .map_err(|error| format!("调整挂件尺寸失败: {error}"))?;
+/// 返回所有显示器的物理工作区（不含菜单栏/任务栏），供前端做桌面坐标并集。
+#[tauri::command]
+pub fn list_desktop_work_areas(
+    app: AppHandle,
+) -> Result<Vec<(String, i32, i32, u32, u32)>, String> {
+    let window = widget_window(&app)?;
+    let monitors = window
+        .available_monitors()
+        .map_err(|error| format!("读取显示器列表失败: {error}"))?;
+    Ok(monitors
+        .into_iter()
+        .map(|monitor| {
+            let area = work_area(&monitor);
+            (
+                monitor.name().cloned().unwrap_or_else(|| "unknown".to_string()),
+                area.x,
+                area.y,
+                area.width,
+                area.height,
+            )
+        })
+        .collect())
+}
 
-    let new_size = window
-        .inner_size()
-        .map_err(|error| format!("读取新挂件尺寸失败: {error}"))?;
-    let old_bottom = old_position.y as i64 + old_size.height as i64;
-    let next_position = WidgetPosition {
-        x: old_position.x,
-        y: (old_bottom - new_size.height as i64) as i32,
-    };
+/// 异步命令：animal_move 持锁期间调用窗口 API，主线程不进锁（理由同 set_widget_auto_hide）。
+#[tauri::command]
+pub async fn resize_widget_height(app: AppHandle, height: u32) -> Result<(), String> {
+    let state = app
+        .try_state::<WidgetRuntimeState>()
+        .ok_or_else(|| "挂件运行状态不可用".to_string())?;
+    let window = widget_window(&app)?;
+    let next_position = state.position_moves.animal_move(|| {
+        let old_inner_size = window
+            .inner_size()
+            .map_err(|error| format!("读取挂件尺寸失败: {error}"))?;
+        let old_outer_size = window
+            .outer_size()
+            .map_err(|error| format!("读取挂件外框尺寸失败: {error}"))?;
+        let old_position = window
+            .outer_position()
+            .map_err(|error| format!("读取挂件位置失败: {error}"))?;
+        let scale_factor = window
+            .scale_factor()
+            .map_err(|error| format!("读取显示器缩放失败: {error}"))?;
+        let logical_width = old_inner_size.width as f64 / scale_factor;
+        let frame_height_delta =
+            old_outer_size.height as i64 - old_inner_size.height as i64;
+        let new_outer_height =
+            resized_outer_height(height, scale_factor, frame_height_delta);
+        window
+            .set_size(LogicalSize::new(logical_width, height as f64))
+            .map_err(|error| format!("调整挂件尺寸失败: {error}"))?;
+        let old_bottom = old_position.y as i64 + old_outer_size.height as i64;
+        let next = PhysicalPosition::new(
+            old_position.x,
+            (old_bottom - new_outer_height) as i32,
+        );
+        window
+            .set_position(next)
+            .map_err(|error| format!("锚定挂件右下角失败: {error}"))?;
+        Ok(WidgetPosition { x: next.x, y: next.y })
+    })?;
     let mut preferences = load_preferences(&app);
-    let mode = if preferences.auto_hide {
-        PositionMode::Preserve
-    } else {
-        PositionMode::ClampInside
-    };
-    let content = content_geometry(&app);
-    apply_position(&window, next_position, mode, &mut preferences, content)?;
+    preferences.x = Some(next_position.x);
+    preferences.y = Some(next_position.y);
     save_preferences(&app, &preferences)
 }
 
 pub fn restore_widget_position(app: &AppHandle) -> Result<(), String> {
+    let state = app
+        .try_state::<WidgetRuntimeState>()
+        .ok_or_else(|| "挂件运行状态不可用".to_string())?;
+    let expected_move_generation = state.animal_move_generation();
     let window = widget_window(app)?;
     let size = window
         .inner_size()
@@ -723,8 +1051,13 @@ pub fn restore_widget_position(app: &AppHandle) -> Result<(), String> {
     } else {
         PositionMode::ClampInside
     };
-    let content = content_geometry(app);
-    apply_position(&window, saved, mode, &mut preferences, content)?;
+    apply_position(
+        &window,
+        Some(saved),
+        mode,
+        &mut preferences,
+        expected_move_generation,
+    )?;
     save_preferences(app, &preferences)
 }
 
@@ -818,6 +1151,75 @@ fn should_ignore_cursor(app: &AppHandle, window: &tauri::WebviewWindow) -> bool 
     !inside
 }
 
+#[cfg(target_os = "macos")]
+fn animal_pointer_pass_through_worker(
+    app: AppHandle,
+    areas: Arc<Mutex<Option<PointerInteractiveAreas>>>,
+    pixel_hit: Arc<Mutex<Option<PointerPixelHit>>>,
+) {
+    let mut ignoring = false;
+    let mut request_id = 0_u64;
+    loop {
+        thread::sleep(Duration::from_millis(40));
+        let Some(window) = app.get_webview_window(WIDGET_LABEL) else {
+            continue;
+        };
+        let areas = areas.lock().ok().and_then(|guard| guard.clone());
+        let cursor = cursor_position();
+        let hit = pixel_hit.lock().ok().and_then(|guard| *guard);
+        let mut sample_failed = false;
+        if !primary_mouse_down() {
+            if let (Some(areas), Some(cursor), Ok(position), Ok(scale)) = (
+                areas.as_ref(),
+                cursor,
+                window.outer_position(),
+                window.scale_factor(),
+            ) {
+                if scale > 0.0 {
+                    let local_x = cursor.x - position.x as f64 / scale;
+                    let local_y = cursor.y - position.y as f64 / scale;
+                    let over_control = areas
+                        .controls
+                        .iter()
+                        .any(|rect| rect.contains(local_x, local_y, 0.0));
+                    let in_role = areas.enabled
+                        && !areas.suspend
+                        && !over_control
+                        && areas
+                            .role
+                            .is_some_and(|rect| rect.contains(local_x, local_y, ANIMAL_POINTER_PADDING));
+                    if in_role {
+                        request_id = request_id.saturating_add(1);
+                        let request = PointerSampleRequest { request_id, x: local_x, y: local_y };
+                        sample_failed = window.emit("widget-pointer-sample", request).is_err();
+                    }
+                }
+            }
+        }
+        // 按下期间保持当前命中状态，防止点击/拖拽被中途切换穿透。
+        let wanted = if primary_mouse_down() {
+            ignoring
+        } else {
+            match (window.outer_position(), window.scale_factor()) {
+                (Ok(position), Ok(scale)) => {
+                    should_ignore_animal_pointer(
+                        areas,
+                        cursor,
+                        position,
+                        scale,
+                        if sample_failed { None } else { hit },
+                        Instant::now(),
+                    )
+                }
+                _ => false,
+            }
+        };
+        if wanted != ignoring && window.set_ignore_cursor_events(wanted).is_ok() {
+            ignoring = wanted;
+        }
+    }
+}
+
 fn settle_and_emit(app: &AppHandle) -> Result<(), String> {
     let mut preferences = load_preferences(app);
     let mode = if preferences.auto_hide {
@@ -837,53 +1239,103 @@ fn settle_current_widget_position(
     mode: PositionMode,
     preferences: &mut WidgetPreferences,
 ) -> Result<(), String> {
+    let state = app
+        .try_state::<WidgetRuntimeState>()
+        .ok_or_else(|| "挂件运行状态不可用".to_string())?;
+    let expected_move_generation = state.animal_move_generation();
     let window = widget_window(app)?;
-    let position = window
-        .outer_position()
-        .map_err(|error| format!("读取挂件位置失败: {error}"))?;
     apply_position(
         &window,
-        WidgetPosition {
-            x: position.x,
-            y: position.y,
-        },
+        None,
         mode,
         preferences,
-        content_geometry(app),
+        expected_move_generation,
     )
 }
 
 fn apply_position(
     window: &tauri::WebviewWindow,
-    position: WidgetPosition,
+    requested_position: Option<WidgetPosition>,
     mode: PositionMode,
     preferences: &mut WidgetPreferences,
-    content: Option<ContentGeometry>,
+    expected_move_generation: u64,
 ) -> Result<(), String> {
-    let size = window
-        .inner_size()
-        .map_err(|error| format!("读取挂件尺寸失败: {error}"))?;
-    let (area, monitor_name) = monitor_for_position(window, position, size)?;
-    let scale_factor = window
-        .scale_factor()
-        .map_err(|error| format!("读取显示器缩放失败: {error}"))?;
-    let visible = preferences.visible_edges;
-    let settled = match mode {
-        PositionMode::Preserve => preserve_position_in_work_area(
-            position, size, area, scale_factor, visible, content,
-        ),
-        PositionMode::ClampInside => settle_position_in_work_area(
-            position, size, area, false, scale_factor, visible, content,
-        ),
-        PositionMode::SnapToEdge => settle_position_in_work_area(
-            position, size, area, true, scale_factor, visible, content,
-        ),
+    let state = window
+        .app_handle()
+        .try_state::<WidgetRuntimeState>()
+        .ok_or_else(|| "挂件运行状态不可用".to_string())?;
+    let mut placement = None;
+    let scheduled_generation = state.position_moves.place_if_generation_current(
+        expected_move_generation,
+        || {
+            let position = match requested_position {
+                Some(position) => position,
+                None => {
+                    let current = window
+                        .outer_position()
+                        .map_err(|error| format!("读取挂件位置失败: {error}"))?;
+                    WidgetPosition {
+                        x: current.x,
+                        y: current.y,
+                    }
+                }
+            };
+            let size = window
+                .inner_size()
+                .map_err(|error| format!("读取挂件尺寸失败: {error}"))?;
+            let (area, monitor_name) = monitor_for_position(window, position, size)?;
+            let scale_factor = window
+                .scale_factor()
+                .map_err(|error| format!("读取显示器缩放失败: {error}"))?;
+            let visible = preferences.visible_edges;
+            let settled = match mode {
+                PositionMode::Preserve => preserve_position_in_work_area(
+                    position,
+                    size,
+                    area,
+                    scale_factor,
+                    visible,
+                    content_geometry(window.app_handle()),
+                ),
+                PositionMode::ClampInside => settle_position_in_work_area(
+                    position,
+                    size,
+                    area,
+                    false,
+                    scale_factor,
+                    visible,
+                    content_geometry(window.app_handle()),
+                ),
+                PositionMode::SnapToEdge => settle_position_in_work_area(
+                    position,
+                    size,
+                    area,
+                    true,
+                    scale_factor,
+                    visible,
+                    content_geometry(window.app_handle()),
+                ),
+            };
+            let (target, top_peek) =
+                clamp_top_peek(settled, area, PLATFORM_CLAMPS_WINDOW_TOP);
+            window
+                .set_position(PhysicalPosition::new(target.x, target.y))
+                .map_err(|error| format!("移动挂件失败: {error}"))?;
+            placement = Some((target, monitor_name, top_peek));
+            Ok(())
+        },
+    )?;
+    let Some((target, monitor_name, top_peek)) = placement else {
+        return Ok(());
     };
-    let (target, top_peek) = clamp_top_peek(settled, area, PLATFORM_CLAMPS_WINDOW_TOP);
-    window
-        .set_position(PhysicalPosition::new(target.x, target.y))
-        .map_err(|error| format!("移动挂件失败: {error}"))?;
-    schedule_position_retry(window, PhysicalPosition::new(target.x, target.y));
+    let Some(scheduled_generation) = scheduled_generation else {
+        return Ok(());
+    };
+    schedule_position_retry(
+        window,
+        PhysicalPosition::new(target.x, target.y),
+        scheduled_generation,
+    );
     preferences.x = Some(target.x);
     preferences.y = Some(target.y);
     preferences.monitor = monitor_name;
@@ -898,24 +1350,36 @@ fn apply_position(
 /// macOS 上原生拖拽刚结束时，窗口服务器会把窗口再摆一次（把窗口夹回屏幕内），
 /// 这一下会盖掉我们刚设好的贴边位置，表现成「松手后弹回原位」。
 /// 这里异步校验并补设：位置已经对了、或用户又开始拖了，就立刻收手。
-fn schedule_position_retry(window: &tauri::WebviewWindow, target: PhysicalPosition<i32>) {
+fn schedule_position_retry(
+    window: &tauri::WebviewWindow,
+    target: PhysicalPosition<i32>,
+    scheduled_move_generation: u64,
+) {
     let window = window.clone();
     thread::spawn(move || {
         // 每 150ms 校验一次、最多 3 秒：位置一旦对上就立刻退出，
         // 正常情况下只会跑 1~2 轮；给窗口服务器慢的机器留足余量。
         for _ in 0..20 {
             thread::sleep(Duration::from_millis(150));
-            if let Some(state) = window.app_handle().try_state::<WidgetRuntimeState>() {
-                if state.dragging.load(Ordering::SeqCst) {
-                    return;
-                }
+            let Some(state) = window.app_handle().try_state::<WidgetRuntimeState>() else {
+                return;
+            };
+            if state.dragging.load(Ordering::SeqCst) {
+                return;
             }
-            match window.outer_position() {
-                Ok(current) if current.x == target.x && current.y == target.y => return,
-                Ok(_) => {
-                    let _ = window.set_position(target);
-                }
-                Err(_) => return,
+            let result = state.position_moves.write_if_generation_current(
+                scheduled_move_generation,
+                || match window.outer_position() {
+                    Ok(current) if current.x == target.x && current.y == target.y => Ok(()),
+                    Ok(_) => window
+                        .set_position(target)
+                        .map_err(|error| format!("重试移动挂件失败: {error}")),
+                    Err(error) => Err(format!("读取挂件位置失败: {error}")),
+                },
+            );
+            match result {
+                Ok(true) => {}
+                Ok(false) | Err(_) => return,
             }
         }
     });
@@ -985,6 +1449,25 @@ fn intersection_area(position: WidgetPosition, size: PhysicalSize<u32>, area: Wo
     (right - left) as u64 * (bottom - top) as u64
 }
 
+fn target_fits_work_area(
+    position: WidgetPosition,
+    size: PhysicalSize<u32>,
+    area: WorkArea,
+) -> bool {
+    position.x >= area.x
+        && position.y >= area.y
+        && position.x as i64 + size.width as i64 <= area.right()
+        && position.y as i64 + size.height as i64 <= area.bottom()
+}
+
+fn resized_outer_height(
+    requested_logical_height: u32,
+    scale_factor: f64,
+    frame_height_delta: i64,
+) -> i64 {
+    (requested_logical_height as f64 * scale_factor).round() as i64 + frame_height_delta
+}
+
 fn work_area(monitor: &tauri::Monitor) -> WorkArea {
     let area = monitor.work_area();
     WorkArea {
@@ -1041,6 +1524,217 @@ mod tests {
         height: 1080,
     };
     const SIZE: PhysicalSize<u32> = PhysicalSize::new(430, 480);
+
+    #[test]
+    fn failed_animal_move_does_not_cancel_position_retry() {
+        let gate = PositionMoveGate::new();
+        assert!(gate
+            .animal_move(|| Err::<(), _>("write failed".to_string()))
+            .is_err());
+
+        let retried = AtomicBool::new(false);
+        let wrote = gate
+            .write_if_generation_current(0, || {
+                retried.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+            .unwrap();
+        assert!(wrote);
+        assert!(retried.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn animal_move_target_must_stay_inside_work_area() {
+        let inside = target_fits_work_area(WidgetPosition { x: 100, y: 100 }, SIZE, AREA);
+        let outside = target_fits_work_area(WidgetPosition { x: 1800, y: 100 }, SIZE, AREA);
+        assert!(inside);
+        assert!(!outside);
+    }
+
+    #[test]
+    fn animal_move_cannot_interleave_with_retry_write() {
+        let gate = Arc::new(PositionMoveGate::new());
+        let position = Arc::new(Mutex::new(0));
+        let (retry_started_tx, retry_started_rx) = mpsc::channel();
+        let (release_retry_tx, release_retry_rx) = mpsc::channel();
+
+        let retry_gate = Arc::clone(&gate);
+        let retry_position = Arc::clone(&position);
+        let retry = thread::spawn(move || {
+            retry_gate.write_if_generation_current(0, || {
+                retry_started_tx.send(()).unwrap();
+                release_retry_rx.recv().unwrap();
+                *retry_position.lock().unwrap() = -1;
+                Ok(())
+            })
+        });
+        retry_started_rx.recv().unwrap();
+
+        let (animal_started_tx, animal_started_rx) = mpsc::channel();
+        let animal_gate = Arc::clone(&gate);
+        let animal_position = Arc::clone(&position);
+        let animal = thread::spawn(move || {
+            animal_gate.animal_move(|| {
+                animal_started_tx.send(()).unwrap();
+                *animal_position.lock().unwrap() = 2;
+                Ok(())
+            })
+        });
+
+        assert!(animal_started_rx
+            .recv_timeout(Duration::from_millis(100))
+            .is_err());
+        release_retry_tx.send(()).unwrap();
+        assert!(retry.join().unwrap().unwrap());
+        animal.join().unwrap().unwrap();
+        assert_eq!(*position.lock().unwrap(), 2);
+    }
+
+    #[test]
+    fn stale_settle_does_not_overwrite_new_animal_move() {
+        let gate = PositionMoveGate::new();
+        let expected_generation = gate.generation();
+        let position = Arc::new(Mutex::new(0));
+        let animal_position = Arc::clone(&position);
+        gate.animal_move(|| {
+            *animal_position.lock().unwrap() = 2;
+            Ok(())
+        })
+        .unwrap();
+
+        let wrote = gate
+            .write_if_generation_current(expected_generation, || {
+                *position.lock().unwrap() = -1;
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(!wrote);
+        assert_eq!(*position.lock().unwrap(), 2);
+    }
+
+    #[test]
+    fn newer_placement_invalidates_an_older_retry() {
+        let gate = PositionMoveGate::new();
+        let stale_generation = gate.generation();
+        let placement_generation = gate
+            .place_if_generation_current(stale_generation, || Ok(()))
+            .unwrap();
+        assert_eq!(placement_generation, Some(stale_generation + 1));
+        gate.animal_move(|| Ok(())).unwrap();
+
+        let retried = AtomicBool::new(false);
+        let wrote = gate
+            .write_if_generation_current(placement_generation.unwrap(), || {
+                retried.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+            .unwrap();
+        assert!(!wrote);
+        assert!(!retried.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn resized_outer_height_keeps_requested_height_and_frame_delta() {
+        assert_eq!(resized_outer_height(505, 1.0, 0), 505);
+        assert_eq!(resized_outer_height(505, 2.0, 12), 1022);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn pointer_areas(role: InteractiveArea) -> PointerInteractiveAreas {
+        PointerInteractiveAreas {
+            enabled: true,
+            role: Some(role),
+            controls: vec![InteractiveArea { x: 30.0, y: 0.0, width: 100.0, height: 40.0 }],
+            ..Default::default()
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn animal_pointer_keeps_a_tight_role_hit_area_and_controls() {
+        let areas = pointer_areas(InteractiveArea { x: 20.0, y: 60.0, width: 180.0, height: 200.0 });
+        let window = PhysicalPosition::new(2000, 400);
+        let now = Instant::now();
+        for point in [
+            CGPoint { x: 1060.0, y: 330.0 },
+            CGPoint { x: 1018.0, y: 335.0 },
+            CGPoint { x: 1040.0, y: 210.0 },
+        ] {
+            assert!(!should_ignore_animal_pointer(
+                Some(areas.clone()), Some(point), window, 2.0, None, now
+            ));
+        }
+        assert!(should_ignore_animal_pointer(
+            Some(areas.clone()),
+            Some(CGPoint { x: 1015.0, y: 335.0 }),
+            window,
+            2.0,
+            None,
+            now,
+        ));
+        assert!(should_ignore_animal_pointer(
+            Some(areas),
+            Some(CGPoint { x: 1250.0, y: 300.0 }),
+            window,
+            2.0,
+            None,
+            now,
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn animal_pointer_uses_only_fresh_matching_alpha_samples_inside_role_bounds() {
+        let areas = pointer_areas(InteractiveArea { x: 20.0, y: 60.0, width: 180.0, height: 200.0 });
+        let window = PhysicalPosition::new(2000, 400);
+        let cursor = Some(CGPoint { x: 1060.0, y: 330.0 });
+        let now = Instant::now();
+        let hit = |opaque, x, sampled_at| Some(PointerPixelHit {
+            request_id: 1,
+            x,
+            y: 130.0,
+            opaque,
+            sampled_at,
+        });
+
+        assert!(!should_ignore_animal_pointer(
+            Some(areas.clone()), cursor, window, 2.0, hit(true, 60.0, now), now
+        ));
+        assert!(should_ignore_animal_pointer(
+            Some(areas.clone()), cursor, window, 2.0, hit(false, 60.0, now), now
+        ));
+        assert!(!should_ignore_animal_pointer(
+            Some(areas.clone()),
+            cursor,
+            window,
+            2.0,
+            hit(false, 60.0, now - Duration::from_millis(121)),
+            now,
+        ));
+        assert!(!should_ignore_animal_pointer(
+            Some(areas), cursor, window, 2.0, hit(false, 70.0, now), now
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn animal_pointer_fails_open_when_unavailable_or_suspended() {
+        let areas = pointer_areas(InteractiveArea { x: 20.0, y: 60.0, width: 180.0, height: 200.0 });
+        let cursor = Some(CGPoint { x: 0.0, y: 0.0 });
+        let window = PhysicalPosition::new(0, 0);
+        let now = Instant::now();
+        assert!(!should_ignore_animal_pointer(None, cursor, window, 2.0, None, now));
+        assert!(!should_ignore_animal_pointer(Some(areas.clone()), None, window, 2.0, None, now));
+        assert!(!should_ignore_animal_pointer(
+            Some(PointerInteractiveAreas { suspend: true, ..areas }),
+            cursor,
+            window,
+            2.0,
+            None,
+            now,
+        ));
+    }
 
     #[test]
     fn clamps_inside_when_auto_hide_is_disabled() {

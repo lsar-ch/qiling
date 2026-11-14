@@ -122,6 +122,7 @@ def test_session_info() -> None:
         assert resp.status_code == 200
         body = resp.json()
         assert body["session_id"].startswith("session_")
+        assert body["project_root"] == str(settings.repo_root)
         assert body["ws_url"].startswith("ws://")
         assert body["capabilities"]["text_chat"] is True
     assert "model" in body

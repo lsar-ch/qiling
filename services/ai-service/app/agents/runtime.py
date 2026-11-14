@@ -91,12 +91,21 @@ class AgentRun(BaseModel):
     run_id: str = Field(default_factory=lambda: f"run_{uuid4().hex[:10]}")
     task_id: str
     executor: str
+    execution_mode: str = "local"
+    agent_id: str | None = None
+    skill_id: str | None = None
+    mcp_profile: str | None = None
+    workspace: str | None = None
     status: str = "queued"
     session_id: str | None = None
     mode: str = "read-only"
     progress: str = ""
     result: str | None = None
     error: str | None = None
+    artifacts: list[str] = Field(default_factory=list)
+    checks: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
     finished_at: str | None = None
@@ -161,6 +170,8 @@ class AgentRunManager:
         data_dir: Path,
         conversations=None,
         project_nodes=None,
+        skill_registry=None,
+        mcp_manager=None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -172,22 +183,22 @@ class AgentRunManager:
         self.conversations = conversations
         # 项目节点联动；未注入时静默跳过
         self.project_nodes = project_nodes
+        self.skill_registry = skill_registry
+        self.mcp_manager = mcp_manager
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_timers: dict[str, asyncio.Task[None]] = {}  # task_id -> reminder timer
         self._approval_deadlines: dict[str, asyncio.Task[None]] = {}  # task_id -> 超时自动拒绝
         self._stale_reminded: set[str] = set()  # 已提醒过的 run_id，只提醒一次
-        # 服务重启后，磁盘上仍是 queued/running 的 run 必然没有在跑：拉起它的
-        # asyncio 任务随进程一起没了。判据是「进程存活」而不是「跑了多久」，
-        # 所以长任务不会被误杀（Celery/Sidekiq 启动时回收孤儿任务同此思路）。
+        # 服务重启后，未终态 run 的 asyncio 任务和 ACP 授权会话都已消失。
         self._reconcile_orphaned_runs()
 
     def _reconcile_orphaned_runs(self) -> None:
         """启动时把上次进程遗留的未终态 run 判失败，避免任务台永远转圈。"""
         for run in self.store.list_recent(limit=1000):
-            if run.status not in ("queued", "running"):
+            if run.status not in ("queued", "running", "awaiting_approval"):
                 continue
             run.status = "failed"
-            run.error = "服务重启，任务已中断；可重新运行。"
+            run.error = "服务重启，任务已中断；请重新运行。"
             run.finished_at = _now()
             self.store.put(run)
             task = self.task_store.get(run.task_id)
@@ -254,21 +265,30 @@ class AgentRunManager:
 
         浏览器执行器（搜索/打开）按自己的语法解析 prompt，不能注入对话历史。
         """
+        parts: list[str] = []
+        if task.skill_id and self.skill_registry is not None:
+            skill = self.skill_registry.resolve(
+                task.skill_id, task.input, mode="acp", explicit=True
+            )
+            if skill is not None and skill.body:
+                parts.append(f"Skill 指引（{skill.info.name}）：\n{skill.body}")
         if self.conversations is None or not task.conversation_id:
-            return task.input
+            parts.append(f"当前任务：{task.input}" if parts else task.input)
+            return "\n\n".join(parts)
         try:
             conversation = await self.conversations.get(task.conversation_id)
         except Exception:
-            return task.input
+            parts.append(f"当前任务：{task.input}" if parts else task.input)
+            return "\n\n".join(parts)
         if conversation is None:
-            return task.input
+            parts.append(f"当前任务：{task.input}" if parts else task.input)
+            return "\n\n".join(parts)
         # 末条是本轮刚写入的指令，排除后取更早的轮次
         prior = [m for m in conversation.messages[:-1] if (m.content or "").strip()]
         lines: list[str] = []
         for msg in prior[-6:]:
             label = {"user": "用户", "tool": "工具结果"}.get(msg.role, "助手")
             lines.append(f"{label}：{msg.content.strip()[:400]}")
-        parts: list[str] = []
         if lines:
             parts.append("对话上下文（此前几轮，仅作参考）：\n" + "\n".join(lines))
         last_user = next(
@@ -364,6 +384,7 @@ class AgentRunManager:
         executor: str | None = None,
         mode: str = "read-only",
         cwd: str | None = None,
+        mcp_profile: str | None = None,
     ) -> AgentRun:
         if task.category not in ("delegate_backend", "request_approval"):
             raise ValueError("只有后台任务可以交给外部执行器")
@@ -410,6 +431,14 @@ class AgentRunManager:
         run = AgentRun(
             task_id=task.task_id,
             executor=executor_name,
+            execution_mode=(
+                "acp"
+                if adapter.adapter_id in {"codex", "workbuddy", "acp-cli"}
+                else "local"
+            ),
+            agent_id=executor_name,
+            skill_id=task.skill_id,
+            mcp_profile=mcp_profile,
             mode=mode if mode in ("read-only", "agent", "agent-full-access") else "read-only",
         )
         self.store.put(run)
@@ -434,6 +463,9 @@ class AgentRunManager:
     async def _resolve_cwd(self, task: Task) -> str:
         """项目对话把执行器工作目录切到项目根；普通对话仍用 栖灵 数据目录的上一级。"""
         fallback = str(self.data_dir.parent)
+        project = (task.project or "").strip()
+        if project and Path(project).is_dir():
+            return str(Path(project).resolve())
         if not task.conversation_id or self.conversations is None:
             return fallback
         try:
@@ -453,12 +485,19 @@ class AgentRunManager:
     ) -> None:
         try:
             resolved_cwd = cwd_override or await self._resolve_cwd(task)
+            run.workspace = resolved_cwd
+            self.store.put(run)
             before = (
                 self._file_snapshot(resolved_cwd)
                 if task.work_kind in _OFFICE_KINDS
                 else {}
             )
             prompt = task.input if run.executor == "browser" else await self._compose_prompt(task)
+            mcp_servers = (
+                self.mcp_manager.acp_servers(run.mcp_profile)
+                if self.mcp_manager is not None
+                else []
+            )
             result = await adapter.run(
                 AgentTaskRequest(
                     task_id=task.task_id,
@@ -467,7 +506,12 @@ class AgentRunManager:
                     conversation_id=task.conversation_id,
                     session_id=previous_session_id,
                     mode=run.mode,
-                    config={"logs_dir": str(self.data_dir / "run_logs"), "work_kind": task.work_kind},
+                    config={
+                        "logs_dir": str(self.data_dir / "run_logs"),
+                        "work_kind": task.work_kind,
+                        "mcp_profile": run.mcp_profile,
+                        "mcp_servers": mcp_servers,
+                    },
                 ),
                 on_update=lambda kind, payload: self._on_update(run, kind, payload),
             )
@@ -489,6 +533,7 @@ class AgentRunManager:
                 resolved_cwd, before, _OFFICE_SUFFIXES.get(task.work_kind, set())
             )
             if artifacts:
+                result.artifacts = [*result.artifacts, *artifacts]
                 artifact_lines = "\n".join(f"- {path}" for path in artifacts)
                 result.message = (
                     f"{result.message.rstrip()}\n\n输出文件：\n{artifact_lines}"
@@ -500,6 +545,10 @@ class AgentRunManager:
             message=result.message,
             error=result.error,
             session_id=result.session_id,
+            artifacts=result.artifacts,
+            checks=result.checks,
+            blockers=result.blockers,
+            next_steps=result.next_steps,
         )
 
     async def _on_update(self, run: AgentRun, kind: str, payload: dict) -> None:
@@ -699,11 +748,19 @@ class AgentRunManager:
         message: str = "",
         error: str | None = None,
         session_id: str | None = None,
+        artifacts: list[str] | None = None,
+        checks: list[str] | None = None,
+        blockers: list[str] | None = None,
+        next_steps: list[str] | None = None,
     ) -> None:
         run.status = status
         run.result = message or None
         run.error = error
         run.session_id = session_id or run.session_id
+        run.artifacts = list(artifacts or [])
+        run.checks = list(checks or [])
+        run.blockers = list(blockers or [])
+        run.next_steps = list(next_steps or [])
         run.finished_at = _now()
         self.store.put(run)
         task.status = status
@@ -731,6 +788,17 @@ class AgentRunManager:
             notify = f"✗ 任务失败\n\n{(error or '未知错误')[:2000]}"
         else:
             notify = "任务已取消。"
+        sections = []
+        if run.artifacts:
+            sections.append("产物：\n" + "\n".join(f"- {item}" for item in run.artifacts))
+        if run.checks:
+            sections.append("验收：\n" + "\n".join(f"- {item}" for item in run.checks))
+        if run.blockers:
+            sections.append("阻塞：\n" + "\n".join(f"- {item}" for item in run.blockers))
+        if run.next_steps:
+            sections.append("下一步：\n" + "\n".join(f"- {item}" for item in run.next_steps))
+        if sections:
+            notify = f"{notify}\n\n" + "\n\n".join(sections)
         await self._publish(
             event_type,
             task,

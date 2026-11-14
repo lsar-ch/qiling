@@ -43,11 +43,12 @@ Obsidian 记忆库：
 
 继续工作前优先阅读：
 
-1. `docs/HANDOVER-2026-10-22.md`（**最近一次交接：10-01 至 10-22 进度补录、本轮完成项、待办、环境坑位**）
+1. `docs/HANDOVER-2026-11-02-蓝猫动画阶段交接.md`（**最近一次专题交接：蓝猫 GLB 动作路线、当前进度、retarget 踩坑、下一刀**）
+   - 上一份全局交接：`docs/HANDOVER-2026-10-22.md`
    - 更早交接：`docs/HANDOVER-2026-10-01.md`（发布计划与执行器收口）
 2. `docs/V2-P1-PROGRESS-2026-09-18.md`（V2 P1 进度入口：状态/实现位置/坑位/下一步）
 3. `docs/HANDOVER-2026-09-17.md`（更早交接：真机待验收清单）
-4. `docs/PROJECT-ROADMAP.md` 与 `docs/P1-P2-TASK-CARDS.md`
+4. `docs/V0.2-PLAN-2026-10-26.md`（下一版本规划）与 `docs/P1-P2-TASK-CARDS.md`
 5. `docs/HANDOVER-2026-09-13.md`（V1 收口过程）
 6. `docs/V1-IMPLEMENTATION-PLAN.md`
 7. `docs/WINDOWS-MIGRATION-2026-09.md`（Windows 迁移主题唯一入口）
