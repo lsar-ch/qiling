@@ -1,10 +1,11 @@
 栖灵 · 可选人物卡试验资产 / Meshy female persona bundle
 生成日期：2026-11-13
 
-【授权状态：未核验，禁止分发】
-源网格与贴图来自 Meshy AI（图生 3D + 自动绑定）。免费档为 CC BY 4.0，
+【授权状态：用户已授权随 v0.2 公开发布包分发（2026-11-14）；Meshy Pro 完全所有权
+凭证归档前不挂公开 Release（P0-2 闭合条件）】
+源网格与贴图来自 Meshy AI（图生 3D + 自动绑定）。原始免费档为 CC BY 4.0，
 不满足栖灵「内置资产只接受自制 / CC0 / 付费完全所有权」的入包铁律
-（参见 2026-10-25 Mixamo 授权事故后的选型决定）。
+（参见 2026-10-25 Mixamo 授权事故后的选型决定）；正补齐 Meshy Pro 完全所有权凭证。
 
 【本机试运行状态：2026-11-13 已装入主工程，仅本机可见】
   按用户要求执行 install.sh --local-preview，把 expression 版装成
@@ -16,14 +17,15 @@
 本包仅用于本机试验：
   - VRM meta 已收紧：allowRedistribution=false、creditNotation=required、
     modification=allowModification（不允许修改后再分发）、commercialUsage=personalProfit。
-  - 发行包双重排除（scripts/package/stage_home.py）：
-      ① 模型本体不在 PERSONA_IDS = ("default","persona_2","qiling") 白名单内；
-      ② 角色卡 yaml 被新增的 UNLICENSED_PERSONA_FILES 从 config/ 整目录复制中剔除，
-         避免发行包出现「点开没有模型的空卡」。
-    → 本机运行可见，任何构建脚本都不会把本卡打进发行包。
-  - 转为正式卡之前必须：取得 Meshy Pro 完全所有权凭证 → 存档到项目
-    01-方向与决策/ 目录 → 复核并放宽 meta → 把卡加入 PERSONA_IDS 并移出排除集合
-    → 重跑 verify_vrm.py 与 check_vrm.mjs。
+  - 发行包纳入（2026-11-14 起，随 v0.2 公开发布包分发）：
+      ① model.vrm 已由 .gitignore 的 `!data/persona-assets/meshy_female/model.vrm`
+         例外强制纳入版本库，与 qiling 同处理；
+      ② 角色卡已加入 stage_home.py 的 PERSONA_IDS 白名单。
+    → 干净构建（CI / 干净 checkout）现在会把这个模型打进发行包。
+    → 公开 Release 前仍需归档 Meshy Pro 完全所有权凭证（P0-2 闭合条件）。
+  - 公开 Release 前仍必须：取得并归档 Meshy Pro 完全所有权凭证（项目 01-方向与决策/ 目录）
+    → 复核并放宽 meta → 重跑 verify_vrm.py 与 check_vrm.mjs。
+    （模型已强制入库、卡已加入 PERSONA_IDS；仅凭证归档与 meta 放宽待办。）
 
 【三个 VRM 版本，别选错】
   model.expression.vrm ← 推荐 / 最终版：造型未改，面部表情由贴图图集真正驱动

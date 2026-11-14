@@ -81,6 +81,8 @@ vrm-spike-lows-power.png
 # 禁止再分发的第三方 VRM / VRMA（自制可再分发资产完成前，仅本地保留用于测试）
 data/persona-assets/*/model.vrm
 !data/persona-assets/qiling/model.vrm
+!data/persona-assets/cat_vrm/model.vrm
+!data/persona-assets/meshy_female/model.vrm
 data/persona-assets/*/vrma/
 # 已从仓库与历史清除的非分发角色素材（第三方/实验角色），物理文件仅本地保留
 data/persona-assets/k81/

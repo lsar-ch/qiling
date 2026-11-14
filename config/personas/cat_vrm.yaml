@@ -6,6 +6,8 @@ motion_family: human
 art_style: realistic
 avatar_driver: vrm_3d
 vrm: model.vrm
+license_status: owner_authorized
+license_note: '2026-11-14 用户授权随 v0.2 公开发布包分发；Meshy 生成的第三方 VRM，Meshy Pro 完全所有权凭证归档前不挂公开 Release（P0-2 闭合条件）。'
 backstory: 栖灵桌面助理的猫形态，走 humanoid 映射 + 女性人物动作库。
 language: zh-CN
 preset: work

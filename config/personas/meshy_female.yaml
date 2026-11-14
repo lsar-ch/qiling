@@ -3,8 +3,8 @@ name: 绯
 kind: assistant
 description: 'v0.2 可选人物卡：Meshy 图生 3D 女性角色经本地修正后的 VRM 1.0。'
 experimental: false
-license_status: owner_authorized_pending_evidence
-license_note: '2026-11-13 用户授权纳入 v0.2 正式资产；公开发布前仍需补齐 Meshy 来源与使用权凭证。'
+license_status: owner_authorized
+license_note: '2026-11-14 用户授权随 v0.2 公开发布包分发；Meshy Pro 完全所有权凭证归档前不挂公开 Release（P0-2 闭合条件）。'
 motion_family: human
 art_style: anime
 avatar_driver: vrm_3d
