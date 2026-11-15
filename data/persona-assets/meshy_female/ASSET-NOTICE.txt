@@ -1,11 +1,15 @@
 栖灵 · 可选人物卡试验资产 / Meshy female persona bundle
 生成日期：2026-11-13
 
-【授权状态：用户已授权随 v0.2 公开发布包分发（2026-11-14）；Meshy Pro 完全所有权
-凭证归档前不挂公开 Release（P0-2 闭合条件）】
+【授权状态：授权事实未核验 —— 已归档 Meshy Workspace、Pro 状态与所有权条款截图，
+但具体 VRM 与 Pro 权益有效期的对应关系、源素材权属及未发布社区状态均未证实
+（2026-11-14 用户指示跳过历史材料追查）。2026-11-15 用户明确接受剩余授权风险，
+允许随 v0.2 公开发布包分发，P0-2 由阻断转为「风险接受」、不再阻断发布。
+此决定不等于授权核验通过，T-07 一般红线不变；详见
+01-方向与决策/MESHY-LICENSE-2026-11-14.md §5 与 T-07 的 2026-11-15 例外决策】
 源网格与贴图来自 Meshy AI（图生 3D + 自动绑定）。原始免费档为 CC BY 4.0，
 不满足栖灵「内置资产只接受自制 / CC0 / 付费完全所有权」的入包铁律
-（参见 2026-10-25 Mixamo 授权事故后的选型决定）；正补齐 Meshy Pro 完全所有权凭证。
+（参见 2026-10-25 Mixamo 授权事故后的选型决定）；证据截图已归档，仍需补足资产与订阅有效期映射。
 
 【本机试运行状态：2026-11-13 已装入主工程，仅本机可见】
   按用户要求执行 install.sh --local-preview，把 expression 版装成
@@ -17,15 +21,18 @@
 本包仅用于本机试验：
   - VRM meta 已收紧：allowRedistribution=false、creditNotation=required、
     modification=allowModification（不允许修改后再分发）、commercialUsage=personalProfit。
-  - 发行包纳入（2026-11-14 起，随 v0.2 公开发布包分发）：
+  - 本地候选包纳入（2026-11-14 起；2026-11-15 用户接受风险后允许公开分发）：
       ① model.vrm 已由 .gitignore 的 `!data/persona-assets/meshy_female/model.vrm`
          例外强制纳入版本库，与 qiling 同处理；
       ② 角色卡已加入 stage_home.py 的 PERSONA_IDS 白名单。
     → 干净构建（CI / 干净 checkout）现在会把这个模型打进发行包。
-    → 公开 Release 前仍需归档 Meshy Pro 完全所有权凭证（P0-2 闭合条件）。
-  - 公开 Release 前仍必须：取得并归档 Meshy Pro 完全所有权凭证（项目 01-方向与决策/ 目录）
-    → 复核并放宽 meta → 重跑 verify_vrm.py 与 check_vrm.mjs。
-    （模型已强制入库、卡已加入 PERSONA_IDS；仅凭证归档与 meta 放宽待办。）
+    → 该 VRM 对应的 Meshy 资产记录及生成/导出时间是否落在 Pro 权益有效期内仍未证实；
+      此缺口由用户于 2026-11-15 接受风险，不再作为发布阻断项。
+  - VRM meta 仍保持收紧值（见上）：allowRedistribution=false 与「随公开包分发」在
+    元数据层面不一致，属风险接受覆盖范围；对外不得声称该模型允许再分发。
+    若日后补齐授权证据，再复核并放宽 meta → 重跑 verify_vrm.py 与 check_vrm.mjs。
+    （模型已强制入库、卡已加入 PERSONA_IDS；历史提交 baef64e 的
+     license_status: owner_authorized 为当时乐观口径，现不作为授权依据、历史不改。）
 
 【三个 VRM 版本，别选错】
   model.expression.vrm ← 推荐 / 最终版：造型未改，面部表情由贴图图集真正驱动

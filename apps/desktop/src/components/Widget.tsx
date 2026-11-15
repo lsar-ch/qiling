@@ -96,6 +96,9 @@ function getContextWeightMultiplier(
 const VrmStage = lazy(() => import("../widget/VrmStage"));
 const AnimalStage = lazy(() => import("../widget/AnimalStage"));
 
+// 动作检阅仅用于开发期资产验收，正式挂件不暴露未定稿动作。
+const MOTION_REVIEW_ENABLED = import.meta.env.DEV;
+
 import "./widget.css";
 
 const STATE_LABEL: Record<string, string> = {
@@ -332,7 +335,7 @@ export default function Widget() {
   const [voiceLeaseOwned, setVoiceLeaseOwned] = useState(false);
   const [alert, setAlert] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  // 动作检阅：右键菜单开启后，3D 角色按 GLB 内全部 clip 顺序逐个播放。
+  // 开发期动作检阅：右键菜单开启后，3D 角色按 GLB 内全部 clip 顺序逐个播放。
   const [motionReview, setMotionReview] = useState(false);
   const [reviewClip, setReviewClip] = useState<string | null>(null);
   const [assetMetrics, setAssetMetrics] = useState<PersonaAssetMetrics | null>(null);
@@ -2133,7 +2136,7 @@ export default function Widget() {
             <span className="widget-context-state">{STATE_LABEL[state] ?? state}</span>
           )}
         </div>
-        {motionReview && (
+        {MOTION_REVIEW_ENABLED && motionReview && (
           <div
             aria-hidden="true"
             style={{
@@ -2168,8 +2171,8 @@ export default function Widget() {
                 gait={animalMobility.gait}
                 facing={animalMobility.facing}
                 mobilityPhase={animalMobility.phase}
-                review={motionReview}
-                onReviewClip={setReviewClip}
+                review={MOTION_REVIEW_ENABLED && motionReview}
+                onReviewClip={MOTION_REVIEW_ENABLED ? setReviewClip : undefined}
                 assetVersion="v6-s4-20261109"
               />
             </Suspense>
@@ -2328,16 +2331,18 @@ export default function Widget() {
           >
             {preferences.autoHide ? "✓ 靠近边缘自动隐藏" : "靠近边缘自动隐藏"}
           </button>
-          <button
-            className="ctx-toggle"
-            onClick={() => {
-              setMotionReview((on) => !on);
-              setReviewClip(null);
-              setCtxMenu(null);
-            }}
-          >
-            {motionReview ? "✓ 动作检阅（逐个播放全部动作）" : "动作检阅（逐个播放全部动作）"}
-          </button>
+          {MOTION_REVIEW_ENABLED && (
+            <button
+              className="ctx-toggle"
+              onClick={() => {
+                setMotionReview((on) => !on);
+                setReviewClip(null);
+                setCtxMenu(null);
+              }}
+            >
+              {motionReview ? "✓ 动作检阅（逐个播放全部动作）" : "动作检阅（逐个播放全部动作）"}
+            </button>
+          )}
           <div className="ctx-range">
             <label htmlFor="widget-scale">
               <span>角色大小</span>

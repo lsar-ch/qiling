@@ -75,6 +75,10 @@ vrm-spike-lows-power.png
 /*.png
 /scripts/_tmp_*.mjs
 
+# 调试过程中的截图证据（不入库、不进包）
+# 2026-11-15 用户决定：等完整资料包整理完成后再统一清理；整理时按需调整本规则
+/docs/evidence/
+
 # Windows 迁移源码包（网盘传输用，不入库；单文件约 177MB，超 GitHub 100MB 限制）
 /Qiling-Windows-src-*.zip
 
