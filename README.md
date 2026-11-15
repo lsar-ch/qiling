@@ -1,7 +1,7 @@
 # 栖灵 Qiling — 桌面 AI 助理
 
 > 本地优先、角色化、懂项目上下文的 AI 工作伙伴：2D 角色挂件常驻桌面、语音交互、项目记忆，复杂任务集成现有 Agent 执行。
-> 支持**中英文双语**（侧栏 `English / 中文` 一键切换）；当前发布与版本计划见 `docs/RELEASE-PLAN-2026-10-10.md`。
+> 支持**中英文双语**（侧栏 `English / 中文` 一键切换）；当前版本 `v0.2.0`，发布说明见 `docs/RELEASE-NOTES-v0.2.md`，版本规划见 `docs/V0.2-PLAN-2026-10-26.md`。
 
 ## 设计理念
 
@@ -26,7 +26,9 @@ docs/             需求、技术方案、V1 接口与实施顺序
 - 端口规范：ai-service `8736`（托管主界面 + `/api`）、web dev `5173`、desktop dev `1420`。
 - 现有 `src/`（PyQt6 早期原型）只作参考，不参与新架构运行。
 
-## 下载安装（v0.1）
+## 下载安装（v0.2.0）
+
+当前版本 `v0.2.0`。完整变更、升级说明、已知限制与角色资产授权说明见 [`docs/RELEASE-NOTES-v0.2.md`](docs/RELEASE-NOTES-v0.2.md)。
 
 从 [Releases](../../releases) 下载对应平台安装包（无需自备 Python，运行时已内置）：
 
@@ -34,7 +36,9 @@ docs/             需求、技术方案、V1 接口与实施顺序
 - **Intel Mac**：`Qiling_*_x64.dmg`（需 macOS 12 Monterey 或更高）
 - **Windows**：`Qiling_*_x64-setup.exe`（需 Windows 10 1809 / Windows 11 或更高，自带 WebView2 引导）
 
-v0.1 尚未购买 Apple Developer / Windows 代码签名证书，首次打开会有系统安全提示，属正常现象：
+> Releases 页面当前公开的最新版本仍为 `v0.1.0`；v0.2 安装包在 Release 创建后于同一页面提供，请勿把 v0.1 旧产物当作本版使用。
+
+v0.1 / v0.2 均未购买 Apple Developer / Windows 代码签名证书，v0.2 也未做 Apple 公证，首次打开会有系统安全提示，属正常现象：
 
 - **macOS**：若提示「无法验证开发者」或「已损坏」，把 Qiling 拖进「应用程序」后**右键点应用 → 打开**确认一次；仍不行则在终端执行
   `xattr -dr com.apple.quarantine /Applications/Qiling.app`。
@@ -67,6 +71,15 @@ packages/contracts/ts/    TS 类型镜像
 docs/                     产品与技术文档
 ```
 
+## v0.2 主要内容
+
+- **可自定义工作台**：便签、待办、快捷链接、项目任务，以及 AgentRun 的状态 / 控制 / 结构化结果
+- **统一 Agent / Skill / MCP 控制面**：`inline / mcp / acp` 三种执行模式、扩展目录、二步串行工作流、运行记录持久化
+- **6 张角色卡**：栖灵、加菲、绯（VRM）、蓝猫（GLB 四足）与两张程序化 2D 卡；动物挂件新增移动、朝向、转场与像素级命中
+- **模型档案与语音供应商**：按类别配置模型，STT / TTS 独立选供应商；语音未配置不再阻断启动
+
+> 角色资产授权说明：`cat_vrm` 与 `meshy_female` 由 Meshy AI 生成，其授权事实仍未核验，由项目所有者接受剩余风险后随本版发布；这**不等于授权通过**。`meshy_female` 模型内嵌元数据仍标注 `allowRedistribution: false`，详见 `docs/RELEASE-NOTES-v0.2.md`「角色资产与授权说明」与 `01-方向与决策/MESHY-LICENSE-2026-11-14.md`。动作库来源见根目录 `NOTICE`。
+
 ## V1 路线（详见 docs/V1-IMPLEMENTATION-PLAN.md）
 
 Step 1 接口与开发基线 → Step 2 挂件与主界面 → Step 3 文字对话 → Step 4 语音闭环 → Step 4.5 设置与角色配置 → Step 5 项目记忆 → Step 6 任务分流 → Step 7 Codex 接入 → Step 8 回归与降级 → Step 9 视觉与体验打磨
@@ -79,4 +92,4 @@ Step 1 接口与开发基线 → Step 2 挂件与主界面 → Step 3 文字对�
 - **商业用途（含企业内部商用）不在授权范围内**，须事先取得作者书面商业授权；
 - 商业授权请在本仓库提交 issue 并标注「商业授权」。
 
-后续路线：`v0.2` 可自定义工作台（自行新增条目/模块）、`v0.3` 电商 / 跨境 / 数据处理垂直模板。
+后续路线：`v0.2` 的可自定义工作台已随本版发布；`v0.3` 电商 / 跨境 / 数据处理垂直模板。
