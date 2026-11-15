@@ -35,13 +35,17 @@ def main(out: str) -> int:
         # agents.local.yaml 是用户运行时覆盖层，不随包分发
         if item.name == "agents.local.yaml":
             continue
+        # 开发期备份 / README / 预览文件不随公开包分发
+        if item.name in RUNTIME_ASSET_IGNORES(item.parent, [item.name]):
+            continue
         target = config_dst / item.name
         if item.is_dir():
-            shutil.copytree(item, target, dirs_exist_ok=True)
+            shutil.copytree(item, target, dirs_exist_ok=True, ignore=RUNTIME_ASSET_IGNORES)
         else:
             shutil.copy2(item, target)
 
-    shutil.copytree(web_dist, dst / "apps" / "web" / "dist", dirs_exist_ok=True)
+    shutil.copytree(web_dist, dst / "apps" / "web" / "dist", dirs_exist_ok=True,
+                    ignore=RUNTIME_ASSET_IGNORES)
 
     assets_dst = dst / "data" / "persona-assets"
     assets_dst.mkdir(parents=True, exist_ok=True)
@@ -66,7 +70,8 @@ def main(out: str) -> int:
     if os.environ.get("QILING_STAGE_NO_MOTION_LIB") == "1":
         print("· 已按 QILING_STAGE_NO_MOTION_LIB=1 跳过动作库（安装后退化为程序化待机）")
     elif motion_src.is_dir():
-        shutil.copytree(motion_src, dst / "data" / "motion-library", dirs_exist_ok=True)
+        shutil.copytree(motion_src, dst / "data" / "motion-library", dirs_exist_ok=True,
+                        ignore=RUNTIME_ASSET_IGNORES)
         n = len(list((dst / "data" / "motion-library").rglob("*.vrma")))
         print(f"· 动作库已入包：{n} 个 .vrma（Mixamo 参考片派生，声明见 NOTICE）")
         notice = root / "NOTICE"
