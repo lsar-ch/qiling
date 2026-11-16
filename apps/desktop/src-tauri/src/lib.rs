@@ -611,8 +611,9 @@ pub fn run() {
 
             // 系统托盘图标 + 右键菜单
             let open_item = MenuItem::with_id(app, "open", "打开主界面", true, None::<&str>)?;
+            let passthrough_item = MenuItem::with_id(app, "toggle_passthrough", "鼠标穿透", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出栖灵", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&open_item, &passthrough_item, &quit_item])?;
 
             // 图标直接编进二进制：安装包不再需要释放 icons/ 目录，
             // 资源漏装时主进程也不会 panic（Windows 验收 P0-1 根因）。
@@ -634,6 +635,9 @@ pub fn run() {
                     "quit" => {
                         kill_child(app);
                         app.exit(0);
+                    }
+                    "toggle_passthrough" => {
+                        let _ = widget::toggle_widget_passthrough(app.clone());
                     }
                     _ => {}
                 })
@@ -680,6 +684,7 @@ pub fn run() {
             widget::system_idle_seconds,
             widget::move_widget_to,
             widget::list_desktop_work_areas,
+            widget::toggle_widget_passthrough,
             quit_app
         ])
         .on_window_event(|window, event| match event {

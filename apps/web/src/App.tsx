@@ -4,6 +4,7 @@ import type { AgentInfo, AgentIntegrationStatus, Task } from "@qiling/contracts"
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { MODEL_PRESETS } from "./modelPresets";
 import {
   connectEvents,
@@ -2123,6 +2124,19 @@ function SettingsPage() {
             <span className="rounded-full px-2 py-0.5 bg-line-subtle text-[11px] text-muted">后续填充</span>
           </div>
           <div className="text-xs text-muted py-3 text-center leading-relaxed">本地数据备份、运行日志清理、更新检查等维护项将在后续版本补充。</div>
+          {isTauri() && (
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                className="px-3 py-1.5 text-xs rounded-lg border border-bad/40 text-bad hover:bg-bad-50 transition-colors cursor-pointer"
+                onClick={() => {
+                  invoke("quit_app").catch(() => {});
+                }}
+              >
+                退出栖灵
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </div>
@@ -2137,6 +2151,10 @@ function SetupWizard({ onDone }: { onDone: () => void }) {
   const [presetId, setPresetId] = useState("");
   const [dashscopeKey, setDashscopeKey] = useState("");
   const [minimaxKey, setMinimaxKey] = useState("");
+  const [ttsPresetId, setTtsPresetId] = useState("");
+  const [ttsApiKey, setTtsApiKey] = useState("");
+  const [ttsBaseUrl, setTtsBaseUrl] = useState("");
+  const [ttsModel, setTtsModel] = useState("");
   const [personas, setPersonas] = useState<PersonaCard[]>([]);
   const [personaId, setPersonaId] = useState("");
   const [personaError, setPersonaError] = useState(false);
@@ -2618,7 +2636,11 @@ export default function App() {
         if (!alive) return;
         // 只有服务本身不可达才占用顶部错误横幅；挂件状态/事件流失败不算失联
         if (!online) {
-          setError(e instanceof Error ? e.message : "无法连接本地服务");
+          // abort（页面切换/组件卸载引起的 fetch 中断）不算连接失败，不弹横幅
+          const msg = e instanceof Error ? e.message : "无法连接本地服务";
+          if (!/abort|aborted/i.test(msg)) {
+            setError(msg);
+          }
         } else {
           console.warn("挂件状态或事件流刷新失败：", e);
         }

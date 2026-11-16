@@ -130,7 +130,7 @@ def _diagnostics(
     else:
         items.append({
             "name": "llm", "label": "对话模型", "status": "ok",
-            "detail": f"已配置（{settings.llm_model or 'default'}）",
+            "detail": f"已配置（{settings.llm_model or 'default'}，未验证连通性）",
             "fix_hint": None, "fix_action": None,
         })
 

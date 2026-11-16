@@ -179,8 +179,8 @@ const bubbleDuration = (text: string): number => {
 };
 
 // 挂件窗口基础尺寸（空态、无气泡时与 tauri.conf 中 widget 窗口一致）
-const BASE_WINDOW_H = 480;
-const MASCOT_BASE_SIZE = 338;
+const BASE_WINDOW_H = 380;
+const MASCOT_BASE_SIZE = 280;
 const WIDGET_DRAG_THRESHOLD_PX = 7;
 const WIDGET_CLICK_SUPPRESS_MS = 120;
 const WIDGET_SCALE_MIN = 0.75;

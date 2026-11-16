@@ -831,6 +831,15 @@ pub fn set_widget_interactive_area(
             .try_state::<WidgetRuntimeState>()
             .ok_or_else(|| "挂件运行状态不可用".to_string())?;
         state.set_interactive_area(area);
+        // 更新窗口 region 以启用分级鼠标穿透
+        if let Some(window) = app.get_webview_window(super::WIDGET_LABEL) {
+            if let Ok(hwnd) = window.hwnd() {
+                let sf = window.scale_factor().unwrap_or(1.0);
+                let active = state.interactive_area();
+                let rects: Vec<super::InteractiveArea> = active.into_iter().collect();
+                unsafe { win32_hit::apply_hit_rects(hwnd, &rects, sf); }
+            }
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -1046,6 +1055,24 @@ pub fn restore_widget_position(app: &AppHandle) -> Result<(), String> {
         (Some(x), Some(y)) => WidgetPosition { x, y },
         _ => default_position(&window, size)?,
     };
+    // 保存的显示器名字与当前枚举不匹配（如外接屏被拔掉），回落到主屏中心。
+    if let Some(ref monitor_name) = preferences.monitor {
+        let current_monitors = window
+            .available_monitors()
+            .map_err(|error| format!("读取显示器列表失败: {error}"))?;
+        let monitor_gone = !current_monitors
+            .iter()
+            .any(|monitor| monitor.name().as_deref() == Some(monitor_name));
+        if monitor_gone {
+            let fallback = default_position(&window, size)?;
+            preferences.x = Some(fallback.x);
+            preferences.y = Some(fallback.y);
+            preferences.monitor = None;
+            preferences.auto_hide = false; // 新显示器上从完整显示开始，避免不可见
+            save_preferences(app, &preferences)?;
+            return restore_widget_position(app); // 用回落后的位置重新进入
+        }
+    }
     let mode = if preferences.auto_hide {
         PositionMode::Preserve
     } else {
@@ -1081,9 +1108,8 @@ fn settle_worker(app: AppHandle, move_rx: Receiver<()>, dragging: Arc<AtomicBool
     }
 }
 
-/// 贴边隐藏后，窗口里那块透明区域照样会吃掉鼠标点击 —— Windows 上窗口既没有
-/// WS_EX_TRANSPARENT 也没有 WS_EX_LAYERED。这里轮询系统光标位置：光标不在
-/// 角色/右键菜单矩形内时把整窗设为点击穿透，移回来立刻恢复。
+/// 贴边隐藏后，透明区域不应拦截鼠标点击。用 LAYERED+LWA_ALPHA(255)+TRANSPARENT
+/// 三件套做整窗穿透（set_ignore_cursor_events 单独翻转 WS_EX_TRANSPARENT 实测无效）。
 #[cfg(target_os = "windows")]
 fn pointer_pass_through_worker(app: AppHandle) {
     let mut ignoring = false;
@@ -1092,8 +1118,15 @@ fn pointer_pass_through_worker(app: AppHandle) {
         let Some(window) = app.get_webview_window(WIDGET_LABEL) else {
             continue;
         };
-        let wanted = WIDGET_POINTER_PASS_THROUGH && should_ignore_cursor(&app, &window);
-        if wanted != ignoring && window.set_ignore_cursor_events(wanted).is_ok() {
+        if !WIDGET_POINTER_PASS_THROUGH {
+            continue;
+        }
+        let wanted = should_ignore_cursor(&app, &window);
+        if wanted == ignoring {
+            continue;
+        }
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe { win32_hit::set_full_passthrough(hwnd, wanted); }
             ignoring = wanted;
         }
     }
@@ -2160,5 +2193,176 @@ mod tests {
         let (target, peek) = clamp_top_peek(settled, AREA, true);
         assert_eq!(target, WidgetPosition { x: 600, y: 0 });
         assert!(peek, "上边缘被平台钳制时必须让前端做窗口内上移");
+    }
+}
+
+// ══ Windows 分级鼠标穿透：SetWindowRgn 按角色轮廓裁剪窗口 ══
+#[cfg(target_os = "windows")]
+mod win32_hit {
+    use super::InteractiveArea;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// RECT 用于 Win32 CreateRectRgnIndirect / ExtCreateRegion
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    struct RECT {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    /// RGNDATAHEADER（32 字节），iType=RDH_RECTANGLES(1)
+    #[repr(C)]
+    struct RgnDataHeader {
+        dw_size: u32,          // sizeof(RGNDATAHEADER) = 32
+        i_type: u32,           // RDH_RECTANGLES = 1
+        n_count: u32,
+        n_rgn_size: u32,
+        rc_bound: RECT,
+    }
+
+    extern "system" {
+        fn GetWindowRect(hwnd: isize, rect: *mut RECT) -> i32;
+        fn SetWindowRgn(hwnd: isize, hrgn: isize, redraw: i32) -> i32;
+        fn CreateRectRgnIndirect(rect: *const RECT) -> isize;
+        fn ExtCreateRegion(
+            transform: *const std::ffi::c_void,
+            n_count: u32,
+            data: *const u8,
+        ) -> isize;
+        fn DeleteObject(obj: isize) -> i32;
+        fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
+        fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
+        fn SetLayeredWindowAttributes(
+            hwnd: isize,
+            color_key: u32,
+            alpha: u8,
+            flags: u32,
+        ) -> i32;
+        fn SetWindowPos(
+            hwnd: isize,
+            insert_after: isize,
+            x: i32, y: i32,
+            cx: i32, cy: i32,
+            flags: u32,
+        ) -> i32;
+    }
+
+    const GWL_EXSTYLE: i32 = -20;
+    const WS_EX_LAYERED: isize = 0x0008_0000;
+    const WS_EX_TRANSPARENT: isize = 0x0000_0020;
+    const LWA_ALPHA: u32 = 0x02;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOZORDER: u32 = 0x0004;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+    const SWP_FRAMECHANGED: u32 = 0x0020;
+
+    static PASSTHROUGH_ON: AtomicBool = AtomicBool::new(false);
+
+    /// 整窗穿透开关：LAYERED + LWA_ALPHA(255) + TRANSPARENT 三件套
+    pub unsafe fn set_full_passthrough(hwnd: isize, on: bool) -> bool {
+        let mut ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        if on {
+            ex |= WS_EX_LAYERED | WS_EX_TRANSPARENT;
+        } else {
+            ex &= !(WS_EX_LAYERED | WS_EX_TRANSPARENT);
+        }
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
+        if on {
+            SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        }
+        SetWindowPos(
+            hwnd, 0, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        ) != 0
+    }
+
+    pub fn passthrough_on() -> bool {
+        PASSTHROUGH_ON.load(Ordering::SeqCst)
+    }
+
+    pub fn toggle_passthrough(hwnd: isize) -> bool {
+        let current = PASSTHROUGH_ON.swap(!PASSTHROUGH_ON.load(Ordering::SeqCst), Ordering::SeqCst);
+        let on = !current;
+        unsafe { set_full_passthrough(hwnd, on) };
+        on
+    }
+
+    /// 分级穿透：把矩形列表打包成 region 并应用到窗口
+    /// region 外不显示也不吃鼠标；传入空 vec 时清除 region（还原矩形窗口）。
+    pub unsafe fn apply_hit_rects(
+        hwnd: isize,
+        rects: &[InteractiveArea],
+        scale_factor: f64,
+    ) {
+        if rects.is_empty() {
+            SetWindowRgn(hwnd, 0, 1);
+            return;
+        }
+        let to_physical = |v: f64| (v * scale_factor).round() as i32;
+        let mut raw: Vec<RECT> = rects
+            .iter()
+            .map(|r| {
+                let pad = 3i32; // 外扩防啃边
+                RECT {
+                    left: to_physical(r.x) - pad,
+                    top: to_physical(r.y) - pad,
+                    right: to_physical(r.x + r.width) + pad,
+                    bottom: to_physical(r.y + r.height) + pad,
+                }
+            })
+            .collect();
+        if raw.len() == 1 {
+            let hrgn = CreateRectRgnIndirect(&raw[0]);
+            SetWindowRgn(hwnd, hrgn, 1);
+            return;
+        }
+        // 多个矩形时用 ExtCreateRegion 一次创建
+        let hdr_size = std::mem::size_of::<RgnDataHeader>();
+        let rect_size = std::mem::size_of::<RECT>();
+        let buf_size = hdr_size + raw.len() * rect_size;
+        let mut buf = vec![0u8; buf_size];
+        let hdr = buf.as_mut_ptr() as *mut RgnDataHeader;
+        (*hdr).dw_size = hdr_size as u32;
+        (*hdr).i_type = 1; // RDH_RECTANGLES
+        (*hdr).n_count = raw.len() as u32;
+        (*hdr).n_rgn_size = (raw.len() * rect_size) as u32;
+        // 整体外扩包围盒
+        let mut bound = RECT { left: i32::MAX, top: i32::MAX, right: i32::MIN, bottom: i32::MIN };
+        for r in &raw {
+            bound.left = bound.left.min(r.left);
+            bound.top = bound.top.min(r.top);
+            bound.right = bound.right.max(r.right);
+            bound.bottom = bound.bottom.max(r.bottom);
+        }
+        (*hdr).rc_bound = bound;
+        std::ptr::copy_nonoverlapping(
+            raw.as_ptr(),
+            buf.as_mut_ptr().add(hdr_size) as *mut RECT,
+            raw.len(),
+        );
+        let hrgn = ExtCreateRegion(std::ptr::null(), buf_size as u32, buf.as_ptr());
+        if !hrgn.is_null() {
+            SetWindowRgn(hwnd, hrgn, 1);
+        }
+    }
+}
+
+/// 切换挂件整窗穿透模式（看得见但不吃鼠标），供托盘菜单/全局热键调用。
+/// 穿透后必须留唤回通道（托盘菜单或 Ctrl+Alt+Q），否则用户再也点不到挂件。
+#[tauri::command]
+pub fn toggle_widget_passthrough(app: AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let window = widget_window(&app)?;
+        let hwnd = window.hwnd().map_err(|e| format!("获取窗口句柄失败: {e}"))?;
+        return Ok(win32_hit::toggle_passthrough(hwnd));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("穿透模式仅在 Windows 上可用".to_string())
     }
 }

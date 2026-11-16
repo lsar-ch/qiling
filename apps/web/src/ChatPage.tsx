@@ -881,6 +881,10 @@ export default function ChatPage({
     }
 
     const mode = voiceModeRef.current;
+    // 唤醒词门控：常开模式下也必须检测到唤醒词才送对话，避免环境音误触发
+    if (mode === "listening" && voiceStatus?.activation.enabled && intent !== "wake") {
+      return;
+    }
     if (intent === "sleep") {
       stopSpeaking();
       setVoiceMode("sleeping");
@@ -895,7 +899,7 @@ export default function ChatPage({
       void speak(reply ?? `在呢～我是${personaName}，有什么想让我帮忙的？`);
       return;
     }
-    if (mode === "sleeping") return; // 静默态非唤醒词：零回应
+    if (mode === "sleeping") return; // 静默态非唤醒词：零回应（已在上面处理 wake）
 
     setInput("");
     void submitMessage(text, true);
