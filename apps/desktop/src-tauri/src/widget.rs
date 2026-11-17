@@ -921,7 +921,7 @@ pub fn set_widget_interactive_area(
                 let sf = window.scale_factor().unwrap_or(1.0);
                 let active = state.interactive_area();
                 let rects: Vec<InteractiveArea> = active.into_iter().collect();
-                unsafe { win32_hit::apply_hit_rects(hwnd.0, &rects, sf); }
+                unsafe { win32_hit::apply_hit_rects(hwnd.0 as isize, &rects, sf); }
             }
         }
     }
@@ -1220,7 +1220,7 @@ fn pointer_pass_through_worker(app: AppHandle) {
             continue;
         }
         if let Ok(hwnd) = window.hwnd() {
-            unsafe { win32_hit::set_full_passthrough(hwnd.0, wanted); }
+            unsafe { win32_hit::set_full_passthrough(hwnd.0 as isize, wanted); }
             ignoring = wanted;
         }
     }
@@ -2523,7 +2523,7 @@ pub fn toggle_widget_passthrough(app: AppHandle) -> Result<bool, String> {
     {
         let window = widget_window(&app)?;
         let hwnd = window.hwnd().map_err(|e| format!("获取窗口句柄失败: {e}"))?;
-        return Ok(win32_hit::toggle_passthrough(hwnd.0));
+        return Ok(win32_hit::toggle_passthrough(hwnd.0 as isize));
     }
     #[cfg(not(target_os = "windows"))]
     {
