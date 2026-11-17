@@ -1,0 +1,29 @@
+[[permission]]
+identifier = "allow-open-microphone-settings"
+description = "Allow the main UI to open the OS microphone privacy settings."
+commands.allow = ["open_microphone_settings"]
+
+[[permission]]
+identifier = "allow-widget-runtime"
+description = "Allow the launcher and widget to use the desktop runtime commands."
+commands.allow = [
+  "cancel_widget_drag",
+  "ensure_service",
+  "finish_widget_drag",
+  "get_widget_preferences",
+  "list_desktop_work_areas",
+  "main_ui_visible",
+  "move_widget_to",
+  "open_main_ui",
+  "quit_app",
+  "resize_widget_height",
+  "service_status",
+  "set_widget_animal_pixel_hit",
+  "set_widget_auto_hide",
+  "set_widget_content_rect",
+  "set_widget_interactive_area",
+  "set_widget_scale",
+  "set_widget_visible_edges",
+  "start_widget_drag",
+  "system_idle_seconds"
+]

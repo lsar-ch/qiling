@@ -229,6 +229,9 @@ impl InteractiveArea {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PointerInteractiveAreas {
+    revision: u64,
+    viewport_width: Option<f64>,
+    viewport_height: Option<f64>,
     enabled: bool,
     suspend: bool,
     role: Option<InteractiveArea>,
@@ -247,6 +250,7 @@ const POINTER_PIXEL_HIT_MAX_DRIFT: f64 = 2.0;
 #[serde(rename_all = "camelCase")]
 struct PointerSampleRequest {
     request_id: u64,
+    revision: u64,
     x: f64,
     y: f64,
 }
@@ -255,10 +259,96 @@ struct PointerSampleRequest {
 #[derive(Debug, Clone, Copy)]
 struct PointerPixelHit {
     request_id: u64,
+    revision: u64,
     x: f64,
     y: f64,
     opaque: bool,
     sampled_at: Instant,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct PointerState {
+    areas: Option<PointerInteractiveAreas>,
+    hit: Option<PointerPixelHit>,
+    pending: Vec<(PointerSampleRequest, Instant)>,
+    revision: u64,
+    resizing: bool,
+    require_viewport: bool,
+}
+
+#[cfg(target_os = "macos")]
+impl PointerState {
+    fn invalidate(&mut self, resizing: bool) {
+        self.resizing = resizing;
+        self.require_viewport = true;
+        self.areas = None;
+        self.hit = None;
+        self.pending.clear();
+    }
+
+    fn set_areas(&mut self, areas: Option<PointerInteractiveAreas>, width: f64, height: f64) {
+        let Some(areas) = areas else {
+            self.areas = None;
+            self.hit = None;
+            self.pending.clear();
+            return;
+        };
+        if areas.revision <= self.revision {
+            return;
+        }
+        self.revision = areas.revision;
+        self.areas = None;
+        self.hit = None;
+        self.pending.clear();
+        let matches = |reported: Option<f64>, actual: f64| reported
+            .map_or(!self.require_viewport, |value| value.is_finite() && (value - actual).abs() <= 1.0);
+        if self.resizing || !matches(areas.viewport_width, width) || !matches(areas.viewport_height, height) {
+            return;
+        }
+        self.areas = Some(areas);
+    }
+
+    fn accept_hit(&mut self, request_id: u64, revision: u64, x: f64, y: f64, opaque: bool, now: Instant) {
+        let Some(index) = self.pending.iter().position(|(request, _)| request.request_id == request_id) else {
+            return;
+        };
+        let (request, sent_at) = self.pending.remove(index);
+        if self.resizing || self.areas.as_ref().map(|areas| areas.revision) != Some(revision)
+            || request.revision != revision
+            || !now.checked_duration_since(sent_at).is_some_and(|age| age <= POINTER_PIXEL_HIT_MAX_AGE)
+            || (request.x - x).abs() > POINTER_PIXEL_HIT_MAX_DRIFT
+            || (request.y - y).abs() > POINTER_PIXEL_HIT_MAX_DRIFT
+            || self.hit.is_some_and(|hit| hit.request_id >= request_id)
+        {
+            return;
+        }
+        self.hit = Some(PointerPixelHit { request_id, revision, x, y, opaque, sampled_at: sent_at });
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct PointerGesture {
+    was_down: bool,
+    captured: bool,
+    clickable_until: Option<Instant>,
+}
+
+#[cfg(target_os = "macos")]
+impl PointerGesture {
+    fn should_ignore(&mut self, base: bool, down: bool, dragging: bool, suspended: bool, over_interactive: bool, now: Instant) -> bool {
+        if down && !self.was_down {
+            self.captured = !base && over_interactive;
+        }
+        if self.captured && self.was_down && !down {
+            self.clickable_until = Some(now + Duration::from_millis(500));
+            self.captured = false;
+        }
+        self.was_down = down;
+        let grace = over_interactive && self.clickable_until.is_some_and(|until| now <= until);
+        !(dragging || suspended || (down && self.captured) || grace) && base
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -293,7 +383,7 @@ fn should_ignore_animal_pointer(
     let fresh = now
         .checked_duration_since(hit.sampled_at)
         .is_some_and(|age| age <= POINTER_PIXEL_HIT_MAX_AGE);
-    let same_point = hit.request_id > 0
+    let same_point = hit.request_id > 0 && hit.revision == areas.revision
         && (hit.x - x).abs() <= POINTER_PIXEL_HIT_MAX_DRIFT
         && (hit.y - y).abs() <= POINTER_PIXEL_HIT_MAX_DRIFT;
     fresh && same_point && !hit.opaque
@@ -432,9 +522,7 @@ pub struct WidgetRuntimeState {
     #[cfg(target_os = "windows")]
     interactive: Arc<Mutex<Option<InteractiveArea>>>,
     #[cfg(target_os = "macos")]
-    pointer_areas: Arc<Mutex<Option<PointerInteractiveAreas>>>,
-    #[cfg(target_os = "macos")]
-    pointer_pixel_hit: Arc<Mutex<Option<PointerPixelHit>>>,
+    pointer: Arc<Mutex<PointerState>>,
 }
 
 impl WidgetRuntimeState {
@@ -452,15 +540,13 @@ impl WidgetRuntimeState {
             Arc::new(Mutex::new(None))
         };
         #[cfg(target_os = "macos")]
-        let (pointer_areas, pointer_pixel_hit) = {
-            let areas = Arc::new(Mutex::new(None));
-            let worker_areas = Arc::clone(&areas);
-            let pointer_pixel_hit = Arc::new(Mutex::new(None));
-            let worker_pixel_hit = Arc::clone(&pointer_pixel_hit);
+        let pointer = {
+            let pointer = Arc::new(Mutex::new(PointerState::default()));
+            let worker_pointer = Arc::clone(&pointer);
             thread::spawn(move || {
-                animal_pointer_pass_through_worker(app, worker_areas, worker_pixel_hit)
+                animal_pointer_pass_through_worker(app, worker_pointer)
             });
-            (areas, pointer_pixel_hit)
+            pointer
         };
 
         Self {
@@ -471,9 +557,7 @@ impl WidgetRuntimeState {
             #[cfg(target_os = "windows")]
             interactive,
             #[cfg(target_os = "macos")]
-            pointer_areas,
-            #[cfg(target_os = "macos")]
-            pointer_pixel_hit,
+            pointer,
         }
     }
 
@@ -850,11 +934,11 @@ pub fn set_widget_interactive_area(
         let state = app
             .try_state::<WidgetRuntimeState>()
             .ok_or_else(|| "挂件运行状态不可用".to_string())?;
-        if let Ok(mut guard) = state.pointer_areas.lock() {
-            *guard = animal_areas;
-        };
-        if let Ok(mut guard) = state.pointer_pixel_hit.lock() {
-            *guard = None;
+        let window = widget_window(&app)?;
+        let size = window.inner_size().map_err(|error| format!("读取挂件尺寸失败: {error}"))?;
+        let scale = window.scale_factor().map_err(|error| format!("读取显示器缩放失败: {error}"))?;
+        if let Ok(mut guard) = state.pointer.lock() {
+            guard.set_areas(animal_areas, size.width as f64 / scale, size.height as f64 / scale);
         };
     }
     #[cfg(not(target_os = "macos"))]
@@ -868,6 +952,7 @@ pub fn set_widget_interactive_area(
 pub fn set_widget_animal_pixel_hit(
     app: AppHandle,
     request_id: u64,
+    revision: u64,
     x: f64,
     y: f64,
     opaque: bool,
@@ -881,24 +966,13 @@ pub fn set_widget_animal_pixel_hit(
             .try_state::<WidgetRuntimeState>()
             .ok_or_else(|| "挂件运行状态不可用".to_string())?;
         let mut guard = state
-            .pointer_pixel_hit
+            .pointer
             .lock()
             .map_err(|_| "像素命中状态不可用".to_string())?;
-        if guard
-            .as_ref()
-            .map_or(true, |current| request_id > current.request_id)
-        {
-            *guard = Some(PointerPixelHit {
-                request_id,
-                x,
-                y,
-                opaque,
-                sampled_at: Instant::now(),
-            });
-        }
+        guard.accept_hit(request_id, revision, x, y, opaque, Instant::now());
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = (app, request_id, x, y, opaque);
+    let _ = (app, request_id, revision, x, y, opaque);
     Ok(())
 }
 
@@ -999,12 +1073,12 @@ pub fn list_desktop_work_areas(
 
 /// 异步命令：animal_move 持锁期间调用窗口 API，主线程不进锁（理由同 set_widget_auto_hide）。
 #[tauri::command]
-pub async fn resize_widget_height(app: AppHandle, height: u32) -> Result<(), String> {
+pub async fn resize_widget_height(app: AppHandle, height: u32) -> Result<u32, String> {
     let state = app
         .try_state::<WidgetRuntimeState>()
         .ok_or_else(|| "挂件运行状态不可用".to_string())?;
     let window = widget_window(&app)?;
-    let next_position = state.position_moves.animal_move(|| {
+    let (actual_height, next_position) = state.position_moves.animal_move(|| {
         let old_inner_size = window
             .inner_size()
             .map_err(|error| format!("读取挂件尺寸失败: {error}"))?;
@@ -1020,25 +1094,45 @@ pub async fn resize_widget_height(app: AppHandle, height: u32) -> Result<(), Str
         let logical_width = old_inner_size.width as f64 / scale_factor;
         let frame_height_delta =
             old_outer_size.height as i64 - old_inner_size.height as i64;
-        let new_outer_height =
-            resized_outer_height(height, scale_factor, frame_height_delta);
-        window
-            .set_size(LogicalSize::new(logical_width, height as f64))
-            .map_err(|error| format!("调整挂件尺寸失败: {error}"))?;
-        let old_bottom = old_position.y as i64 + old_outer_size.height as i64;
-        let next = PhysicalPosition::new(
-            old_position.x,
-            (old_bottom - new_outer_height) as i32,
-        );
-        window
-            .set_position(next)
-            .map_err(|error| format!("锚定挂件右下角失败: {error}"))?;
-        Ok(WidgetPosition { x: next.x, y: next.y })
+        let (area, _) = monitor_for_position(&window, WidgetPosition { x: old_position.x, y: old_position.y }, old_outer_size)?;
+        let height = bounded_widget_height(height, area.height, scale_factor, frame_height_delta);
+        if (old_inner_size.height as f64 / scale_factor - height as f64).abs() < 0.5 {
+            return Ok((height, None));
+        }
+        #[cfg(target_os = "macos")]
+        state.pointer.lock().map_err(|_| "指针状态不可用".to_string())?.invalidate(true);
+        let resized = (|| {
+            window
+                .set_size(LogicalSize::new(logical_width, height as f64))
+                .map_err(|error| format!("调整挂件尺寸失败: {error}"))?;
+            let new_outer_height = window.outer_size()
+                .map_err(|error| format!("读取挂件外框尺寸失败: {error}"))?.height as i64;
+            let old_bottom = old_position.y as i64 + old_outer_size.height as i64;
+            let next = PhysicalPosition::new(
+                old_position.x,
+                (old_bottom - new_outer_height).clamp(area.y as i64, (area.bottom() - new_outer_height).max(area.y as i64)) as i32,
+            );
+            window
+                .set_position(next)
+                .map_err(|error| format!("锚定挂件右下角失败: {error}"))?;
+            let actual = window.inner_size().map_err(|error| format!("读取挂件尺寸失败: {error}"))?;
+            Ok(((actual.height as f64 / scale_factor).round() as u32, Some(WidgetPosition { x: next.x, y: next.y })))
+        })();
+        #[cfg(target_os = "macos")]
+        state.pointer.lock().map_err(|_| "指针状态不可用".to_string())?.invalidate(false);
+        resized
     })?;
+    let Some(next_position) = next_position else { return Ok(actual_height); };
     let mut preferences = load_preferences(&app);
     preferences.x = Some(next_position.x);
     preferences.y = Some(next_position.y);
-    save_preferences(&app, &preferences)
+    save_preferences(&app, &preferences)?;
+    Ok(actual_height)
+}
+
+fn bounded_widget_height(requested: u32, work_height: u32, scale: f64, frame_delta: i64) -> u32 {
+    let maximum = (((work_height as i64 - frame_delta).max(1) as f64 / scale).floor() as u32).clamp(1, 4096);
+    requested.clamp(64.min(maximum), maximum)
 }
 
 pub fn restore_widget_position(app: &AppHandle) -> Result<(), String> {
@@ -1187,26 +1281,26 @@ fn should_ignore_cursor(app: &AppHandle, window: &tauri::WebviewWindow) -> bool 
 #[cfg(target_os = "macos")]
 fn animal_pointer_pass_through_worker(
     app: AppHandle,
-    areas: Arc<Mutex<Option<PointerInteractiveAreas>>>,
-    pixel_hit: Arc<Mutex<Option<PointerPixelHit>>>,
+    pointer: Arc<Mutex<PointerState>>,
 ) {
     let mut ignoring = false;
     let mut request_id = 0_u64;
+    let mut gesture = PointerGesture::default();
     loop {
         thread::sleep(Duration::from_millis(40));
         let Some(window) = app.get_webview_window(WIDGET_LABEL) else {
             continue;
         };
-        let areas = areas.lock().ok().and_then(|guard| guard.clone());
         let cursor = cursor_position();
-        let hit = pixel_hit.lock().ok().and_then(|guard| *guard);
+        let now = Instant::now();
+        let down = primary_mouse_down();
+        let (areas, hit) = pointer.lock().ok().map(|guard| (guard.areas.clone(), guard.hit)).unwrap_or_default();
+        let (Ok(position), Ok(scale)) = (window.outer_position(), window.scale_factor()) else { continue; };
+        let mut over_interactive = false;
         let mut sample_failed = false;
-        if !primary_mouse_down() {
-            if let (Some(areas), Some(cursor), Ok(position), Ok(scale)) = (
+        if let (Some(areas), Some(cursor)) = (
                 areas.as_ref(),
                 cursor,
-                window.outer_position(),
-                window.scale_factor(),
             ) {
                 if scale > 0.0 {
                     let local_x = cursor.x - position.x as f64 / scale;
@@ -1221,32 +1315,33 @@ fn animal_pointer_pass_through_worker(
                         && areas
                             .role
                             .is_some_and(|rect| rect.contains(local_x, local_y, ANIMAL_POINTER_PADDING));
-                    if in_role {
+                    over_interactive = over_control || in_role;
+                    if in_role && !down {
                         request_id = request_id.saturating_add(1);
-                        let request = PointerSampleRequest { request_id, x: local_x, y: local_y };
-                        sample_failed = window.emit("widget-pointer-sample", request).is_err();
+                        let request = PointerSampleRequest { request_id, revision: areas.revision, x: local_x, y: local_y };
+                        let queued = if let Ok(mut guard) = pointer.lock() {
+                            if !guard.resizing && guard.areas.as_ref().map(|current| current.revision) == Some(areas.revision) {
+                                guard.pending.retain(|(_, sent)| now.duration_since(*sent) <= POINTER_PIXEL_HIT_MAX_AGE);
+                                guard.pending.push((request, now));
+                                true
+                            } else { false }
+                        } else { false };
+                        sample_failed = !queued || window.emit("widget-pointer-sample", request).is_err();
                     }
                 }
-            }
         }
-        // 按下期间保持当前命中状态，防止点击/拖拽被中途切换穿透。
-        let wanted = if primary_mouse_down() {
-            ignoring
-        } else {
-            match (window.outer_position(), window.scale_factor()) {
-                (Ok(position), Ok(scale)) => {
-                    should_ignore_animal_pointer(
+        let current_geometry = pointer.lock().ok().is_some_and(|guard| !guard.resizing && guard.areas.is_some());
+        let suspended = !current_geometry || areas.as_ref().is_some_and(|areas| areas.suspend);
+        let dragging = app.try_state::<WidgetRuntimeState>().is_some_and(|state| state.dragging.load(Ordering::SeqCst));
+        let base = should_ignore_animal_pointer(
                         areas,
                         cursor,
                         position,
                         scale,
                         if sample_failed { None } else { hit },
-                        Instant::now(),
-                    )
-                }
-                _ => false,
-            }
-        };
+                        now,
+                    );
+        let wanted = gesture.should_ignore(base, down, dragging, suspended, over_interactive, now);
         if wanted != ignoring && window.set_ignore_cursor_events(wanted).is_ok() {
             ignoring = wanted;
         }
@@ -1493,6 +1588,7 @@ fn target_fits_work_area(
         && position.y as i64 + size.height as i64 <= area.bottom()
 }
 
+#[cfg(test)]
 fn resized_outer_height(
     requested_logical_height: u32,
     scale_factor: f64,
@@ -1673,9 +1769,77 @@ mod tests {
         assert_eq!(resized_outer_height(505, 2.0, 12), 1022);
     }
 
+    #[test]
+    fn resize_height_is_bounded_by_work_area_and_reasonable_minimum() {
+        assert_eq!(bounded_widget_height(u32::MAX, 1000, 2.0, 12), 494);
+        assert_eq!(bounded_widget_height(0, 1000, 2.0, 12), 64);
+        assert_eq!(bounded_widget_height(100, 32, 1.0, 0), 32);
+        assert_eq!(bounded_widget_height(u32::MAX, 10000, 1.0, 0), 4096);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pixel_replies_require_current_requests_and_expire_from_send_time() {
+        let now = Instant::now();
+        let mut state = PointerState::default();
+        state.set_areas(Some(PointerInteractiveAreas { revision: 1, ..Default::default() }), 400.0, 500.0);
+        let request = PointerSampleRequest { request_id: 1, revision: 1, x: 10.0, y: 20.0 };
+        state.pending.push((request, now));
+        state.accept_hit(1, 1, 10.0, 20.0, false, now + Duration::from_millis(121));
+        assert!(state.hit.is_none());
+        state.pending.push((request, now));
+        state.accept_hit(1, 2, 10.0, 20.0, false, now);
+        assert!(state.hit.is_none());
+        state.pending.push((request, now));
+        state.accept_hit(1, 1, 13.0, 20.0, false, now);
+        assert!(state.hit.is_none());
+        state.pending.push((request, now));
+        state.accept_hit(1, 1, 10.0, 20.0, false, now + Duration::from_millis(100));
+        assert_eq!(state.hit.unwrap().sampled_at, now);
+        state.set_areas(Some(PointerInteractiveAreas { revision: 2, ..Default::default() }), 400.0, 500.0);
+        state.accept_hit(1, 1, 10.0, 20.0, false, now);
+        assert!(state.hit.is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resize_rejects_early_old_and_wrong_viewport_geometry() {
+        let mut state = PointerState::default();
+        let areas = |revision, height| Some(PointerInteractiveAreas { revision, viewport_width: Some(400.0), viewport_height: height, ..Default::default() });
+        state.set_areas(areas(1, Some(500.0)), 400.0, 500.0);
+        state.invalidate(true);
+        state.set_areas(areas(2, Some(700.0)), 400.0, 700.0);
+        assert!(state.areas.is_none());
+        state.invalidate(false);
+        state.set_areas(areas(2, Some(700.0)), 400.0, 700.0);
+        state.set_areas(areas(3, Some(500.0)), 400.0, 700.0);
+        state.set_areas(areas(4, None), 400.0, 700.0);
+        assert!(state.areas.is_none());
+        state.set_areas(areas(5, Some(700.0)), 400.0, 700.0);
+        assert_eq!(state.areas.unwrap().revision, 5);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pointer_gesture_recovers_and_preserves_drag_suspend_and_double_click() {
+        let now = Instant::now();
+        let mut gesture = PointerGesture::default();
+        assert!(gesture.should_ignore(true, true, false, false, true, now));
+        assert!(!gesture.should_ignore(false, true, false, false, true, now));
+        assert!(!gesture.should_ignore(true, true, true, false, false, now));
+        assert!(!gesture.should_ignore(true, true, false, true, false, now));
+        gesture.should_ignore(false, false, false, false, true, now);
+        gesture.should_ignore(false, true, false, false, true, now);
+        assert!(!gesture.should_ignore(true, false, false, false, true, now));
+        assert!(!gesture.should_ignore(true, true, false, false, true, now + Duration::from_millis(200)));
+        assert!(gesture.should_ignore(true, false, false, false, false, now + Duration::from_millis(300)));
+        assert!(gesture.should_ignore(true, false, false, false, true, now + Duration::from_millis(501)));
+    }
+
     #[cfg(target_os = "macos")]
     fn pointer_areas(role: InteractiveArea) -> PointerInteractiveAreas {
         PointerInteractiveAreas {
+            revision: 1,
             enabled: true,
             role: Some(role),
             controls: vec![InteractiveArea { x: 30.0, y: 0.0, width: 100.0, height: 40.0 }],
@@ -1725,6 +1889,7 @@ mod tests {
         let now = Instant::now();
         let hit = |opaque, x, sampled_at| Some(PointerPixelHit {
             request_id: 1,
+            revision: 1,
             x,
             y: 130.0,
             opaque,

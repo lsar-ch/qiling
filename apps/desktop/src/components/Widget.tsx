@@ -48,6 +48,7 @@ import {
 import { attachMouseFollow, detachMouseFollow } from "../widget/mouseFollow";
 import { attachBeatDetect, detachBeatDetect } from "../widget/beatDetect";
 import { useAnimalMobility } from "../widget/useAnimalMobility";
+import { bubbleHeightForWindow, widgetHeightForBubble } from "../widget/widgetGeometry";
 import {
   advanceDrive,
   clampWeight,
@@ -161,13 +162,6 @@ type InteractiveBox = {
   height: number;
 };
 
-type PointerDebugAreas = {
-  role: InteractiveBox | null;
-  controls: InteractiveBox[];
-  enabled: boolean;
-  suspended: boolean;
-};
-
 function normText(text: string): string {
   return text.replace(/[\s，。！？、,.!?'"“”‘’；：:;…—\-()（）【】《》~～·]/g, "").toLowerCase();
 }
@@ -178,9 +172,10 @@ const bubbleDuration = (text: string): number => {
   return Math.min(20000, Math.max(6000, 3500 + len * 120));
 };
 
-// 挂件窗口基础尺寸（空态、无气泡时与 tauri.conf 中 widget 窗口一致）
-const BASE_WINDOW_H = 380;
-const MASCOT_BASE_SIZE = 280;
+// Windows 用 240x380；macOS 的气泡/输入布局仍按 430x480 设计。
+const IS_WINDOWS = navigator.userAgent.includes("Windows");
+const BASE_WINDOW_H = IS_WINDOWS ? 380 : 480;
+const MASCOT_BASE_SIZE = IS_WINDOWS ? 280 : 338;
 const WIDGET_DRAG_THRESHOLD_PX = 7;
 const WIDGET_CLICK_SUPPRESS_MS = 120;
 const WIDGET_SCALE_MIN = 0.75;
@@ -195,8 +190,6 @@ const WIDGET_HIDE_HANDLE_RATIO = 0.34;
 const WIDGET_INTERACTIVE_PADDING = 16;
 // 舞台按角色内容矩形贴合时四周预留的操作余量：贴住内容会让边角动作难以点中。
 const STAGE_HUG_PADDING = 14;
-// 输入条展开时舞台上移的距离（与旧 CSS bottom: 8px→68px 的位移一致）。
-const INPUT_OPEN_STAGE_SHIFT = 60;
 // 同一轮对话里 submitText 与 conversation.completed 都会要求展开主界面，去重窗口。
 const MAIN_UI_AUTO_DEDUPE_MS = 2000;
 // 交互模式调整空闲动作节奏：casual 更活跃、work 更克制、project 居中。
@@ -339,7 +332,6 @@ export default function Widget() {
   const [motionReview, setMotionReview] = useState(false);
   const [reviewClip, setReviewClip] = useState<string | null>(null);
   const [assetMetrics, setAssetMetrics] = useState<PersonaAssetMetrics | null>(null);
-  const [pointerDebugAreas, setPointerDebugAreas] = useState<PointerDebugAreas | null>(null);
   const [preferences, setPreferences] = useState<WidgetPreferences>({
     x: null,
     y: null,
@@ -366,6 +358,11 @@ export default function Widget() {
   const projectRef = useRef<string | null>(null);
   const layersLoadedRef = useRef<string | null>(null);
   const resizeRafRef = useRef<number | null>(null);
+  const resizingRef = useRef(false);
+  const resizeAgainRef = useRef(false);
+  const geometryRevisionRef = useRef(0);
+  const pointerGestureRef = useRef(false);
+  const pointerGraceTimerRef = useRef<number | null>(null);
   const persistentHintRef = useRef("");
   const conversationIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
@@ -405,7 +402,7 @@ export default function Widget() {
   const mainUiOpenedAtRef = useRef(0);
   const leaseOwnerEventRef = useRef<(owner: string | null) => void>(() => {});
   // 供 window.resize 监听拿到最新一版同步函数（闭包里要用最新的 assetMetrics）。
-  const syncOverlayRef = useRef<() => void>(() => {});
+  const syncOverlayRef = useRef<(includeEdges?: boolean) => void>(() => {});
 
   stateRef.current = state;
   busyRef.current = busy;
@@ -423,19 +420,42 @@ export default function Widget() {
   });
 
   const resizeToBubble = async (): Promise<void> => {
-    const el = bubbleRef.current;
-    if (!el) return;
-    try {
-      const showing = el.getAttribute("data-visible") === "1" && (el.textContent ?? "").trim().length > 0;
-      const rect = el.getBoundingClientRect();
-      // 挂件宽度固定：气泡不超出挂件自身，仅在有气泡时按内容高度向上生长
-      const wantH = showing
-        ? Math.max(BASE_WINDOW_H, Math.ceil(rect.height) + BASE_WINDOW_H - 48)
-        : BASE_WINDOW_H;
-      await invoke("resize_widget_height", { height: wantH });
-    } catch {
-      /* 非 Tauri 环境或窗口调整失败时保持现状 */
+    if (resizingRef.current) {
+      resizeAgainRef.current = true;
+      return;
     }
+    resizingRef.current = true;
+    try {
+      do {
+        resizeAgainRef.current = false;
+        const el = bubbleRef.current;
+        if (!el) break;
+        el.style.maxHeight = "";
+        const showing = el.dataset.visible === "1" && (el.textContent ?? "").trim().length > 0;
+        const rect = el.getBoundingClientRect();
+        const distanceFromBottom = window.innerHeight - rect.bottom;
+        const wantH = widgetHeightForBubble(BASE_WINDOW_H, window.innerHeight, showing ? rect.top : null);
+        const actualH = await invoke<number>("resize_widget_height", { height: wantH });
+        if (showing) el.style.maxHeight = `${bubbleHeightForWindow(actualH, distanceFromBottom)}px`;
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        // Native resize rejects intermediate geometry; commit only after its size and position settle.
+        syncOverlayRef.current();
+      } while (resizeAgainRef.current);
+    } catch (error) {
+      console.warn("[Widget] 窗口几何同步失败", error);
+    } finally {
+      resizingRef.current = false;
+    }
+  };
+
+  const releasePointerGesture = (): void => {
+    if (!pointerGestureRef.current) return;
+    if (pointerGraceTimerRef.current !== null) window.clearTimeout(pointerGraceTimerRef.current);
+    pointerGraceTimerRef.current = window.setTimeout(() => {
+      pointerGraceTimerRef.current = null;
+      pointerGestureRef.current = false;
+      syncOverlayRef.current(false);
+    }, 500);
   };
 
   useLayoutEffect(() => {
@@ -446,7 +466,7 @@ export default function Widget() {
     return () => {
       if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
     };
-  }, [bubble, inputOpen]);
+  }, [bubble, inputOpen, preferences.scale, preferences.hiddenEdge, assetMetrics, mascotArt, glbDriven]);
 
   useEffect(() => {
     motionFamilyRef.current = motionFamily;
@@ -1520,6 +1540,7 @@ export default function Widget() {
       draggingRef.current = false;
       dragStartRef.current = null;
       setDragging(false);
+      releasePointerGesture();
       suppressClickUntilRef.current = Date.now() + WIDGET_CLICK_SUPPRESS_MS;
       setPreferences(event.payload);
       // 被放下：GLB 动物播一次 walk 单循环当落地反应，播完自动回 idle。
@@ -1544,6 +1565,7 @@ export default function Widget() {
       if (!start || draggingRef.current || event.pointerId !== start.pointerId) return;
       if ((event.buttons & 1) !== 1) {
         dragStartRef.current = null;
+        releasePointerGesture();
         return;
       }
       const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
@@ -1571,12 +1593,14 @@ export default function Widget() {
         .catch(() => {
           draggingRef.current = false;
           setDragging(false);
+          releasePointerGesture();
           void invoke("cancel_widget_drag").catch(() => {
             /* 非 Tauri 环境忽略 */
           });
         });
     };
     const onPointerUp = (event: PointerEvent): void => {
+      releasePointerGesture();
       if (draggingRef.current) {
         suppressClickUntilRef.current = Date.now() + WIDGET_CLICK_SUPPRESS_MS;
         void invoke("finish_widget_drag").catch(() => {
@@ -1588,13 +1612,17 @@ export default function Widget() {
       if (dragStartRef.current?.pointerId === event.pointerId) dragStartRef.current = null;
     };
     const onWindowBlur = (): void => {
-      if (!draggingRef.current) dragStartRef.current = null;
+      if (!draggingRef.current) {
+        dragStartRef.current = null;
+        releasePointerGesture();
+      }
     };
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("blur", onWindowBlur);
     return () => {
+      if (pointerGraceTimerRef.current !== null) window.clearTimeout(pointerGraceTimerRef.current);
       if (dragFallbackTimerRef.current !== null) {
         window.clearTimeout(dragFallbackTimerRef.current);
         dragFallbackTimerRef.current = null;
@@ -1680,6 +1708,9 @@ export default function Widget() {
   const startStageDrag = (event: React.PointerEvent): void => {
     if (event.button !== 0) return;
     if (event.target instanceof Element && event.target.closest("[data-no-drag]")) return;
+    if (pointerGraceTimerRef.current !== null) window.clearTimeout(pointerGraceTimerRef.current);
+    pointerGestureRef.current = true;
+    syncOverlayRef.current(false);
     dragStartRef.current = {
       pointerId: event.pointerId,
       x: event.clientX,
@@ -1825,7 +1856,7 @@ export default function Widget() {
     }
     if (includeEdges) {
       if (stage && box) {
-        // 舞台贴合 + 手感余量；吸附状态/输入条展开的位移在内联 top 上叠加。
+        // 输入条的上移已由自然布局的 bottom: 68px 完成，不能再叠加一次。
         const pad = STAGE_HUG_PADDING;
         // VRM 3D：画布是固定 --mascot-size 方块（自然布局下位置稳定），
         // 舞台必须锚定画布矩形而不是动画中的内容矩形 —— 内容矩形每 2s 随动作
@@ -1837,7 +1868,6 @@ export default function Widget() {
           : stage.querySelector<HTMLCanvasElement>("canvas.vrm-canvas");
         const hug = vrmCanvas ? vrmCanvas.getBoundingClientRect() : box;
         let top = hug.y - pad;
-        if (inputOpen) top -= INPUT_OPEN_STAGE_SHIFT;
         if (preferences.hiddenEdge === "top") {
           // 上边缘隐藏（macOS 窗口越不过菜单栏）：角色在窗口内上移，
           // 上移量让内容下缘正好落在窗口顶部 handle 像素处，与其它三边的隐藏效果对齐。
@@ -1850,6 +1880,8 @@ export default function Widget() {
         stage.style.transform = "none";
       }
     }
+    const pointerBox = measureContentBox();
+    const suspended = inputOpen || ctxMenu !== null || pointerGestureRef.current || draggingRef.current;
     const controls: InteractiveBox[] = [];
     const bubbleRect = bubbleRef.current?.getBoundingClientRect();
     if (bubbleRef.current?.dataset.visible === "1" && bubbleRect) {
@@ -1859,28 +1891,23 @@ export default function Widget() {
     if (voice) {
       controls.push({ x: voice.left, y: voice.top, width: voice.width, height: voice.height });
     }
-    if (import.meta.env.DEV) {
-      setPointerDebugAreas({
-        role: box,
-        controls,
-        enabled: glbDriven && box !== null,
-        suspended: inputOpen || ctxMenu !== null,
-      });
-    }
     // macOS + GLB 动物才启用；输入条/菜单显示时整窗可点，避免漏算动态控件。
     void invoke("set_widget_interactive_area", {
-      area: interactiveArea(box),
+      area: interactiveArea(pointerBox),
       animalAreas: {
-        enabled: glbDriven && box !== null,
-        suspend: inputOpen || ctxMenu !== null,
-        role: box,
+        revision: ++geometryRevisionRef.current,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        enabled: glbDriven && pointerBox !== null,
+        suspend: suspended,
+        role: pointerBox,
         controls,
       },
     }).catch(() => {
       /* 非 Tauri 环境或后端不支持时忽略 */
     });
   };
-  syncOverlayRef.current = () => syncWidgetOverlayGeometry(true);
+  syncOverlayRef.current = (includeEdges = true) => syncWidgetOverlayGeometry(includeEdges);
 
   /** VrmStage 模型范围回报：记下矩形并立即重跑几何同步（舞台贴合 + 内容吸附）。 */
   const handleVrmContentBox = useCallback(
@@ -2115,11 +2142,15 @@ export default function Widget() {
         <div
           className="bubble"
           ref={bubbleRef}
+          data-no-drag
           data-visible={bubble && !inputOpen ? "1" : "0"}
           aria-live="polite"
+          tabIndex={bubble && !inputOpen ? 0 : -1}
           role={!connected && bubble === persistentHintRef.current ? "button" : undefined}
           title={!connected ? "点击打开主界面查看服务状态" : undefined}
-          onClick={() => {
+          onDoubleClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
             // 断连态气泡直达主界面；WS 本身每 3s 自动重连，挂件内不放详细诊断。
             if (!connected && bubble === persistentHintRef.current) void openMainUi();
           }}
@@ -2367,43 +2398,6 @@ export default function Widget() {
           >
             退出栖灵
           </button>
-        </div>
-      )}
-      {import.meta.env.DEV && pointerDebugAreas?.enabled && (
-        <div className="pointer-debug-layer" aria-hidden="true">
-          {pointerDebugAreas.role && (
-            <>
-              <div
-                className="pointer-debug-box pointer-debug-tolerance"
-                data-label="角色 + 4px 容差"
-                style={{
-                  left: pointerDebugAreas.role.x - 4,
-                  top: pointerDebugAreas.role.y - 4,
-                  width: pointerDebugAreas.role.width + 8,
-                  height: pointerDebugAreas.role.height + 8,
-                }}
-              />
-              <div
-                className="pointer-debug-box pointer-debug-role"
-                data-label="角色矩形"
-                style={{
-                  left: pointerDebugAreas.role.x,
-                  top: pointerDebugAreas.role.y,
-                  width: pointerDebugAreas.role.width,
-                  height: pointerDebugAreas.role.height,
-                }}
-              />
-            </>
-          )}
-          {pointerDebugAreas.controls.map((control, index) => (
-            <div
-              className="pointer-debug-box pointer-debug-control"
-              data-label={`控件 ${index + 1}`}
-              key={`${control.x}:${control.y}:${control.width}:${control.height}`}
-              style={{ left: control.x, top: control.y, width: control.width, height: control.height }}
-            />
-          ))}
-          {pointerDebugAreas.suspended && <div className="pointer-debug-status">精细命中暂停：整窗可点</div>}
         </div>
       )}
     </div>

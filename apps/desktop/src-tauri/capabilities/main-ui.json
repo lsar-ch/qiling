@@ -11,6 +11,8 @@
     "core:window:allow-is-visible",
     "core:window:allow-show",
     "dialog:allow-open",
-    "dialog:allow-ask"
+    "dialog:allow-ask",
+    "allow-open-microphone-settings",
+    "allow-widget-runtime"
   ]
 }

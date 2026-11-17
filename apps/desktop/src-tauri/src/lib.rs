@@ -534,6 +534,44 @@ fn page_fragment(page: Option<String>) -> String {
 }
 
 #[tauri::command]
+fn open_microphone_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+            .status()
+            .map_err(|e| format!("打开 macOS 麦克风设置失败: {e}"))?;
+        if !status.success() {
+            return Err("打开 macOS 麦克风设置失败".to_string());
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let status = Command::new("cmd")
+            .args(["/C", "start", "", "ms-settings:privacy-microphone"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("打开 Windows 麦克风设置失败: {e}"))?;
+        if !status.success() {
+            return Err("打开 Windows 麦克风设置失败".to_string());
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let status = Command::new("xdg-open")
+            .arg("settings://privacy")
+            .status()
+            .map_err(|e| format!("打开 Linux 隐私设置失败: {e}"))?;
+        if !status.success() {
+            return Err("打开 Linux 隐私设置失败".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) {
     kill_child(&app);
     app.exit(0);
@@ -604,6 +642,9 @@ pub fn run() {
             // 或其他应用全屏时挂件被留在原 Space，表现成“随机消失”。
             if let Some(widget_window) = app.get_webview_window(widget::WIDGET_LABEL) {
                 let _ = widget_window.set_visible_on_all_workspaces(true);
+                // config 默认 430x480（macOS 气泡/输入布局）；Windows 验收要求 240x380。
+                #[cfg(target_os = "windows")]
+                let _ = widget_window.set_size(tauri::LogicalSize::new(240.0, 380.0));
             }
             if let Err(err) = widget::restore_widget_position(app.handle()) {
                 eprintln!("Qiling widget positioning failed: {err}");
@@ -670,6 +711,7 @@ pub fn run() {
             service_status,
             open_main_ui,
             main_ui_visible,
+            open_microphone_settings,
             widget::get_widget_preferences,
             widget::set_widget_auto_hide,
             widget::set_widget_scale,

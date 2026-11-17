@@ -15,41 +15,6 @@ html, body, #root {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
-.pointer-debug-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-}
-.pointer-debug-box {
-  position: absolute;
-  box-sizing: border-box;
-}
-.pointer-debug-box::before {
-  content: attr(data-label);
-  position: absolute;
-  top: 0;
-  left: 0;
-  padding: 1px 4px;
-  color: #fff;
-  background: rgba(24, 30, 34, 0.86);
-  font: 10px/14px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-  white-space: nowrap;
-}
-.pointer-debug-tolerance { border: 2px dashed #f04f55; }
-.pointer-debug-role { border: 2px solid #19a974; }
-.pointer-debug-role::before { top: 28px; }
-.pointer-debug-control { border: 2px solid #168aad; }
-.pointer-debug-status {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  padding: 3px 6px;
-  color: #fff;
-  background: #8a4b08;
-  font: 11px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-}
-
 /* ── 角色舞台：整块可拖动，后续动作/角色卡替换点 ──
    尺寸默认 400×400 兜底；有素材内容包围盒时由前端按实测结果内联覆盖，
    让点击/拖拽/右键区域紧贴角色本身，而不是一大块透明区域。 */
@@ -350,7 +315,7 @@ html, body, #root {
   transform: translateX(-50%);
   width: max-content;
   min-width: 113px;
-  max-width: 240px;
+  max-width: min(240px, calc(100vw - 16px));
   min-height: 35px;
   max-height: 378px;
   box-sizing: border-box;
@@ -363,7 +328,11 @@ html, body, #root {
   line-height: 1.5;
   color: var(--text);
   text-align: center;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  user-select: text;
+  -webkit-user-select: text;
   white-space: pre-line;
   word-break: break-word;
   opacity: 0;
@@ -371,7 +340,7 @@ html, body, #root {
   pointer-events: none;
   z-index: 6;
 }
-.bubble[data-visible="1"] { opacity: 1; }
+.bubble[data-visible="1"] { opacity: 1; pointer-events: auto; }
 
 /* ── InteractionKind：气泡与上下文小条按模式区分 ── */
 .w-root[data-interaction="work"] .bubble { border-color: rgba(var(--brand-rgb), 0.35); }

@@ -1,5 +1,6 @@
 export type PointerSampleRequest = {
   requestId: number;
+  revision: number;
   x: number;
   y: number;
 };
