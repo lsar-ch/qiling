@@ -916,12 +916,12 @@ pub fn set_widget_interactive_area(
             .ok_or_else(|| "挂件运行状态不可用".to_string())?;
         state.set_interactive_area(area);
         // 更新窗口 region 以启用分级鼠标穿透
-        if let Some(window) = app.get_webview_window(super::WIDGET_LABEL) {
+        if let Some(window) = app.get_webview_window(WIDGET_LABEL) {
             if let Ok(hwnd) = window.hwnd() {
                 let sf = window.scale_factor().unwrap_or(1.0);
                 let active = state.interactive_area();
-                let rects: Vec<super::InteractiveArea> = active.into_iter().collect();
-                unsafe { win32_hit::apply_hit_rects(hwnd, &rects, sf); }
+                let rects: Vec<InteractiveArea> = active.into_iter().collect();
+                unsafe { win32_hit::apply_hit_rects(hwnd.0, &rects, sf); }
             }
         }
     }
@@ -1220,7 +1220,7 @@ fn pointer_pass_through_worker(app: AppHandle) {
             continue;
         }
         if let Ok(hwnd) = window.hwnd() {
-            unsafe { win32_hit::set_full_passthrough(hwnd, wanted); }
+            unsafe { win32_hit::set_full_passthrough(hwnd.0, wanted); }
             ignoring = wanted;
         }
     }
@@ -2509,7 +2509,7 @@ mod win32_hit {
             raw.len(),
         );
         let hrgn = ExtCreateRegion(std::ptr::null(), buf_size as u32, buf.as_ptr());
-        if !hrgn.is_null() {
+        if hrgn != 0 {
             SetWindowRgn(hwnd, hrgn, 1);
         }
     }
@@ -2523,7 +2523,7 @@ pub fn toggle_widget_passthrough(app: AppHandle) -> Result<bool, String> {
     {
         let window = widget_window(&app)?;
         let hwnd = window.hwnd().map_err(|e| format!("获取窗口句柄失败: {e}"))?;
-        return Ok(win32_hit::toggle_passthrough(hwnd));
+        return Ok(win32_hit::toggle_passthrough(hwnd.0));
     }
     #[cfg(not(target_os = "windows"))]
     {
